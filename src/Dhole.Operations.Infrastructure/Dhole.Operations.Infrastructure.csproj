@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="StackExchange.Redis" Version="2.8.37" />
+    <PackageReference Include="CustomCodeFramework.Redis.Streams" Version="0.2.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Dhole.Operations.Application/Dhole.Operations.Application.csproj" />
+    <ProjectReference Include="../Dhole.Operations.Contracts/Dhole.Operations.Contracts.csproj" />
+    <ProjectReference Include="../Dhole.Operations.Domain/Dhole.Operations.Domain.csproj" />
+  </ItemGroup>
+</Project>

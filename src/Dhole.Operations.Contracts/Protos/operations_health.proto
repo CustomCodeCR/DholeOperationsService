@@ -1,0 +1,8 @@
+syntax = "proto3";
+option csharp_namespace = "Dhole.Operations.Contracts.Grpc";
+package dhole.operations.v1;
+service OperationsHealth {
+  rpc Check (HealthRequest) returns (HealthReply);
+}
+message HealthRequest {}
+message HealthReply { string service = 1; string status = 2; string timestamp = 3; }

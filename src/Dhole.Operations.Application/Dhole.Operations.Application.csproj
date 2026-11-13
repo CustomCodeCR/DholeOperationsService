@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="CustomCodeFramework.Core" Version="0.2.0" />
+    <PackageReference Include="CustomCodeFramework.Cqrs" Version="0.2.0" />
+    <PackageReference Include="CustomCodeFramework.Messaging" Version="0.2.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Dhole.Operations.Domain/Dhole.Operations.Domain.csproj" />
+    <ProjectReference Include="../Dhole.Operations.Contracts/Dhole.Operations.Contracts.csproj" />
+  </ItemGroup>
+</Project>
