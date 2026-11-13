@@ -1,0 +1,26 @@
+name: Dhole Operations Build and Test
+on:
+  pull_request:
+    branches: [develop, master]
+  push:
+    branches: [develop, master]
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: read
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    env:
+      NuGetPackageSourceCredentials_github: Username=github-actions;Password=${{ secrets.GITHUB_TOKEN }};ValidAuthenticationTypes=Basic
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore
+        run: dotnet restore DholeOperationsService.slnx --configfile NuGet.Config
+      - name: Build
+        run: dotnet build DholeOperationsService.slnx -c Release --no-restore --warnaserror
+      - name: Test
+        run: dotnet test DholeOperationsService.slnx -c Release --no-build --logger trx

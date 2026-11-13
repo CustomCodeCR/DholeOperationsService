@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Dhole.Operations.Api/Dhole.Operations.Api.csproj" />
+    <Project Path="src/Dhole.Operations.Application/Dhole.Operations.Application.csproj" />
+    <Project Path="src/Dhole.Operations.Contracts/Dhole.Operations.Contracts.csproj" />
+    <Project Path="src/Dhole.Operations.Domain/Dhole.Operations.Domain.csproj" />
+    <Project Path="src/Dhole.Operations.Infrastructure/Dhole.Operations.Infrastructure.csproj" />
+    <Project Path="src/Dhole.Operations.Persistence/Dhole.Operations.Persistence.csproj" />
+    <Project Path="src/Dhole.Operations.Workers/Dhole.Operations.Workers.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Dhole.Operations.UnitTests/Dhole.Operations.UnitTests.csproj" />
+    <Project Path="tests/Dhole.Operations.IntegrationTests/Dhole.Operations.IntegrationTests.csproj" />
+  </Folder>
+</Solution>

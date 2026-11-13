@@ -1,0 +1,68 @@
+name: Deploy Dhole Operations - Staging
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: read
+concurrency:
+  group: dhole-operations-staging
+  cancel-in-progress: false
+env:
+  COMPOSE_BASE: .dhole-system/deploy/docker-compose.services.yml
+  COMPOSE_OPERATIONS: deploy/docker-compose.operations.yml
+  DHOLE_IMAGE_TAG: staging
+  DHOLE_NETWORK: dhole-staging
+  COMPOSE_PROJECT: dhole-staging
+jobs:
+  deploy:
+    if: ${{ vars.DHOLE_OPERATIONS_STAGING_ENABLED == 'true' }}
+    runs-on: [self-hosted, linux, x64, dhole]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Load Dhole deployment infrastructure
+        run: |
+          set -euo pipefail
+          rm -rf .dhole-system
+          for attempt in 1 2 3 4 5; do
+            if git clone --depth 1 --branch master https://github.com/CustomCodeCR/DholeSystem.git .dhole-system; then break; fi
+            if [ "$attempt" -eq 5 ]; then exit 1; fi
+            sleep $((attempt * 5))
+          done
+          mkdir -p "$RUNNER_TEMP/dhole-env"
+          bash .dhole-system/deploy/prepare-environments.sh /opt/dhole/.env "$RUNNER_TEMP/dhole-env"
+          echo "DHOLE_ENV_FILE=$RUNNER_TEMP/dhole-env/.env.staging" >> "$GITHUB_ENV"
+      - name: Verify Compose
+        run: |
+          set -euo pipefail
+          docker compose --env-file "$DHOLE_ENV_FILE" -f "$COMPOSE_BASE" -f "$COMPOSE_OPERATIONS" -p "$COMPOSE_PROJECT" config -q
+      - name: Build Operations images
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          SHA_TAG="${GITHUB_SHA::12}"
+          docker build --pull --build-arg GITHUB_ACTOR="$GITHUB_ACTOR" --secret id=github_token,env=GITHUB_TOKEN -f src/Dhole.Operations.Api/Dockerfile -t dhole/operations-api:staging -t "dhole/operations-api:staging-$SHA_TAG" .
+          docker build --pull --build-arg GITHUB_ACTOR="$GITHUB_ACTOR" --secret id=github_token,env=GITHUB_TOKEN -f src/Dhole.Operations.Workers/Dockerfile -t dhole/operations-workers:staging -t "dhole/operations-workers:staging-$SHA_TAG" .
+      - name: Deploy Operations
+        run: |
+          set -euo pipefail
+          docker compose --env-file "$DHOLE_ENV_FILE" -f "$COMPOSE_BASE" -f "$COMPOSE_OPERATIONS" -p "$COMPOSE_PROJECT" up -d --no-deps --force-recreate --pull never operations-api operations-workers
+          docker compose --env-file "$DHOLE_ENV_FILE" -f "$COMPOSE_BASE" -f "$COMPOSE_OPERATIONS" -p "$COMPOSE_PROJECT" ps operations-api operations-workers
+      - name: Verify Operations API readiness
+        run: |
+          set -euo pipefail
+          CONTAINER_ID="$(docker compose --env-file "$DHOLE_ENV_FILE" -f "$COMPOSE_BASE" -f "$COMPOSE_OPERATIONS" -p "$COMPOSE_PROJECT" ps -q operations-api)"
+          test -n "$CONTAINER_ID"
+          for attempt in $(seq 1 30); do
+            if [ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER_ID" 2>/dev/null || true)" != "true" ]; then docker logs --tail 200 "$CONTAINER_ID" || true; exit 1; fi
+            OPERATIONS_IP="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$CONTAINER_ID")"
+            if [ -n "$OPERATIONS_IP" ] && curl -fsS --max-time 3 "http://${OPERATIONS_IP}:8080/ready" >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          docker logs --tail 200 "$CONTAINER_ID" || true
+          exit 1
+      - name: Cleanup old images
+        if: always()
+        run: docker image prune -f
