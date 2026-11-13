@@ -13,8 +13,8 @@ dotnet test DholeOperationsService.slnx -c Release --no-build
 ```
 
 ## Entornos y seguridad
-- `develop` despliega automáticamente en staging como DholeConfigService, después del CI y con los recursos de staging disponibles.
-- `master` despliega en producción únicamente tras autorización explícita y habilitar `DHOLE_OPERATIONS_PRODUCTION_ENABLED=true`.
+- `develop` despliega automáticamente en staging como DholeConfigService, con los recursos del entorno disponibles.
+- `master` despliega automáticamente en producción tras integrar un release validado, al igual que DholeConfigService, sin flags de habilitación.
 - Se usan los runners self-hosted y la infraestructura de DholeSystem. Los servicios se definen en el overlay `deploy/docker-compose.operations.yml`.
 - Previo al despliegue se requiere PostgreSQL DB `dhole_operations`, Redis, JWT y las variables compartidas del servidor.
 - El Gateway externo `/api/operations` se integra separadamente en DholeApiGateway cuando se autorice.
