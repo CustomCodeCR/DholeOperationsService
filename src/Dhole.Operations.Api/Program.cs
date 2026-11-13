@@ -13,7 +13,13 @@ using StackExchange.Redis;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddGrpc();
 builder.Services.AddSignalR();
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("OperationsRealtimeRead", policy => policy.RequireAssertion(context =>
+        context.User.Identity?.IsAuthenticated == true &&
+        (context.User.IsInRole("SuperAdmin") ||
+         context.User.HasClaim("scope", "operations.realtime.read"))));
+});
 builder.Services.AddOperationsPersistence(builder.Configuration);
 builder.Services.AddOperationsInfrastructure(builder.Configuration);
 builder.Services.AddHostedService<OperationsRealtimeRelay>();
@@ -68,7 +74,7 @@ app.MapGet("/api/operations/realtime/events", async (
         .Select(e => new { e.EventId, e.EventName, e.PayloadJson, e.ProcessedAtUtc })
         .ToListAsync(ct);
     return Results.Ok(events);
-}).RequireAuthorization();
+}).RequireAuthorization("OperationsRealtimeRead");
 app.MapHub<OperationsHub>("/hubs/operations");
 app.MapGrpcService<OperationsHealthGrpcService>();
 

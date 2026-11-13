@@ -14,7 +14,7 @@ public sealed class OperationsRealtimeRelay(
     {
         var subscriber = redis.GetSubscriber();
         var channel = RedisChannel.Literal("dhole.operations.realtime");
-        await subscriber.SubscribeAsync(channel, (_, message) =>
+        await subscriber.SubscribeAsync(channel, (redisChannel, message) =>
         {
             _ = hub.Clients.All.SendAsync("operationsChanged", message.ToString(), stoppingToken)
                 .ContinueWith(t => logger.LogError(t.Exception, "Realtime relay failed"),

@@ -3,7 +3,7 @@
   "ecosystem": "Dhole",
   "component": "DholeOperationsService",
   "version": "0.1.0",
-  "ecosystemVersion": "1.46.0",
+  "ecosystemVersion": "1.46.1",
   "releaseId": "DH-20261112-OPERATIONS-BOOTSTRAP-126",
   "releaseStatus": "candidate-ci-and-staging-pending",
   "businessReleaseId": "DH-20261112-OPERATIONS-BOOTSTRAP-126",
