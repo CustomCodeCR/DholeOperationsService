@@ -17,7 +17,6 @@ env:
   COMPOSE_PROJECT: dhole-staging
 jobs:
   deploy:
-    if: ${{ vars.DHOLE_OPERATIONS_STAGING_ENABLED == 'true' }}
     runs-on: [self-hosted, linux, x64, dhole]
     steps:
       - uses: actions/checkout@v4
