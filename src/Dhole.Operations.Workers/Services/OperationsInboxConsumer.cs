@@ -16,7 +16,8 @@ public sealed class OperationsInboxConsumer(
     {
         var stream = config["Redis:Streams:Name"] ?? "dhole.operations.events";
         var group = config["Redis:Streams:ConsumerGroup"] ?? "dhole-operations";
-        var consumer = $"{config["Redis:Streams:ConsumerName"] ?? "operations-worker"}-{Environment.MachineName}";
+        // Stable consumer identity reclaims pending entries after a container restart.
+        var consumer = config["Redis:Streams:ConsumerName"] ?? "operations-worker";
         var database = redis.GetDatabase();
         while (!stoppingToken.IsCancellationRequested)
         {
