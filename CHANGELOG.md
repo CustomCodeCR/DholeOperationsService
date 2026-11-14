@@ -1,3 +1,8 @@
+## [0.2.0] - 2026-11-14 (API Manager discovery)
+
+- MINOR: inventario de rutas Operations solo para integraciones autenticadas; conserva idempotencia de eventos y SignalR.
+- Global Dhole 1.56.0.
+
 # Changelog
 
 ## [0.1.2] - 2026-11-13
