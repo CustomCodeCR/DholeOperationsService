@@ -77,7 +77,7 @@ app.MapGet("/api/operations/realtime/events", async (
     var query = db.InboxMessages.AsNoTracking().Where(e => e.ConsumerService == "operations-realtime");
     if (since.HasValue) query = query.Where(e => e.ProcessedAtUtc > since.Value.UtcDateTime);
     var receipts = await query.OrderBy(e => e.ProcessedAtUtc).ThenBy(e => e.EventId)
-        .Take(limit).Select(e => new { e.EventId, e.EventName, e.PayloadJson, e.ProcessedAtUtc, e.CreatedAtUtc, PayloadJson = EF.Property<string>(e, "PayloadJson") })
+        .Take(limit).Select(e => new { e.EventId, e.EventName, e.ProcessedAtUtc, e.CreatedAtUtc, PayloadJson = EF.Property<string>(e, "PayloadJson") })
         .ToListAsync(ct);
     var parsed = new List<(Guid EventId, string EventName, Guid CaseId, DateTimeOffset At)>();
     foreach (var receipt in receipts)
