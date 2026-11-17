@@ -49,6 +49,7 @@ public sealed class OperationsCaseStage
 public sealed class OperationsTeam
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid CompanyId { get; set; }
     public string DepartmentCode { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public bool IsActive { get; set; } = true;

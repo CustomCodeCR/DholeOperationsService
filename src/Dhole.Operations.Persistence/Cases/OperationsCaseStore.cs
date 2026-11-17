@@ -61,7 +61,7 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
         var destination = input.DestinationCountryCode?.Trim().ToUpperInvariant();
         var rules = await db.AssignmentRules.AsNoTracking()
             .Include(x => x.Team).ThenInclude(x => x.Members)
-            .Where(x => x.IsActive && x.Team.IsActive &&
+            .Where(x => x.IsActive && x.Team.IsActive && x.Team.CompanyId == operation.CompanyId &&
                 x.DepartmentCode == stage.DepartmentCode &&
                 (x.ModalityCode == null || x.ModalityCode == operation.ModalityCode) &&
                 (x.OriginCountryCode == null || x.OriginCountryCode == origin) &&

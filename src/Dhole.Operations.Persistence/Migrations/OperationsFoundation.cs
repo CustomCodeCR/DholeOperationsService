@@ -48,10 +48,11 @@ public sealed class OperationsFoundation : Migration
             );
             CREATE TABLE operations_teams (
                 id uuid PRIMARY KEY,
+                company_id uuid NOT NULL,
                 department_code varchar(30) NOT NULL,
                 name varchar(150) NOT NULL,
                 is_active boolean NOT NULL,
-                UNIQUE(department_code, name)
+                UNIQUE(company_id, department_code, name)
             );
             CREATE TABLE operations_team_members (
                 id uuid PRIMARY KEY,
@@ -79,7 +80,7 @@ public sealed class OperationsFoundation : Migration
                 case_id uuid NOT NULL REFERENCES operations_cases(id) ON DELETE CASCADE,
                 department_code varchar(30) NOT NULL,
                 status varchar(30) NOT NULL,
-                team_id uuid NULL,
+                team_id uuid NULL REFERENCES operations_teams(id) ON DELETE RESTRICT,
                 started_at_utc timestamptz NULL,
                 completed_at_utc timestamptz NULL,
                 version bigint NOT NULL,
@@ -89,7 +90,7 @@ public sealed class OperationsFoundation : Migration
             CREATE TABLE operations_stage_assignments (
                 id uuid PRIMARY KEY,
                 case_stage_id uuid NOT NULL REFERENCES operations_case_stages(id) ON DELETE CASCADE,
-                team_id uuid NOT NULL,
+                team_id uuid NOT NULL REFERENCES operations_teams(id) ON DELETE RESTRICT,
                 user_id uuid NOT NULL,
                 assigned_points numeric(10,2) NOT NULL,
                 assigned_by uuid NOT NULL,

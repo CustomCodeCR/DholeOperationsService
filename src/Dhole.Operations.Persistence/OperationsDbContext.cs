@@ -41,7 +41,7 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
 
         m.Entity<OperationsCase>(e =>
         {
-            e.ToTable("operations_cases");
+            e.ToTable("operations_cases", t => t.HasCheckConstraint("ck_operations_case_points", "complexity_points > 0 AND priority BETWEEN 1 AND 5"));
             e.HasKey(x => x.Id);
             e.Property(x => x.Idtra).HasMaxLength(32).IsRequired();
             e.Property(x => x.SeriesCode).HasMaxLength(5).IsRequired();
@@ -55,7 +55,6 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
             e.HasIndex(x => x.AccountId);
             e.HasIndex(x => x.SourceQuoteId);
             e.HasIndex(x => x.ExecutiveUserId);
-            e.HasCheckConstraint("ck_operations_case_points", "complexity_points > 0 AND priority BETWEEN 1 AND 5");
         });
         m.Entity<OperationsCaseSequence>(e =>
         {
@@ -72,6 +71,7 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
             e.Property(x => x.Status).HasMaxLength(30);
             e.Property(x => x.Version).IsConcurrencyToken();
             e.HasOne(x => x.Case).WithMany(x => x.Stages).HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<OperationsTeam>().WithMany().HasForeignKey(x => x.TeamId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => new { x.CaseId, x.DepartmentCode }).IsUnique();
             e.HasIndex(x => new { x.DepartmentCode, x.Status });
         });
@@ -81,15 +81,14 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
             e.HasKey(x => x.Id);
             e.Property(x => x.DepartmentCode).HasMaxLength(30);
             e.Property(x => x.Name).HasMaxLength(150);
-            e.HasIndex(x => new { x.DepartmentCode, x.Name }).IsUnique();
+            e.HasIndex(x => new { x.CompanyId, x.DepartmentCode, x.Name }).IsUnique();
         });
         m.Entity<OperationsTeamMember>(e =>
         {
-            e.ToTable("operations_team_members");
+            e.ToTable("operations_team_members", t => t.HasCheckConstraint("ck_operations_member_capacity", "capacity_points > 0"));
             e.HasKey(x => x.Id);
             e.HasOne(x => x.Team).WithMany(x => x.Members).HasForeignKey(x => x.TeamId).OnDelete(DeleteBehavior.Cascade);
             e.Property(x => x.CapacityPoints).HasPrecision(10, 2);
-            e.HasCheckConstraint("ck_operations_member_capacity", "capacity_points > 0");
             e.HasIndex(x => new { x.TeamId, x.UserId }).IsUnique();
         });
         m.Entity<OperationsAssignmentRule>(e =>
@@ -109,6 +108,7 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
             e.HasKey(x => x.Id);
             e.HasOne(x => x.CaseStage).WithMany().HasForeignKey(x => x.CaseStageId).OnDelete(DeleteBehavior.Cascade);
             e.Property(x => x.AssignedPoints).HasPrecision(10, 2);
+            e.HasOne<OperationsTeam>().WithMany().HasForeignKey(x => x.TeamId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => x.CaseStageId).IsUnique().HasFilter("released_at_utc IS NULL");
             e.HasIndex(x => new { x.UserId, x.ReleasedAtUtc });
         });

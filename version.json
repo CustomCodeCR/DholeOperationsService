@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "ecosystem": "Dhole",
   "component": "DholeOperationsService",
-  "version": "0.2.0",
-  "ecosystemVersion": "1.56.0",
-  "releaseId": "DH-20261114-API-MANAGER-ROUTE-DISCOVERY-143",
+  "version": "0.3.0",
+  "ecosystemVersion": "1.67.0",
+  "releaseId": "DH-20261116-OPS-FOUNDATION-183",
   "releaseStatus": "candidate-ci-and-staging-pending",
-  "businessReleaseId": "DH-20261114-API-MANAGER-ROUTE-DISCOVERY-143"
+  "businessReleaseId": "DH-20261116-OPS-FOUNDATION-183"
 }
