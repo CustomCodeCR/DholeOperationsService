@@ -37,13 +37,62 @@ public sealed class OperationsConfigSchemaMigrationTests
 
             await using (var legacy = new OperationsDbContext(options))
             {
-                var available = legacy.Database.GetMigrations().ToArray();
-                Assert.IsTrue(available.Any(x => x.EndsWith("_OperationsFirstTables", StringComparison.Ordinal)),
-                    "Cannot find legacy migration: " + string.Join(", ", available));
-                await legacy.Database.GetService<IMigrator>()
-                    .MigrateAsync("OperationsFirstTables");
+                // Build a minimal *legacy* public schema and migration history.
+                // The historic IDs have 12-digit prefixes; EF's target migration
+                // name parser cannot select them explicitly, so recreate the
+                // legacy catalog safely in this isolated disposable CI database.
                 await using var connection = new NpgsqlConnection(isolatedBuilder.ConnectionString);
                 await connection.OpenAsync();
+                var legacyTables = new[] {
+                    "operations_case_sequences", "operations_team_members",
+                    "operations_assignment_rules", "operations_stage_assignments",
+                    "operations_documents", "operations_document_versions",
+                    "operations_document_extraction_jobs", "operations_case_quote_links",
+                    "operations_case_quote_costs", "operations_case_milestones",
+                    "operations_case_tasks", "operations_case_notes", "operations_case_audit_entries"
+                };
+                await using (var setup = new NpgsqlCommand("""
+                    CREATE TABLE public."__EFMigrationsHistory" (
+                        "MigrationId" varchar(150) PRIMARY KEY, "ProductVersion" varchar(32) NOT NULL
+                    );
+                    INSERT INTO public."__EFMigrationsHistory" VALUES
+                      ('202611120001_InitialOperations','10.0.13'),
+                      ('202611162310_OperationsFoundation','10.0.13'),
+                      ('202611170310_OperationsFirstTables','10.0.13');
+                    CREATE TABLE public.operations_cases (id uuid PRIMARY KEY);
+                    CREATE TABLE public.operations_case_stages (
+                        id uuid PRIMARY KEY,
+                        case_id uuid NOT NULL REFERENCES public.operations_cases(id)
+                    );
+                    CREATE TABLE public.operations_teams (
+                        id uuid PRIMARY KEY, company_id uuid NOT NULL, department_code varchar(30) NOT NULL,
+                        name varchar(150) NOT NULL, is_active boolean NOT NULL
+                    );
+                    CREATE TABLE public.operations_outbox (
+                        "Id" uuid PRIMARY KEY,
+                        "EventName" varchar(200) NOT NULL,
+                        "PayloadJson" text NOT NULL,
+                        "OccurredAtUtc" timestamptz NOT NULL,
+                        "PublishedAtUtc" timestamptz NULL,
+                        "RetryCount" integer NOT NULL,
+                        "LastError" text NULL
+                    );
+                    CREATE TABLE public.operations_inbox (
+                        "ConsumerName" varchar(100) NOT NULL,
+                        "EventId" uuid NOT NULL,
+                        "EventName" varchar(200) NOT NULL,
+                        "PayloadJson" text NOT NULL,
+                        "ProcessedAtUtc" timestamptz NOT NULL,
+                        CONSTRAINT "PK_operations_inbox" PRIMARY KEY ("ConsumerName", "EventId")
+                    );
+                    """, connection))
+                    await setup.ExecuteNonQueryAsync();
+                foreach (var name in legacyTables)
+                {
+                    await using var createTable = new NpgsqlCommand(
+                        $"CREATE TABLE public.{name} (id uuid PRIMARY KEY)", connection);
+                    await createTable.ExecuteNonQueryAsync();
+                }
                 await using (var cmd = new NpgsqlCommand("""
                     INSERT INTO public.operations_outbox
                       ("Id","EventName","PayloadJson","OccurredAtUtc","PublishedAtUtc","RetryCount","LastError")
