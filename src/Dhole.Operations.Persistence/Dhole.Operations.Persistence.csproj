@@ -10,7 +10,7 @@
     <PackageReference Include="CustomCodeFramework.Postgres.EntityFramework" Version="0.2.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.13" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.13" />
-    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.2" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Dhole.Operations.Application/Dhole.Operations.Application.csproj" />
