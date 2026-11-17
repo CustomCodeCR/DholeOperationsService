@@ -17,6 +17,12 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
     public DbSet<OperationsDocument> Documents => Set<OperationsDocument>();
     public DbSet<OperationsDocumentVersion> DocumentVersions => Set<OperationsDocumentVersion>();
     public DbSet<OperationsDocumentExtractionJob> ExtractionJobs => Set<OperationsDocumentExtractionJob>();
+    public DbSet<OperationsCaseQuoteLink> CaseQuoteLinks => Set<OperationsCaseQuoteLink>();
+    public DbSet<OperationsCaseQuoteCost> CaseQuoteCosts => Set<OperationsCaseQuoteCost>();
+    public DbSet<OperationsCaseMilestone> CaseMilestones => Set<OperationsCaseMilestone>();
+    public DbSet<OperationsCaseTask> CaseTasks => Set<OperationsCaseTask>();
+    public DbSet<OperationsCaseNote> CaseNotes => Set<OperationsCaseNote>();
+    public DbSet<OperationsCaseAuditEntry> CaseAuditEntries => Set<OperationsCaseAuditEntry>();
 
     protected override void OnModelCreating(ModelBuilder m)
     {
@@ -145,6 +151,99 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
             e.Property(x => x.ValidationErrorsJson).HasColumnType("jsonb");
             e.HasIndex(x => new { x.DocumentVersionId, x.RequestedAtUtc });
             e.HasIndex(x => new { x.Status, x.RequestedAtUtc });
+        });
+
+        m.Entity<OperationsCaseQuoteLink>(e =>
+        {
+            e.ToTable("operations_case_quote_links", t => t.HasCheckConstraint(
+                "ck_operations_quote_snapshot_version", "snapshot_version >= 1"));
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Case).WithMany().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
+            e.Property(x => x.QuoteNumber).HasMaxLength(60);
+            e.Property(x => x.Status).HasMaxLength(30).IsRequired();
+            e.HasIndex(x => new { x.CaseId, x.LinkedAtUtc });
+            e.HasIndex(x => x.QuoteId);
+            e.HasIndex(x => x.CaseId).IsUnique().HasFilter("is_primary");
+        });
+        m.Entity<OperationsCaseQuoteCost>(e =>
+        {
+            e.ToTable("operations_case_quote_costs", t => t.HasCheckConstraint(
+                "ck_operations_quote_currency", "currency_code ~ '^[A-Z]{3}
+        foreach (var entity in m.Model.GetEntityTypes().Where(e =>
+            e.ClrType != typeof(OutboxMessage) && e.ClrType != typeof(InboxReceipt)))
+            foreach (var property in entity.GetProperties())
+                property.SetColumnName(ToSnakeCase(property.Name));
+    }
+
+    private static string ToSnakeCase(string s) =>
+        System.Text.RegularExpressions.Regex.Replace(s, "([a-z0-9])([A-Z])", "$1_$2").ToLowerInvariant();
+}
+"));
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.QuoteLink).WithMany(x => x.Costs).HasForeignKey(x => x.QuoteLinkId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.Property(x => x.SupplierName).HasMaxLength(200);
+            e.Property(x => x.CostCode).HasMaxLength(60).IsRequired();
+            e.Property(x => x.Description).HasMaxLength(500).IsRequired();
+            e.Property(x => x.CurrencyCode).HasMaxLength(3).IsRequired();
+            e.Property(x => x.CostAmount).HasPrecision(18, 4);
+            e.Property(x => x.SaleAmount).HasPrecision(18, 4);
+            e.HasIndex(x => x.QuoteLinkId);
+            e.HasIndex(x => x.SupplierId);
+            e.HasIndex(x => new { x.QuoteLinkId, x.SourceCostId }).IsUnique()
+                .HasFilter("source_cost_id IS NOT NULL");
+        });
+        m.Entity<OperationsCaseMilestone>(e =>
+        {
+            e.ToTable("operations_case_milestones");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Case).WithMany().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.CaseStage).WithMany().HasForeignKey(x => x.CaseStageId).OnDelete(DeleteBehavior.Restrict);
+            e.Property(x => x.MilestoneCode).HasMaxLength(60).IsRequired();
+            e.Property(x => x.Title).HasMaxLength(200).IsRequired();
+            e.Property(x => x.Status).HasMaxLength(30).IsRequired();
+            e.HasIndex(x => new { x.CaseId, x.PlannedAtUtc });
+            e.HasIndex(x => x.CaseStageId);
+        });
+        m.Entity<OperationsCaseTask>(e =>
+        {
+            e.ToTable("operations_case_tasks", t => t.HasCheckConstraint(
+                "ck_operations_task_priority", "priority BETWEEN 1 AND 5"));
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Case).WithMany().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.CaseStage).WithMany().HasForeignKey(x => x.CaseStageId).OnDelete(DeleteBehavior.Restrict);
+            e.Property(x => x.Title).HasMaxLength(200).IsRequired();
+            e.Property(x => x.Details).HasColumnType("text");
+            e.Property(x => x.Status).HasMaxLength(30).IsRequired();
+            e.Property(x => x.Version).IsConcurrencyToken();
+            e.HasIndex(x => new { x.CaseId, x.Status, x.DueAtUtc });
+            e.HasIndex(x => new { x.AssignedUserId, x.Status, x.DueAtUtc });
+            e.HasIndex(x => x.CaseStageId);
+        });
+        m.Entity<OperationsCaseNote>(e =>
+        {
+            e.ToTable("operations_case_notes");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Case).WithMany().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.CaseStage).WithMany().HasForeignKey(x => x.CaseStageId).OnDelete(DeleteBehavior.Restrict);
+            e.Property(x => x.Content).HasColumnType("text").IsRequired();
+            e.Property(x => x.Visibility).HasMaxLength(20).IsRequired();
+            e.HasIndex(x => new { x.CaseId, x.CreatedAtUtc });
+            e.HasIndex(x => x.CaseStageId);
+        });
+        m.Entity<OperationsCaseAuditEntry>(e =>
+        {
+            e.ToTable("operations_case_audit_entries");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Case).WithMany().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.CaseStage).WithMany().HasForeignKey(x => x.CaseStageId).OnDelete(DeleteBehavior.Restrict);
+            e.Property(x => x.ActionCode).HasMaxLength(100).IsRequired();
+            e.Property(x => x.BeforeJson).HasColumnType("jsonb");
+            e.Property(x => x.AfterJson).HasColumnType("jsonb");
+            e.Property(x => x.CorrelationId).HasMaxLength(100);
+            e.HasIndex(x => x.EventId).IsUnique();
+            e.HasIndex(x => new { x.CaseId, x.OccurredAtUtc });
+            e.HasIndex(x => x.CaseStageId);
         });
 
         // Keep legacy Outbox/Inbox columns untouched to preserve the existing database.
