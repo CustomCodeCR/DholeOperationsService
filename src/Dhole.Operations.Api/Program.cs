@@ -59,13 +59,13 @@ var app = builder.Build();
 app.UseCors("DholeWebCors");
 app.UseAuthentication();
 app.UseAuthorization();
-app.MapGet("/health", () => Results.Ok(new { service = "DholeOperationsService", status = "Healthy", timeUtc = DateTimeOffset.UtcNow }))
+app.MapGet("/health", () => Results.Ok(new { service = "DholeOperationsService", status = "Healthy", version = typeof(Program).Assembly.GetName().Version?.ToString(3), timeUtc = DateTimeOffset.UtcNow }))
    .AllowAnonymous();
 app.MapGet("/ready", async (OperationsDbContext db, IConnectionMultiplexer redis, CancellationToken ct) =>
 {
     if (!await db.Database.CanConnectAsync(ct) || !redis.IsConnected)
         return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
-    return Results.Ok(new { status = "Ready" });
+    return Results.Ok(new { status = "Ready", version = typeof(Program).Assembly.GetName().Version?.ToString(3) });
 }).AllowAnonymous();
 
 app.MapGet("/api/operations/realtime/events", async (
