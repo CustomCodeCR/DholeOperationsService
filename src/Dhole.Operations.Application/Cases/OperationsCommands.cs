@@ -4,11 +4,11 @@ namespace Dhole.Operations.Application.Cases;
 
 public sealed record CreateManualCaseCommand(
     Guid CompanyId, string SeriesCode, Guid AccountId, Guid ExecutiveUserId,
-    string ModalityCode, short Priority, decimal ComplexityPoints, Guid ActorUserId);
+    string ModalityCode, short Priority, decimal ComplexityPoints, Guid ActorUserId,
+    string? OriginCountryCode = null, string? DestinationCountryCode = null);
 
 public sealed record AssignStageCommand(
-    Guid CaseId, Guid StageId, Guid ActorUserId, string? OriginCountryCode,
-    string? DestinationCountryCode);
+    Guid CaseId, Guid StageId, Guid ActorUserId);
 
 public sealed record RegisterDocumentCommand(
     Guid CaseId, string DocumentTypeCode, Guid StorageFileId,
@@ -42,8 +42,13 @@ public sealed class CreateManualCaseHandler(IOperationsCaseStore store)
             throw new ArgumentException("A recognized modality code is required.");
         if (command.Priority is < 1 or > 5 || command.ComplexityPoints <= 0 || command.ComplexityPoints > 1000)
             throw new ArgumentException("Priority or complexity points out of range.");
+        if (!IsCountryCode(command.OriginCountryCode) || !IsCountryCode(command.DestinationCountryCode))
+            throw new ArgumentException("Country codes must be two ISO alphabetic characters when provided.");
         return store.CreateManualAsync(command, ct);
     }
+
+    private static bool IsCountryCode(string? value) => value is null ||
+        (value.Length == 2 && value.All(c => c is >= 'A' and <= 'Z' or >= 'a' and <= 'z'));
 }
 
 public sealed class AssignStageHandler(IOperationsCaseStore store)

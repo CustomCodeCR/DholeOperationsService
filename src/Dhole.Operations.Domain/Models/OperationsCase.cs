@@ -14,6 +14,8 @@ public sealed class OperationsCase
     public Guid? SourceQuoteOptionId { get; set; }
     public string ApertureType { get; set; } = "MANUAL";
     public string ModalityCode { get; set; } = string.Empty;
+    public string? OriginCountryCode { get; set; }
+    public string? DestinationCountryCode { get; set; }
     public string Status { get; set; } = "PENDING_VALIDATION";
     public short Priority { get; set; } = 1;
     public decimal ComplexityPoints { get; set; } = 1m;

@@ -41,8 +41,7 @@ public sealed class OperationsCaseAccess(OperationsDbContext db)
                 assignment.CaseStageId == stage.Id &&
                 assignment.UserId == actor.Value && assignment.ReleasedAtUtc == null)) ||
             x.Stages.Any(stage => stage.TeamId.HasValue &&
-                db.TeamMembers.Any(m => m.TeamId == stage.TeamId && m.UserId == actor.Value &&
-                    m.IsAvailable)), ct);
+                db.TeamMembers.Any(m => m.TeamId == stage.TeamId && m.UserId == actor.Value)), ct);
     }
 
     public async Task<Guid[]> AccessibleCaseIdsAsync(Guid[] caseIds, ClaimsPrincipal user, CancellationToken ct)
@@ -56,7 +55,7 @@ public sealed class OperationsCaseAccess(OperationsDbContext db)
                     assignment.CaseStageId == stage.Id &&
                     assignment.UserId == actor.Value && assignment.ReleasedAtUtc == null)) ||
                 x.Stages.Any(stage => stage.TeamId.HasValue &&
-                    db.TeamMembers.Any(m => m.TeamId == stage.TeamId && m.UserId == actor.Value && m.IsAvailable)));
+                    db.TeamMembers.Any(m => m.TeamId == stage.TeamId && m.UserId == actor.Value)));
         return await query.Select(x => x.Id).ToArrayAsync(ct);
     }
 }

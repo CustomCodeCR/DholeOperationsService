@@ -79,7 +79,7 @@ public sealed class OperationsPostgresTests
                 Guid.NewGuid(), Guid.NewGuid(), "FCL", 1, 2m, Guid.NewGuid()), CancellationToken.None);
         var handler = new AssignStageHandler(new OperationsCaseStore(db));
         var assigned = await handler.HandleAsync(
-            new AssignStageCommand(caseResult.Id, caseResult.InitialStageId, Guid.NewGuid(), null, null),
+            new AssignStageCommand(caseResult.Id, caseResult.InitialStageId, Guid.NewGuid()),
             CancellationToken.None);
 
         Assert.IsNotNull(assigned);
@@ -87,7 +87,7 @@ public sealed class OperationsPostgresTests
         Assert.AreEqual(team.Id, assigned.TeamId);
 
         var repeated = await handler.HandleAsync(
-            new AssignStageCommand(caseResult.Id, caseResult.InitialStageId, Guid.NewGuid(), null, null),
+            new AssignStageCommand(caseResult.Id, caseResult.InitialStageId, Guid.NewGuid()),
             CancellationToken.None);
         Assert.IsNull(repeated);
         Assert.AreEqual(1, await db.StageAssignments.CountAsync(

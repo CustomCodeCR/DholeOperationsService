@@ -27,6 +27,8 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
             AccountId = input.AccountId,
             ExecutiveUserId = input.ExecutiveUserId,
             ModalityCode = input.ModalityCode.Trim().ToUpperInvariant(),
+            OriginCountryCode = input.OriginCountryCode?.ToUpperInvariant(),
+            DestinationCountryCode = input.DestinationCountryCode?.ToUpperInvariant(),
             Priority = input.Priority,
             ComplexityPoints = input.ComplexityPoints,
             CreatedBy = input.ActorUserId
@@ -57,8 +59,9 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
         if (await db.StageAssignments.AnyAsync(x => x.CaseStageId == stage.Id && x.ReleasedAtUtc == null, ct))
             return null;
 
-        var origin = input.OriginCountryCode?.Trim().ToUpperInvariant();
-        var destination = input.DestinationCountryCode?.Trim().ToUpperInvariant();
+        // Routing predicates always derive from persisted case data, not caller-supplied assign parameters.
+        var origin = operation.OriginCountryCode;
+        var destination = operation.DestinationCountryCode;
         var rules = await db.AssignmentRules.AsNoTracking()
             .Include(x => x.Team).ThenInclude(x => x.Members)
             .Where(x => x.IsActive && x.Team.IsActive && x.Team.CompanyId == operation.CompanyId &&

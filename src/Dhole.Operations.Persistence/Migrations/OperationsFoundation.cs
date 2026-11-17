@@ -24,6 +24,8 @@ public sealed class OperationsFoundation : Migration
                 source_quote_option_id uuid NULL,
                 aperture_type varchar(20) NOT NULL,
                 modality_code varchar(30) NOT NULL,
+                origin_country_code varchar(2) NULL,
+                destination_country_code varchar(2) NULL,
                 status varchar(40) NOT NULL,
                 priority smallint NOT NULL,
                 complexity_points numeric(10,2) NOT NULL,

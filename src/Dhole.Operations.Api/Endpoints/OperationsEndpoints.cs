@@ -10,14 +10,14 @@ public static class OperationsEndpoints
 {
     public sealed record NewCaseRequest(
         Guid CompanyId, string SeriesCode, Guid AccountId, Guid ExecutiveUserId,
-        string ModalityCode, short Priority = 1, decimal ComplexityPoints = 1m);
+        string ModalityCode, short Priority = 1, decimal ComplexityPoints = 1m,
+        string? OriginCountryCode = null, string? DestinationCountryCode = null);
 
     public sealed record NewTeamRequest(Guid CompanyId, string DepartmentCode, string Name);
     public sealed record NewMemberRequest(Guid UserId, decimal CapacityPoints, bool IsSupervisor, bool IsAvailable = true);
     public sealed record NewAssignmentRuleRequest(
         Guid TeamId, string DepartmentCode, string? ModalityCode,
         string? OriginCountryCode, string? DestinationCountryCode, int Priority = 0);
-    public sealed record AssignStageRequest(string? OriginCountryCode, string? DestinationCountryCode);
     public sealed record NewDocumentRequest(
         string DocumentTypeCode, Guid StorageFileId, string FileName, string MimeType, string? Sha256);
 
@@ -38,7 +38,8 @@ public static class OperationsEndpoints
                 var result = await handler.HandleAsync(
                     new CreateManualCaseCommand(request.CompanyId, request.SeriesCode,
                         request.AccountId, request.ExecutiveUserId, request.ModalityCode,
-                        request.Priority, request.ComplexityPoints, actor.Value), ct);
+                        request.Priority, request.ComplexityPoints, actor.Value,
+                        request.OriginCountryCode, request.DestinationCountryCode), ct);
                 return Results.Created($"/api/operations/cases/{result.Id}", result);
             }
             catch (ArgumentException e) { return Results.BadRequest(new { error = e.Message }); }
@@ -52,7 +53,8 @@ public static class OperationsEndpoints
                 .Select(x => new
                 {
                     x.Id, x.Idtra, x.CompanyId, x.AccountId, x.ExecutiveUserId,
-                    x.ModalityCode, x.ApertureType, x.Status, x.Priority, x.CreatedAtUtc,
+                    x.ModalityCode, x.OriginCountryCode, x.DestinationCountryCode,
+                    x.ApertureType, x.Status, x.Priority, x.CreatedAtUtc,
                     x.UpdatedAtUtc, x.Version,
                     Stages = x.Stages.Select(s => new { s.Id, s.DepartmentCode, s.Status, s.TeamId, s.Version })
                 }).SingleAsync(ct);
@@ -86,15 +88,14 @@ public static class OperationsEndpoints
         });
 
         api.MapPost("/cases/{id:guid}/stages/{stageId:guid}/assign", async (
-            Guid id, Guid stageId, AssignStageRequest request, HttpContext http,
+            Guid id, Guid stageId, HttpContext http,
             OperationsCaseAccess access, AssignStageHandler handler, CancellationToken ct) =>
         {
             var actor = OperationsCaseAccess.UserId(http.User);
             if (actor is null || !OperationsCaseAccess.HasScope(http.User, "operations.assignment.manage") ||
                 !await access.CanReadAsync(id, http.User, ct)) return Results.Forbid();
             var result = await handler.HandleAsync(
-                new AssignStageCommand(id, stageId, actor.Value,
-                    request.OriginCountryCode, request.DestinationCountryCode), ct);
+                new AssignStageCommand(id, stageId, actor.Value), ct);
             return result is null ? Results.Conflict(new { error = "Stage closed, already assigned, or no eligible pool candidate." })
                 : Results.Ok(result);
         });

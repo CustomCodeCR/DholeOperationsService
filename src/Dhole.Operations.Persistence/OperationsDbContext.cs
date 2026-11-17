@@ -47,6 +47,8 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
             e.Property(x => x.SeriesCode).HasMaxLength(5).IsRequired();
             e.Property(x => x.ModalityCode).HasMaxLength(30).IsRequired();
             e.Property(x => x.ApertureType).HasMaxLength(20).IsRequired();
+            e.Property(x => x.OriginCountryCode).HasMaxLength(2);
+            e.Property(x => x.DestinationCountryCode).HasMaxLength(2);
             e.Property(x => x.Status).HasMaxLength(40).IsRequired();
             e.Property(x => x.ComplexityPoints).HasPrecision(10, 2);
             e.Property(x => x.Version).IsConcurrencyToken();
