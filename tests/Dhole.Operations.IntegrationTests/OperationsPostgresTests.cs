@@ -36,11 +36,17 @@ public sealed class OperationsPostgresTests
 
         await using var verification = NewDb();
         Assert.AreEqual(12, await verification.Cases.CountAsync(x => x.CompanyId == companyId));
-        Assert.AreEqual(12, await verification.OutboxMessages.CountAsync(
-            x => x.EventName == "operations.case.created.v1" &&
-                results.Select(a => a.Id).Contains(
-                    // Payload is not a normalized lookup: verify only that events exist for this test run.
-                    Guid.Empty)) == 0 ? 12 : 0);
+        var expectedIds = results.Select(x => x.Id).ToHashSet();
+        var payloads = await verification.OutboxMessages.AsNoTracking()
+            .Where(x => x.EventName == "operations.case.created.v1")
+            .Select(x => x.PayloadJson).ToArrayAsync();
+        var matchingEvents = payloads.Count(payload =>
+        {
+            using var json = System.Text.Json.JsonDocument.Parse(payload);
+            return Guid.TryParse(json.RootElement.GetProperty("caseId").GetString(), out var id)
+                && expectedIds.Contains(id);
+        });
+        Assert.AreEqual(12, matchingEvents);
     }
 
     [TestMethod]
