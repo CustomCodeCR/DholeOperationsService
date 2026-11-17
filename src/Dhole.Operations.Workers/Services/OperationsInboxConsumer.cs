@@ -1,4 +1,4 @@
-using Dhole.Operations.Domain.Models;
+using CustomCodeFramework.Messaging.Inbox;
 using Dhole.Operations.Persistence;
 using Microsoft.EntityFrameworkCore;
 using StackExchange.Redis;
@@ -38,16 +38,24 @@ public sealed class OperationsInboxConsumer(
                     }
                     using var scope = scopeFactory.CreateScope();
                     var db = scope.ServiceProvider.GetRequiredService<OperationsDbContext>();
-                    if (!await db.InboxReceipts.AnyAsync(x =>
-                        x.ConsumerName == "operations-realtime" && x.EventId == eventId, stoppingToken))
+                    if (!await db.InboxMessages.AnyAsync(x =>
+                        x.ConsumerService == "operations-realtime" && x.EventId == eventId, stoppingToken))
                     {
                         var type = entry.Values.FirstOrDefault(x => x.Name == "type").Value.ToString() ?? "";
                         var payload = entry.Values.FirstOrDefault(x => x.Name == "data").Value.ToString() ?? "{}";
-                        db.InboxReceipts.Add(new InboxReceipt
+                        var receipt = new InboxMessage
                         {
-                            ConsumerName = "operations-realtime", EventId = eventId, EventName = type,
-                            PayloadJson = payload, ProcessedAtUtc = DateTimeOffset.UtcNow
-                        });
+                            ConsumerService = "operations-realtime",
+                            SourceService = "DholeOperationsService",
+                            EventId = eventId,
+                            EventType = type,
+                            EventName = type,
+                            Status = InboxMessageStatus.Processed,
+                            ProcessedAtUtc = DateTime.UtcNow,
+                            CreatedAtUtc = DateTime.UtcNow
+                        };
+                        db.InboxMessages.Add(receipt);
+                        db.Entry(receipt).Property("PayloadJson").CurrentValue = payload;
                         await db.SaveChangesAsync(stoppingToken);
                         await redis.GetSubscriber().PublishAsync(RedisChannel.Literal("dhole.operations.realtime"),
                             System.Text.Json.JsonSerializer.Serialize(new { eventId, type, payload }));

@@ -1,12 +1,16 @@
 using Dhole.Operations.Domain.Models;
+using CustomCodeFramework.Messaging.Outbox;
+using CustomCodeFramework.Messaging.Inbox;
+using CustomCodeFramework.Postgres.EntityFramework.DbContexts;
+using CustomCodeFramework.Postgres.EntityFramework.Configurations;
 using Microsoft.EntityFrameworkCore;
 
 namespace Dhole.Operations.Persistence;
 
-public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> options) : DbContext(options)
+public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> options) : AppDbContextBase(options)
 {
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
-    public DbSet<InboxReceipt> InboxReceipts => Set<InboxReceipt>();
+    public DbSet<InboxMessage> InboxMessages => Set<InboxMessage>();
     public DbSet<OperationsCase> Cases => Set<OperationsCase>();
     public DbSet<OperationsCaseSequence> CaseSequences => Set<OperationsCaseSequence>();
     public DbSet<OperationsCaseStage> CaseStages => Set<OperationsCaseStage>();
@@ -26,24 +30,15 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
 
     protected override void OnModelCreating(ModelBuilder m)
     {
-        m.Entity<OutboxMessage>(e =>
-        {
-            e.ToTable("operations_outbox");
-            e.HasKey(x => x.Id);
-            e.Property(x => x.EventName).HasMaxLength(200).IsRequired();
-            e.Property(x => x.PayloadJson).HasColumnType("text").IsRequired();
-            e.Property(x => x.LastError).HasColumnType("text");
-            e.HasIndex(x => new { x.PublishedAtUtc, x.OccurredAtUtc });
-        });
-        m.Entity<InboxReceipt>(e =>
-        {
-            e.ToTable("operations_inbox");
-            e.HasKey(x => new { x.ConsumerName, x.EventId });
-            e.Property(x => x.ConsumerName).HasMaxLength(100);
-            e.Property(x => x.EventName).HasMaxLength(200).IsRequired();
-            e.Property(x => x.PayloadJson).HasColumnType("text").IsRequired();
-            e.HasIndex(x => x.ProcessedAtUtc);
-        });
+        // Exact same framework mappings and message entities as DholeConfigService.
+        m.HasDefaultSchema("operations");
+        base.OnModelCreating(m);
+        m.ApplyConfiguration(new OutboxMessageConfiguration());
+        m.ApplyConfiguration(new InboxMessageConfiguration());
+        // Config inbox does not retain payloads. Operations needs payload for
+        // authorized SignalR replay, so an additional shadow column is retained.
+        m.Entity<InboxMessage>().Property<string>("PayloadJson")
+            .HasColumnName("payload_json").HasColumnType("text").IsRequired();
 
         m.Entity<OperationsCase>(e =>
         {
@@ -237,9 +232,10 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
             e.HasIndex(x => x.CaseStageId);
         });
 
-        // Keep legacy Outbox/Inbox columns untouched to preserve the existing database.
+        // Business entities use the established snake_case convention from Config.
+        // Messaging columns are mapped by CustomCodeFramework configurations.
         foreach (var entity in m.Model.GetEntityTypes().Where(e =>
-            e.ClrType != typeof(OutboxMessage) && e.ClrType != typeof(InboxReceipt)))
+            e.ClrType != typeof(OutboxMessage) && e.ClrType != typeof(InboxMessage)))
             foreach (var property in entity.GetProperties())
                 property.SetColumnName(ToSnakeCase(property.Name));
     }
