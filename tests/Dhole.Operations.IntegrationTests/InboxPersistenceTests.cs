@@ -1,4 +1,4 @@
-using Dhole.Operations.Domain.Models;
+using CustomCodeFramework.Messaging.Inbox;
 using Dhole.Operations.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -14,17 +14,22 @@ public sealed class InboxPersistenceTests
         var eventId = Guid.NewGuid();
         await using (var db = new OperationsDbContext(options))
         {
-            db.InboxReceipts.Add(new InboxReceipt
+            var receipt = new InboxMessage
             {
-                ConsumerName = "operations-realtime", EventId = eventId,
-                EventName = "operations.changed", PayloadJson = "{}"
-            });
+                ConsumerService = "operations-realtime", SourceService = "DholeOperationsService",
+                EventId = eventId, EventType = "operations.changed",
+                EventName = "operations.changed",
+                Status = InboxMessageStatus.Processed,
+                ProcessedAtUtc = DateTime.UtcNow
+            };
+            db.InboxMessages.Add(receipt);
+            db.Entry(receipt).Property("PayloadJson").CurrentValue = "{}";
             await db.SaveChangesAsync();
         }
         await using (var db = new OperationsDbContext(options))
         {
-            Assert.IsTrue(await db.InboxReceipts.AnyAsync(x =>
-                x.ConsumerName == "operations-realtime" && x.EventId == eventId));
+            Assert.IsTrue(await db.InboxMessages.AnyAsync(x =>
+                x.ConsumerService == "operations-realtime" && x.EventId == eventId));
         }
     }
 }

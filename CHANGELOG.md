@@ -1,3 +1,10 @@
+## [0.4.1] - 2026-11-17 (DH-186 · Alineación con DholeConfigService)
+
+- PATCH: corrige el esquema de Operations de public a operations sin copiar ni perder expedientes, proveedores, QUO, documentos, índices o claves foráneas.
+- Sustituye la mensajería casera por OutboxMessage/InboxMessage y sus configuraciones oficiales de CustomCodeFramework como DholeConfigService; tablas operations.outbox_messages y operations.inbox_messages, preservando event ID, estatus y payload de replay.
+- Redis Streams, consumidores, endpoints REST, SignalR y scripts SQL utilizan la nueva estructura. Migración aditiva transaccional verificable; no se autoriza rollback destructivo.
+- Operations 0.4.0 → 0.4.1; global 1.69.0 → 1.69.1.
+
 ## [0.4.0] - 2026-11-17 (DH-185 · Primeras tablas de operaciones)
 
 - MINOR: seis tablas relacionales adicionales para QUO y costos/proveedores referenciados, hitos, tareas, notas y auditoría; se mantienen las doce tablas anteriores y sus registros.

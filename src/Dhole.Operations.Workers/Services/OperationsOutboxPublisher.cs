@@ -1,3 +1,4 @@
+using CustomCodeFramework.Messaging.Outbox;
 using Dhole.Operations.Persistence;
 using Microsoft.EntityFrameworkCore;
 using StackExchange.Redis;
@@ -21,27 +22,28 @@ public sealed class OperationsOutboxPublisher(
                 using var scope = scopeFactory.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<OperationsDbContext>();
                 var entries = await db.OutboxMessages
-                    .Where(x => x.PublishedAtUtc == null)
-                    .OrderBy(x => x.OccurredAtUtc).Take(50).ToListAsync(stoppingToken);
+                    .Where(x => x.Status == OutboxMessageStatus.Pending)
+                    .OrderBy(x => x.CreatedAtUtc).Take(50).ToListAsync(stoppingToken);
                 foreach (var entry in entries)
                 {
                     try
                     {
                         await redis.GetDatabase().StreamAddAsync(stream, new NameValueEntry[]
                         {
-                            new("id", entry.Id.ToString("D")),
+                            new("id", entry.EventId.ToString("D")),
                             new("type", entry.EventName),
                             new("data", entry.PayloadJson),
-                            new("occurredAt", entry.OccurredAtUtc.ToString("O"))
+                            new("occurredAt", entry.CreatedAtUtc.ToString("O"))
                         });
-                        entry.PublishedAtUtc = DateTimeOffset.UtcNow;
-                        entry.LastError = null;
+                        entry.Status = OutboxMessageStatus.Processed;
+                        entry.ProcessedAtUtc = DateTime.UtcNow;
+                        entry.ErrorMessage = null;
                     }
                     catch (Exception ex)
                     {
                         entry.RetryCount++;
-                        entry.LastError = ex.Message;
-                        logger.LogError(ex, "Publishing Operations event {EventId} failed", entry.Id);
+                        entry.ErrorMessage = ex.Message;
+                        logger.LogError(ex, "Publishing Operations event {EventId} failed", entry.EventId);
                         break;
                     }
                 }
