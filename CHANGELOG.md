@@ -1,3 +1,13 @@
+## [0.3.0] - 2026-11-16 (DH-183 · Operations backend foundation)
+
+- MINOR: operaciones manuales con IDTRA transaccional y primer estado de Aperturas, arquitectura por capas análoga a Config.
+- Pool de equipos multiempresa, capacidad y asignación automática ponderada; bloqueos PostgreSQL y auditoría de eventos duraderos.
+- Documento/versión/Storage y cola de extracción preparada; la ejecución del parser DataExtraction/AI y validación humana queda para la fase contractual.
+- SignalR por expediente autorizado y replay REST sanitizado; no se difunden datos comerciales a Clients.All.
+- Migración aditiva preservando operations_outbox/inbox, pruebas iniciales de validación y versión global Dhole 1.67.0.
+- Candidato en rama intermedia: dotnet build/test, migraciones y staging pendientes; sin promoción ni despliegue a producción.
+
+
 ## [0.2.0] - 2026-11-14 (API Manager discovery)
 
 - MINOR: inventario de rutas Operations solo para integraciones autenticadas; conserva idempotencia de eventos y SignalR.
