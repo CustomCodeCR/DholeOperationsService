@@ -42,11 +42,10 @@ public sealed class OperationsFoundation : Migration
 
             CREATE TABLE operations_case_sequences (
                 id uuid PRIMARY KEY,
-                company_id uuid NOT NULL,
                 series_code varchar(5) NOT NULL,
                 last_number bigint NOT NULL,
                 updated_at_utc timestamptz NOT NULL,
-                UNIQUE(company_id, series_code)
+                UNIQUE(series_code)
             );
             CREATE TABLE operations_teams (
                 id uuid PRIMARY KEY,

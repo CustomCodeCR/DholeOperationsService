@@ -63,7 +63,7 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
             e.ToTable("operations_case_sequences");
             e.HasKey(x => x.Id);
             e.Property(x => x.SeriesCode).HasMaxLength(5);
-            e.HasIndex(x => new { x.CompanyId, x.SeriesCode }).IsUnique();
+            e.HasIndex(x => x.SeriesCode).IsUnique();
         });
         m.Entity<OperationsCaseStage>(e =>
         {

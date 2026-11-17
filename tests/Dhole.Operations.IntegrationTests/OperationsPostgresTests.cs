@@ -30,9 +30,20 @@ public sealed class OperationsPostgresTests
         var results = await Task.WhenAll(openings);
 
         Assert.AreEqual(12, results.Select(x => x.Idtra).Distinct().Count());
-        CollectionAssert.AreEquivalent(
-            Enumerable.Range(1, 12).Select(x => $"IDTRA-00000-{x:000000}").ToArray(),
-            results.Select(x => x.Idtra).ToArray());
+        // Series are global across companies; tests must not assume the first issued value is 1.
+        var assignedNumbers = results.Select(x => long.Parse(x.Idtra.Split('-')[2]))
+            .Order().ToArray();
+        Assert.AreEqual(12, assignedNumbers.Distinct().Count());
+        Assert.IsTrue(assignedNumbers[0] >= 1 && assignedNumbers[^1] <= 999999);
+        for (var i = 1; i < assignedNumbers.Length; i++)
+            Assert.AreEqual(assignedNumbers[i - 1] + 1, assignedNumbers[i]);
+
+        await using var anotherCompanyDb = NewDb();
+        var otherCompany = await new CreateManualCaseHandler(new OperationsCaseStore(anotherCompanyDb))
+            .HandleAsync(new CreateManualCaseCommand(Guid.NewGuid(), "00000",
+                Guid.NewGuid(), Guid.NewGuid(), "FCL", 1, 1m, Guid.NewGuid()), CancellationToken.None);
+        Assert.IsFalse(results.Any(x => x.Idtra == otherCompany.Idtra),
+            "Cases belonging to different companies must never share a visible IDTRA.");
 
         await using var verification = NewDb();
         Assert.AreEqual(12, await verification.Cases.CountAsync(x => x.CompanyId == companyId));

@@ -14,7 +14,7 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
     public async Task<CaseCreatedResult> CreateManualAsync(CreateManualCaseCommand input, CancellationToken ct)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
-        var next = await NextSequenceAsync(input.CompanyId, input.SeriesCode, ct);
+        var next = await NextSequenceAsync(input.SeriesCode, ct);
         if (next > 999999) throw new InvalidOperationException("IDTRA series exhausted; configure a new approved series.");
 
         var idtra = $"IDTRA-{input.SeriesCode}-{next:000000}";
@@ -158,18 +158,17 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
         return new DocumentExtractionQueuedResult(job.Id, job.Status);
     }
 
-    private async Task<long> NextSequenceAsync(Guid companyId, string seriesCode, CancellationToken ct)
+    private async Task<long> NextSequenceAsync(string seriesCode, CancellationToken ct)
     {
         var connection = (NpgsqlConnection)db.Database.GetDbConnection();
         await using var cmd = new NpgsqlCommand("""
-            INSERT INTO operations_case_sequences (id, company_id, series_code, last_number, updated_at_utc)
-            VALUES (@id, @company, @series, 1, now())
-            ON CONFLICT (company_id, series_code)
+            INSERT INTO operations_case_sequences (id, series_code, last_number, updated_at_utc)
+            VALUES (@id, @series, 1, now())
+            ON CONFLICT (series_code)
             DO UPDATE SET last_number = operations_case_sequences.last_number + 1, updated_at_utc = now()
             RETURNING last_number;
             """, connection, (NpgsqlTransaction)db.Database.CurrentTransaction!.GetDbTransaction());
         cmd.Parameters.AddWithValue("id", Guid.NewGuid());
-        cmd.Parameters.AddWithValue("company", companyId);
         cmd.Parameters.AddWithValue("series", seriesCode);
         return Convert.ToInt64(await cmd.ExecuteScalarAsync(ct));
     }

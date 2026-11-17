@@ -29,7 +29,6 @@ public sealed class OperationsCase
 public sealed class OperationsCaseSequence
 {
     public Guid Id { get; set; } = Guid.NewGuid();
-    public Guid CompanyId { get; set; }
     public string SeriesCode { get; set; } = string.Empty;
     public long LastNumber { get; set; }
     public DateTimeOffset UpdatedAtUtc { get; set; } = DateTimeOffset.UtcNow;

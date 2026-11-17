@@ -6,7 +6,7 @@ Operations mantiene las capas Api, Application, Contracts, Domain, Infrastructur
 
 ## Entregado en esta primera iteración
 
-- Creación manual de expediente con UUID técnico y IDTRA transaccional, sin MAX+1. La serie de cinco dígitos debe indicarse explícitamente hasta que negocio defina su significado.
+- Creación manual de expediente con UUID técnico e IDTRA transaccional, sin MAX+1. La numeración se controla globalmente por serie (no por empresa), porque IDTRA es único en todo Dhole; dos empresas que usan la misma serie jamás deben producir identificadores visibles idénticos. El significado de los cinco dígitos sigue pendiente de decisión de negocio.
 - Primera etapa APERTURAS, pendiente de validación. No se marca como validada ni se simula una QUO aceptada.
 - Pool multiempresa con equipos, miembros, puntos de capacidad, disponibilidad, reglas por modalidad/ruta y asignación de menor carga proyectada. Bloqueo advisory transaccional por empresa/departamento y restricción única para asignaciones vigentes.
 - Documentos representados por metadatos, referencias de Storage, versiones y solicitudes de extracción persistidas. Ningún binario se almacena en Operations PostgreSQL.
