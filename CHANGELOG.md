@@ -1,3 +1,9 @@
+## [0.3.1] - 2026-11-17 (DH-184 · Operations PostgreSQL bootstrap + gateway readiness)
+
+- PATCH: provisionamiento idempotente y no destructivo de dhole_operations en staging y producción antes de arrancar API y workers; bloquea nombres SQL inválidos y valida PostgreSQL.
+- /health y /ready entregan versión real del ensamblado para monitoreo sin confundir la versión registrada con la desplegada.
+- CI y pruebas de bootstrap; ecosistema Dhole 1.67.0 → 1.68.0.
+
 ## [0.3.0] - 2026-11-16 (DH-183 · Operations backend foundation)
 
 - MINOR: operaciones manuales con IDTRA transaccional y primer estado de Aperturas, arquitectura por capas análoga a Config.
