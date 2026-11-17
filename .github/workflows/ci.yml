@@ -11,7 +11,22 @@ permissions:
 jobs:
   build-test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: operations_ci
+          POSTGRES_PASSWORD: operations_ci
+          POSTGRES_DB: operations_ci
+        ports:
+          - 54321:5432
+        options: >-
+          --health-cmd "pg_isready -U operations_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
+      DHOLE_TEST_POSTGRES: Host=localhost;Port=54321;Database=operations_ci;Username=operations_ci;Password=operations_ci
       NuGetPackageSourceCredentials_github: Username=github-actions;Password=${{ secrets.GITHUB_TOKEN }};ValidAuthenticationTypes=Basic
     steps:
       - uses: actions/checkout@v4
