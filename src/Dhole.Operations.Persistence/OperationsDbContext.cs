@@ -153,6 +153,7 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
             e.HasIndex(x => new { x.Status, x.RequestedAtUtc });
         });
 
+
         m.Entity<OperationsCaseQuoteLink>(e =>
         {
             e.ToTable("operations_case_quote_links", t => t.HasCheckConstraint(
@@ -168,17 +169,7 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
         m.Entity<OperationsCaseQuoteCost>(e =>
         {
             e.ToTable("operations_case_quote_costs", t => t.HasCheckConstraint(
-                "ck_operations_quote_currency", "currency_code ~ '^[A-Z]{3}
-        foreach (var entity in m.Model.GetEntityTypes().Where(e =>
-            e.ClrType != typeof(OutboxMessage) && e.ClrType != typeof(InboxReceipt)))
-            foreach (var property in entity.GetProperties())
-                property.SetColumnName(ToSnakeCase(property.Name));
-    }
-
-    private static string ToSnakeCase(string s) =>
-        System.Text.RegularExpressions.Regex.Replace(s, "([a-z0-9])([A-Z])", "$1_$2").ToLowerInvariant();
-}
-"));
+                "ck_operations_quote_currency", "currency_code ~ '^[A-Z]{3}$'"));
             e.HasKey(x => x.Id);
             e.HasOne(x => x.QuoteLink).WithMany(x => x.Costs).HasForeignKey(x => x.QuoteLinkId)
                 .OnDelete(DeleteBehavior.Cascade);
