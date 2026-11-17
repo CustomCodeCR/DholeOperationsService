@@ -1,3 +1,10 @@
+## [0.4.0] - 2026-11-17 (DH-185 · Primeras tablas de operaciones)
+
+- MINOR: seis tablas relacionales adicionales para QUO y costos/proveedores referenciados, hitos, tareas, notas y auditoría; se mantienen las doce tablas anteriores y sus registros.
+- Migración EF Core aditiva transaccional, claves foráneas, índices, índices parciales de unicidad y columnas `jsonb` para auditoría. Sin migraciones destructivas.
+- CI de PostgreSQL valida inserción, relaciones, importe decimal, QUO principal único y reejecución segura; staging/producción verifican 18 tablas e historial EF antes de aprobar el deploy.
+- DholeOperationsService 0.3.1 → 0.4.0, ecosistema 1.68.0 → 1.69.0. Datos de Pricing aún no importados automáticamente.
+
 ## [0.3.1] - 2026-11-17 (DH-184 · Operations PostgreSQL bootstrap + gateway readiness)
 
 - PATCH: provisionamiento idempotente y no destructivo de dhole_operations en staging y producción antes de arrancar API y workers; bloquea nombres SQL inválidos y valida PostgreSQL.

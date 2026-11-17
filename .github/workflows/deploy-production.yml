@@ -64,6 +64,8 @@ jobs:
           done
           docker logs --tail 200 "$CONTAINER_ID" || true
           exit 1
+      - name: Verify Operations SQL tables and migration history
+        run: bash scripts/verify_operations_schema.sh
       - name: Cleanup old images
         if: always()
         run: docker image prune -f
