@@ -1,7 +1,11 @@
 using System.Text;
+using System.Text.Json;
+using Dhole.Operations.Api.Endpoints;
 using Dhole.Operations.Api.Grpc;
 using Dhole.Operations.Api.Hubs;
 using Dhole.Operations.Api.Realtime;
+using Dhole.Operations.Api.Security;
+using Dhole.Operations.Application.DependencyInjection;
 using Dhole.Operations.Infrastructure.DependencyInjection;
 using Dhole.Operations.Persistence;
 using Dhole.Operations.Persistence.DependencyInjection;
@@ -16,12 +20,12 @@ builder.Services.AddSignalR();
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("OperationsRealtimeRead", policy => policy.RequireAssertion(context =>
-        context.User.Identity?.IsAuthenticated == true &&
-        (context.User.IsInRole("SuperAdmin") ||
-         context.User.HasClaim("scope", "operations.realtime.read"))));
+        OperationsCaseAccess.HasScope(context.User, "operations.realtime.read")));
 });
+builder.Services.AddOperationsApplication();
 builder.Services.AddOperationsPersistence(builder.Configuration);
 builder.Services.AddOperationsInfrastructure(builder.Configuration);
+builder.Services.AddScoped<OperationsCaseAccess>();
 builder.Services.AddHostedService<OperationsRealtimeRelay>();
 
 var secret = builder.Configuration["Auth:Jwt:SecretKey"];
@@ -65,16 +69,34 @@ app.MapGet("/ready", async (OperationsDbContext db, IConnectionMultiplexer redis
 }).AllowAnonymous();
 
 app.MapGet("/api/operations/realtime/events", async (
-    DateTimeOffset? since, int? take, OperationsDbContext db, CancellationToken ct) =>
+    DateTimeOffset? since, int? take, HttpContext http, OperationsCaseAccess access,
+    OperationsDbContext db, CancellationToken ct) =>
 {
     var limit = Math.Clamp(take ?? 100, 1, 500);
+    // Never expose raw PayloadJson: it can contain cross-service or commercially restricted data.
     var query = db.InboxReceipts.AsNoTracking().Where(e => e.ConsumerName == "operations-realtime");
     if (since.HasValue) query = query.Where(e => e.ProcessedAtUtc > since.Value);
-    var events = await query.OrderBy(e => e.ProcessedAtUtc).Take(limit)
-        .Select(e => new { e.EventId, e.EventName, e.PayloadJson, e.ProcessedAtUtc })
+    var receipts = await query.OrderBy(e => e.ProcessedAtUtc).ThenBy(e => e.EventId)
+        .Take(limit).Select(e => new { e.EventId, e.EventName, e.PayloadJson, e.ProcessedAtUtc })
         .ToListAsync(ct);
-    return Results.Ok(events);
+    var parsed = new List<(Guid EventId, string EventName, Guid CaseId, DateTimeOffset At)>();
+    foreach (var receipt in receipts)
+    {
+        try
+        {
+            using var json = JsonDocument.Parse(receipt.PayloadJson);
+            if (!json.RootElement.TryGetProperty("caseId", out var value) ||
+                !Guid.TryParse(value.GetString(), out var caseId)) continue;
+            parsed.Add((receipt.EventId, receipt.EventName, caseId, receipt.ProcessedAtUtc));
+        }
+        catch (JsonException) { /* Malformed external events never become public replay data. */ }
+    }
+    var allowed = (await access.AccessibleCaseIdsAsync(
+        parsed.Select(x => x.CaseId).Distinct().ToArray(), http.User, ct)).ToHashSet();
+    return Results.Ok(parsed.Where(x => allowed.Contains(x.CaseId)).Select(x =>
+        new { x.EventId, x.EventName, x.CaseId, ProcessedAtUtc = x.At }));
 }).RequireAuthorization("OperationsRealtimeRead");
+app.MapOperationsEndpoints();
 app.MapHub<OperationsHub>("/hubs/operations");
 app.MapGrpcService<OperationsHealthGrpcService>();
 
@@ -83,6 +105,27 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<OperationsDbContext>();
     await db.Database.MigrateAsync();
 }
+// Dhole API Manager: authenticated runtime inventory, not a public proxy.
+app.MapGet("/api/internal/third-party-route-catalog", (HttpContext http) =>
+{
+    var allowed = http.User.Identity?.IsAuthenticated == true &&
+        http.User.Claims.Where(c => c.Type is "scope" or "scp" or "scopes")
+            .SelectMany(c => c.Value.Split([' ', ',', ';'], StringSplitOptions.RemoveEmptyEntries))
+            .Contains("integrations.thirdparty.manage", StringComparer.OrdinalIgnoreCase);
+    if (!allowed) return (IResult)Results.StatusCode(StatusCodes.Status403Forbidden);
+    var routes = new List<object>();
+    foreach (var source in ((Microsoft.AspNetCore.Routing.IEndpointRouteBuilder)app).DataSources)
+        foreach (var endpoint in source.Endpoints.OfType<Microsoft.AspNetCore.Routing.RouteEndpoint>())
+        {
+            var methods = endpoint.Metadata.GetMetadata<Microsoft.AspNetCore.Routing.HttpMethodMetadata>()?.HttpMethods;
+            if (methods is null || endpoint.RoutePattern.RawText is not { } path) continue;
+            foreach (var method in methods)
+                if (method is "GET" or "POST" or "PUT" or "PATCH" or "DELETE")
+                    routes.Add(new { method, path = "/" + path.TrimStart('/') });
+        }
+    return (IResult)Results.Ok(routes);
+}).RequireAuthorization().ExcludeFromDescription();
+
 app.Run();
 
 public partial class Program {}
