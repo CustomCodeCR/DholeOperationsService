@@ -37,8 +37,11 @@ public sealed class OperationsConfigSchemaMigrationTests
 
             await using (var legacy = new OperationsDbContext(options))
             {
+                var available = legacy.Database.GetMigrations().ToArray();
+                Assert.IsTrue(available.Any(x => x.EndsWith("_OperationsFirstTables", StringComparison.Ordinal)),
+                    "Cannot find legacy migration: " + string.Join(", ", available));
                 await legacy.Database.GetService<IMigrator>()
-                    .MigrateAsync("202611170310_OperationsFirstTables");
+                    .MigrateAsync("OperationsFirstTables");
                 await using var connection = new NpgsqlConnection(isolatedBuilder.ConnectionString);
                 await connection.OpenAsync();
                 await using (var cmd = new NpgsqlCommand("""
