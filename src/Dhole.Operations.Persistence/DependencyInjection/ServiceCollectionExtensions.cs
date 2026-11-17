@@ -1,4 +1,5 @@
 using Dhole.Operations.Application.Abstractions;
+using Dhole.Operations.Persistence.Messaging;
 using Dhole.Operations.Application.Cases;
 using Dhole.Operations.Persistence.Cases;
 using Microsoft.EntityFrameworkCore;
@@ -25,9 +26,9 @@ internal sealed class OperationsOutboxWriter(OperationsDbContext db) : IOutboxWr
 {
     public async Task<Guid> EnqueueAsync(string eventName, string payloadJson, CancellationToken cancellationToken = default)
     {
-        var entry = Dhole.Operations.Domain.Models.OutboxMessage.Create(eventName, payloadJson);
+        var entry = OperationsOutboxFactory.Create(eventName, payloadJson);
         db.OutboxMessages.Add(entry);
         await db.SaveChangesAsync(cancellationToken);
-        return entry.Id;
+        return entry.EventId;
     }
 }

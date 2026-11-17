@@ -10,6 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/Dhole.Operations.Domain/Dhole.Operations.Domain.csproj" />
     <ProjectReference Include="../../src/Dhole.Operations.Application/Dhole.Operations.Application.csproj" />
+    <ProjectReference Include="../../src/Dhole.Operations.Persistence/Dhole.Operations.Persistence.csproj" />
     <Using Include="Microsoft.VisualStudio.TestTools.UnitTesting" />
   </ItemGroup>
 </Project>

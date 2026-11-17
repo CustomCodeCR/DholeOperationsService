@@ -74,10 +74,10 @@ app.MapGet("/api/operations/realtime/events", async (
 {
     var limit = Math.Clamp(take ?? 100, 1, 500);
     // Never expose raw PayloadJson: it can contain cross-service or commercially restricted data.
-    var query = db.InboxReceipts.AsNoTracking().Where(e => e.ConsumerName == "operations-realtime");
-    if (since.HasValue) query = query.Where(e => e.ProcessedAtUtc > since.Value);
+    var query = db.InboxMessages.AsNoTracking().Where(e => e.ConsumerService == "operations-realtime");
+    if (since.HasValue) query = query.Where(e => e.ProcessedAtUtc > since.Value.UtcDateTime);
     var receipts = await query.OrderBy(e => e.ProcessedAtUtc).ThenBy(e => e.EventId)
-        .Take(limit).Select(e => new { e.EventId, e.EventName, e.PayloadJson, e.ProcessedAtUtc })
+        .Take(limit).Select(e => new { e.EventId, e.EventName, e.ProcessedAtUtc, e.CreatedAtUtc, PayloadJson = EF.Property<string>(e, "PayloadJson") })
         .ToListAsync(ct);
     var parsed = new List<(Guid EventId, string EventName, Guid CaseId, DateTimeOffset At)>();
     foreach (var receipt in receipts)
@@ -87,7 +87,7 @@ app.MapGet("/api/operations/realtime/events", async (
             using var json = JsonDocument.Parse(receipt.PayloadJson);
             if (!json.RootElement.TryGetProperty("caseId", out var value) ||
                 !Guid.TryParse(value.GetString(), out var caseId)) continue;
-            parsed.Add((receipt.EventId, receipt.EventName, caseId, receipt.ProcessedAtUtc));
+            parsed.Add((receipt.EventId, receipt.EventName, caseId, receipt.ProcessedAtUtc ?? receipt.CreatedAtUtc));
         }
         catch (JsonException) { /* Malformed external events never become public replay data. */ }
     }
