@@ -81,7 +81,7 @@ public sealed class OperationsFirstTablesTests
         {
             CaseId = created.Id, QuoteId = Guid.NewGuid(), IsPrimary = true, LinkedBy = actor
         });
-        await Assert.ThrowsExceptionAsync<DbUpdateException>(() => verify.SaveChangesAsync());
+        await Assert.ThrowsAsync<DbUpdateException>(() => verify.SaveChangesAsync());
 
         // An already-migrated database can be upgraded repeatedly without data loss.
         await using var again = Db();
@@ -103,6 +103,6 @@ public sealed class OperationsFirstTablesTests
         db.CaseQuoteCosts.AddRange(
             new OperationsCaseQuoteCost { QuoteLink = link, SourceCostId = sourceCostId, CostCode = "OCEAN", Description = "A", CurrencyCode = "USD" },
             new OperationsCaseQuoteCost { QuoteLink = link, SourceCostId = sourceCostId, CostCode = "OCEAN", Description = "B", CurrencyCode = "USD" });
-        await Assert.ThrowsExceptionAsync<DbUpdateException>(() => db.SaveChangesAsync());
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
     }
 }
