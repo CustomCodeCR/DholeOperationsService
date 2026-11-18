@@ -2,7 +2,7 @@
 
 - MINOR DH-20261117-CRM-OPS-CONTACTS-204: consulta GET /api/operations/cases/{id}/operations-contacts, que valida permisos sobre expediente y consulta al CRM los encargados activos de la cuenta (sin replicar datos personales).
 - Utiliza Bearer de usuario y permisos de CRM. Requiere Crm__ApiBaseUrl configurado en API de Operations; fail-closed 503 cuando CRM no está disponible. Se conserva SignalR/outbox y los endpoints REST existentes.
-- Operations 0.4.1 → 0.5.0; ecosistema 1.72.0 → 1.73.0. Pendientes CI/staging antes de master; sin despliegue de producción.
+- Operations 0.4.1 → 0.5.0; ecosistema 1.73.0 → 1.74.0. Pendientes CI/staging antes de master; sin despliegue de producción.
 
 ## [0.4.1] - 2026-11-17 (DH-186 · Alineación con DholeConfigService)
 
