@@ -20,9 +20,13 @@ public sealed class OperationsCaseAccess(OperationsDbContext db)
         return Guid.TryParse(value, out var id) ? id : null;
     }
 
+    public static bool IsSystemAdministrator(ClaimsPrincipal user) =>
+        user.IsInRole("SuperAdmin") || user.IsInRole("SuperUsuario") ||
+        user.IsInRole("SuperUser") || user.IsInRole("superusuario");
+
     public static bool HasScope(ClaimsPrincipal user, string scope) =>
         user.Identity?.IsAuthenticated == true &&
-        (user.IsInRole("SuperAdmin") ||
+        (IsSystemAdministrator(user) ||
          user.Claims.Where(x => x.Type is "scope" or "scp" or "scopes")
              .SelectMany(x => x.Value.Split([' ', ',', ';'], StringSplitOptions.RemoveEmptyEntries))
              .Contains(scope, StringComparer.OrdinalIgnoreCase));

@@ -1,4 +1,4 @@
-using Dhole.Operations.Api.Audit;
+using Dhole.Operations.Persistence.Audit;
 using Dhole.Operations.Api.Integrations;
 using System.Net;
 using System.Net.Http.Headers;
@@ -37,7 +37,7 @@ public static class OperationsEndpoints
             var actor = OperationsCaseAccess.UserId(http.User);
             var company = OperationsCaseAccess.CompanyId(http.User);
             if (actor is null || !OperationsCaseAccess.HasScope(http.User, "operations.case.create") ||
-                (!http.User.IsInRole("SuperAdmin") && company != request.CompanyId))
+                (!OperationsCaseAccess.IsSystemAdministrator(http.User) && company != request.CompanyId))
                 return Results.Forbid();
             if (request.AccountId == Guid.Empty) return Results.BadRequest(new { code = "CRM_ACCOUNT_REQUIRED" });
             var crmAccount = await crm.ResolveAsync(request.AccountId,
@@ -167,7 +167,7 @@ public static class OperationsEndpoints
             OperationsDbContext db, CancellationToken ct) =>
         {
             if (!OperationsCaseAccess.HasScope(http.User, "operations.team.manage") ||
-                (!http.User.IsInRole("SuperAdmin") && OperationsCaseAccess.CompanyId(http.User) != input.CompanyId))
+                (!OperationsCaseAccess.IsSystemAdministrator(http.User) && OperationsCaseAccess.CompanyId(http.User) != input.CompanyId))
                 return Results.Forbid();
             if (input.CompanyId == Guid.Empty || string.IsNullOrWhiteSpace(input.Name) ||
                 input.Name.Length > 150 || string.IsNullOrWhiteSpace(input.DepartmentCode) ||
@@ -190,9 +190,9 @@ public static class OperationsEndpoints
         {
             if (!OperationsCaseAccess.HasScope(http.User, "operations.team.manage")) return Results.Forbid();
             var company = OperationsCaseAccess.CompanyId(http.User);
-            if (!http.User.IsInRole("SuperAdmin") && company is null) return Results.Forbid();
+            if (!OperationsCaseAccess.IsSystemAdministrator(http.User) && company is null) return Results.Forbid();
             var query = db.Teams.AsNoTracking();
-            if (!http.User.IsInRole("SuperAdmin")) query = query.Where(x => x.CompanyId == company);
+            if (!OperationsCaseAccess.IsSystemAdministrator(http.User)) query = query.Where(x => x.CompanyId == company);
             return Results.Ok(await query.OrderBy(x => x.DepartmentCode).ThenBy(x => x.Name)
                 .Select(x => new { x.Id, x.CompanyId, x.DepartmentCode, x.Name, x.IsActive,
                     Members = x.Members.Select(m => new { m.UserId, m.CapacityPoints, m.IsAvailable, m.IsSupervisor }) })
@@ -206,7 +206,7 @@ public static class OperationsEndpoints
             if (!OperationsCaseAccess.HasScope(http.User, "operations.team.manage")) return Results.Forbid();
             var team = await db.Teams.FindAsync([teamId], ct);
             if (team is null) return Results.NotFound();
-            if (!http.User.IsInRole("SuperAdmin") && team.CompanyId != OperationsCaseAccess.CompanyId(http.User))
+            if (!OperationsCaseAccess.IsSystemAdministrator(http.User) && team.CompanyId != OperationsCaseAccess.CompanyId(http.User))
                 return Results.Forbid();
             if (input.UserId == Guid.Empty || input.CapacityPoints <= 0 || input.CapacityPoints > 10000)
                 return Results.BadRequest();
@@ -247,7 +247,7 @@ public static class OperationsEndpoints
             if (!OperationsCaseAccess.HasScope(http.User, "operations.team.manage")) return Results.Forbid();
             var team = await db.Teams.FindAsync([input.TeamId], ct);
             if (team is null) return Results.NotFound();
-            if (!http.User.IsInRole("SuperAdmin") && team.CompanyId != OperationsCaseAccess.CompanyId(http.User))
+            if (!OperationsCaseAccess.IsSystemAdministrator(http.User) && team.CompanyId != OperationsCaseAccess.CompanyId(http.User))
                 return Results.Forbid();
             if (!string.Equals(team.DepartmentCode, input.DepartmentCode, StringComparison.OrdinalIgnoreCase) ||
                 input.ModalityCode?.Length > 30 || input.OriginCountryCode?.Length > 2 ||
@@ -260,6 +260,13 @@ public static class OperationsEndpoints
                 DestinationCountryCode = input.DestinationCountryCode?.Trim().ToUpperInvariant()
             };
             db.AssignmentRules.Add(rule);
+            var actor = OperationsCaseAccess.UserId(http.User);
+            if (actor is null) return Results.Forbid();
+            OperationsAuditWriter.Team(db, team.Id, actor.Value,
+                "operations.assignment-rule.created", null, new {
+                    rule.Id, rule.DepartmentCode, rule.Priority, rule.ModalityCode,
+                    rule.OriginCountryCode, rule.DestinationCountryCode
+                });
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/operations/assignment-rules/{rule.Id}", new { rule.Id });
         });

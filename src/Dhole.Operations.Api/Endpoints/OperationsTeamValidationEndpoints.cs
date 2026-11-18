@@ -1,5 +1,5 @@
 using System.Data;
-using Dhole.Operations.Api.Audit;
+using Dhole.Operations.Persistence.Audit;
 using Dhole.Operations.Api.Integrations;
 using Dhole.Operations.Api.Security;
 using Dhole.Operations.Domain.Models;
@@ -26,10 +26,10 @@ public static class OperationsTeamValidationEndpoints
                 return Results.Forbid();
             var company = OperationsCaseAccess.CompanyId(http.User);
             var readAll = OperationsCaseAccess.HasScope(http.User, "operations.case.read-all");
-            if (!http.User.IsInRole("SuperAdmin") && company is null) return Results.Forbid();
+            if (!OperationsCaseAccess.IsSystemAdministrator(http.User) && company is null) return Results.Forbid();
             var query = db.Cases.AsNoTracking()
                 .Where(c => c.Stages.Any(s => s.DepartmentCode == "APERTURAS"));
-            if (!http.User.IsInRole("SuperAdmin"))
+            if (!OperationsCaseAccess.IsSystemAdministrator(http.User))
                 query = query.Where(c => c.CompanyId == company);
             if (!readAll)
                 query = query.Where(c => c.CreatedBy == actor.Value ||
@@ -80,7 +80,7 @@ public static class OperationsTeamValidationEndpoints
             await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
             var operation = await db.Cases.SingleOrDefaultAsync(c => c.Id == caseId, ct);
             if (operation is null) return Results.NotFound();
-            if (!http.User.IsInRole("SuperAdmin") &&
+            if (!OperationsCaseAccess.IsSystemAdministrator(http.User) &&
                 OperationsCaseAccess.CompanyId(http.User) != operation.CompanyId) return Results.Forbid();
             var key = "apertures-pool:" + operation.CompanyId.ToString("N");
             await db.Database.ExecuteSqlInterpolatedAsync(
@@ -254,7 +254,7 @@ public static class OperationsTeamValidationEndpoints
                 return Results.Forbid();
             var team = await db.Teams.SingleOrDefaultAsync(t => t.Id == teamId, ct);
             if (team is null) return Results.NotFound();
-            if (!http.User.IsInRole("SuperAdmin") &&
+            if (!OperationsCaseAccess.IsSystemAdministrator(http.User) &&
                 OperationsCaseAccess.CompanyId(http.User) != team.CompanyId) return Results.Forbid();
             if (team.IsActive == input.IsActive) return Results.Ok(new { team.Id, team.IsActive, duplicate = true });
             OperationsAuditWriter.Team(db, teamId, actor.Value, "operations.team.active.changed",
@@ -272,7 +272,7 @@ public static class OperationsTeamValidationEndpoints
                 return Results.Forbid();
             var team = await db.Teams.SingleOrDefaultAsync(t => t.Id == teamId, ct);
             if (team is null) return Results.NotFound();
-            if (!http.User.IsInRole("SuperAdmin") &&
+            if (!OperationsCaseAccess.IsSystemAdministrator(http.User) &&
                 OperationsCaseAccess.CompanyId(http.User) != team.CompanyId) return Results.Forbid();
             var member = await db.TeamMembers.SingleOrDefaultAsync(m =>
                 m.TeamId == teamId && m.UserId == userId, ct);
@@ -296,7 +296,7 @@ public static class OperationsTeamValidationEndpoints
                 return Results.Forbid();
             var team = await db.Teams.AsNoTracking().SingleOrDefaultAsync(t => t.Id == teamId, ct);
             if (team is null) return Results.NotFound();
-            if (!http.User.IsInRole("SuperAdmin") &&
+            if (!OperationsCaseAccess.IsSystemAdministrator(http.User) &&
                 OperationsCaseAccess.CompanyId(http.User) != team.CompanyId) return Results.Forbid();
             return Results.Ok(await db.TeamAuditEntries.AsNoTracking()
                 .Where(a => a.TeamId == teamId).OrderByDescending(a => a.OccurredAtUtc)

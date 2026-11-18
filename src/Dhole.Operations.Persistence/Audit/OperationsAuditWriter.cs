@@ -3,7 +3,7 @@ using Dhole.Operations.Domain.Models;
 using Dhole.Operations.Persistence;
 using Dhole.Operations.Persistence.Messaging;
 
-namespace Dhole.Operations.Api.Audit;
+namespace Dhole.Operations.Persistence.Audit;
 
 // Immutable local history and external AuditLogs event are atomically persisted via Outbox.
 public static class OperationsAuditWriter
