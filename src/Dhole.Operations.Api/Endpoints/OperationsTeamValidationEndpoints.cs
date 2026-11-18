@@ -1,3 +1,5 @@
+using System.Text.Json;
+using Dhole.Operations.Persistence.Messaging;
 using System.Data;
 using Dhole.Operations.Persistence.Audit;
 using Dhole.Operations.Api.Integrations;
@@ -170,6 +172,11 @@ public static class OperationsTeamValidationEndpoints
                 "operations.aperture.validation.assigned", null,
                 new { teamId = pair.TeamId, slots = assignments.Select(a =>
                     new { a.Slot, a.UserId }).ToArray() });
+            // Sanitized case event for the existing Operations SignalR inbox/relay.
+            db.OutboxMessages.Add(OperationsOutboxFactory.Create(
+                "operations.aperture.validation.assigned.v1",
+                JsonSerializer.Serialize(new { caseId, stageId = stage.Id, operation.CompanyId,
+                    version = operation.Version })));
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
             return Results.Ok(new { stageId = stage.Id, teamId = pair.TeamId,
@@ -239,6 +246,10 @@ public static class OperationsTeamValidationEndpoints
                 "operations.aperture.validation.reviewed",
                 new { validationId, status = "PENDING" },
                 new { validationId, decision, slot = validation.Slot, bothApproved });
+            db.OutboxMessages.Add(OperationsOutboxFactory.Create(
+                "operations.aperture.validation.reviewed.v1",
+                JsonSerializer.Serialize(new { caseId, stageId = stage.Id, operation.CompanyId,
+                    version = operation.Version, status = operation.Status })));
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
             return Results.Ok(new { validation.Id, validation.Status,
