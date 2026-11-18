@@ -12,7 +12,7 @@ Se conserva el esquema PostgreSQL `operations`, Outbox/Inbox de CustomCodeFramew
 
 ## Contratos verificados en el código existente
 - CRM: `GET /api/crm/accounts/{id}/operations-contacts` mediante proxy autenticado de Operations.
-- CRM: `GET /api/crm/accounts/{id}` y `assigned-executive` existen, pero el segundo no devuelve siempre UUID del ejecutivo: NO utilizarlo como fuente automática de identidad hasta acordar contrato.
+- CRM: al crear Aperturas manuales Operations consulta `GET /api/crm/accounts/{id}` con Bearer del solicitante y toma `executiveUserId` real; rechaza cuenta inaccesible o sin ejecutivo, sin usar el creador como vendedor. `assigned-executive` no garantiza UUID y no se utiliza. Queda pendiente permitir borrador incompleto sin ejecutivo, con pendiente bloqueante y contrato de Auth de vigencia.
 - Pricing: `AcceptedByClient` es la aceptación definitiva. La comunicación de apertura actual en Pricing es `notifications.notification.requested`, una **solicitud de correo**, no un evento de aceptación consumible sin ambigüedad. Se necesita un evento específico y snapshot de opción aceptada antes de crear IDTRA automáticamente.
 - Config y SRM: catálogos y proveedores siguen siendo sus fuentes propias; sin FK cruzadas.
 - Storage: se conserva UUID como referencia; el endpoint de salida exige comprobante pero la validación de propiedad del archivo vía contrato de Storage queda pendiente antes de exposición operativa.
