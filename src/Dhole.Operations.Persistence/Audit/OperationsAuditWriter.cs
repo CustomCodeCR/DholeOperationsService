@@ -32,6 +32,16 @@ public static class OperationsAuditWriter
         });
         EnqueueAudit(db, eventId, "OperationsCase", caseId, actor, action, beforeJson, afterJson);
     }
+    // For external entities without an Operations-owned case or team, the Outbox is the
+    // durable local record until AuditLogs consumes the event with an idempotent Inbox.
+    public static void Entity(OperationsDbContext db, string entityType, Guid entityId,
+        Guid actor, string action, object? before, object? after)
+    {
+        EnqueueAudit(db, Guid.NewGuid(), entityType, entityId, actor, action,
+            before is null ? null : JsonSerializer.Serialize(before),
+            after is null ? null : JsonSerializer.Serialize(after));
+    }
+
     private static void EnqueueAudit(OperationsDbContext db, Guid eventId, string entityType,
         Guid entityId, Guid actor, string action, string? beforeJson, string? afterJson)
     {

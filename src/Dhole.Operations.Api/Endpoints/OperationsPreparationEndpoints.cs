@@ -1,3 +1,4 @@
+using Dhole.Operations.Persistence.Audit;
 using System.Data;
 using System.Text.Json;
 using Dhole.Operations.Api.Security;
@@ -24,9 +25,9 @@ public static class OperationsPreparationEndpoints
             if (!OperationsCaseAccess.HasScope(http.User, "operations.carrier.connection.read"))
                 return Results.Forbid();
             var company = OperationsCaseAccess.CompanyId(http.User);
-            if (!http.User.IsInRole("SuperAdmin") && company is null) return Results.Forbid();
+            if (!OperationsCaseAccess.IsSystemAdministrator(http.User) && company is null) return Results.Forbid();
             var query = db.CarrierConnections.AsNoTracking();
-            if (!http.User.IsInRole("SuperAdmin")) query = query.Where(x => x.CompanyId == company);
+            if (!OperationsCaseAccess.IsSystemAdministrator(http.User)) query = query.Where(x => x.CompanyId == company);
             var connections = await query.OrderBy(x => x.CarrierCode).ThenBy(x => x.CreatedAtUtc)
                 .Select(x => new { x.Id, x.CompanyId, x.CarrierCode, x.SrmProviderId,
                     x.Environment, x.Status, x.LastValidatedAtUtc, x.CreatedAtUtc,
@@ -40,7 +41,7 @@ public static class OperationsPreparationEndpoints
             HttpContext http, OperationsDbContext db, CancellationToken ct) =>
         {
             if (!OperationsCaseAccess.HasScope(http.User, "operations.carrier.connection.manage") ||
-                (!http.User.IsInRole("SuperAdmin") && OperationsCaseAccess.CompanyId(http.User) != input.CompanyId))
+                (!OperationsCaseAccess.IsSystemAdministrator(http.User) && OperationsCaseAccess.CompanyId(http.User) != input.CompanyId))
                 return Results.Forbid();
             var carrier = input.CarrierCode?.Trim().ToUpperInvariant();
             var environment = input.Environment?.Trim().ToUpperInvariant();
@@ -53,7 +54,12 @@ public static class OperationsPreparationEndpoints
                 CompanyId = input.CompanyId, CarrierCode = carrier!, Environment = environment!,
                 SrmProviderId = input.SrmProviderId, Status = "REQUESTED"
             };
+            var actor = OperationsCaseAccess.UserId(http.User);
+            if (actor is null) return Results.Forbid();
             db.CarrierConnections.Add(connection);
+            OperationsAuditWriter.Entity(db, "OperationsCarrierConnection", connection.Id,
+                actor.Value, "operations.carrier.connection.requested", null,
+                new { connection.CompanyId, connection.CarrierCode, connection.Environment, connection.SrmProviderId });
             await db.SaveChangesAsync(ct);
             // Never return ACTIVE, grant scopes, issue credentials or call carriers on registration.
             return Results.Created($"/api/operations/carrier-connections/{connection.Id}",
@@ -66,11 +72,11 @@ public static class OperationsPreparationEndpoints
             if (!OperationsCaseAccess.HasScope(http.User, "operations.carrier.connection.read"))
                 return Results.Forbid();
             var company = OperationsCaseAccess.CompanyId(http.User);
-            if (!http.User.IsInRole("SuperAdmin") && company is null) return Results.Forbid();
+            if (!OperationsCaseAccess.IsSystemAdministrator(http.User) && company is null) return Results.Forbid();
             var code = carrierCode.Trim().ToUpperInvariant();
             if (!OperationsCarrierCodes.IsKnown(code)) return Results.NotFound();
             var query = db.CarrierConnections.AsNoTracking().Where(x => x.CarrierCode == code);
-            if (!http.User.IsInRole("SuperAdmin")) query = query.Where(x => x.CompanyId == company);
+            if (!OperationsCaseAccess.IsSystemAdministrator(http.User)) query = query.Where(x => x.CompanyId == company);
             var entries = await query.Select(x => new { x.Id, x.CompanyId, x.Environment,
                 x.Status, x.LastValidatedAtUtc, Capabilities = x.Capabilities.Select(c =>
                     new { c.ProductCode, c.CapabilityCode, c.Status, c.ApiVersion, c.VerifiedAtUtc }) })
@@ -151,6 +157,10 @@ public static class OperationsPreparationEndpoints
             db.OutboxMessages.Add(OperationsOutboxFactory.Create("operations.origin.departure-confirmed.v1",
                 JsonSerializer.Serialize(new { caseId = id, stageId = stage.Id,
                     eventId = input.EventId, version = operation.Version })));
+            OperationsAuditWriter.Case(db, id, stage.Id, actor.Value,
+                "operations.origin.departure.confirmed", null,
+                new { input.EventId, input.ActualDepartureAtUtc, input.EvidenceStorageFileId,
+                    progress.Version, stage.Status });
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
             return Results.Ok(new { progress.StatusCode, progress.Version, duplicate = false });
@@ -184,7 +194,9 @@ public static class OperationsPreparationEndpoints
                 CaseId = id, CreatedBy = actor.Value, Body = input.Body.Trim()
             };
             db.InternalNotes.Add(note);
-            // Deliberately no SignalR payload or customer notification for confidential notes.
+            // Never send confidential note content through central AuditLogs, SignalR or customer email.
+            OperationsAuditWriter.Case(db, id, null, actor.Value,
+                "operations.internal-note.created", null, new { note.Id });
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/operations/cases/{id}/internal-notes/{note.Id}",
                 new { note.Id, note.CreatedAtUtc });
@@ -201,7 +213,7 @@ public static class OperationsPreparationEndpoints
             x.CaseId == caseId && x.DepartmentCode == "COORDINACION_ORIGEN")
             .Select(x => new { x.Id, x.TeamId }).SingleOrDefaultAsync(ct);
         if (stage is null) return false;
-        if (http.User.IsInRole("SuperAdmin")) return true;
+        if (OperationsCaseAccess.IsSystemAdministrator(http.User)) return true;
         return await db.StageAssignments.AnyAsync(x =>
                 x.CaseStageId == stage.Id && x.UserId == actor && x.ReleasedAtUtc == null, ct) ||
             (stage.TeamId.HasValue && await db.TeamMembers.AnyAsync(x =>
