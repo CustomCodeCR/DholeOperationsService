@@ -182,6 +182,7 @@ public static class OperationsTeamValidationEndpoints
         {
             var actor = OperationsCaseAccess.UserId(http.User);
             if (actor is null ||
+                !OperationsCaseAccess.HasScope(http.User, "operations.case.read") ||
                 !OperationsCaseAccess.HasScope(http.User, "operations.aperture.validation.review"))
                 return Results.Forbid();
             var decision = input.Decision?.Trim().ToUpperInvariant();
