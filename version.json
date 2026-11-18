@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "ecosystem": "Dhole",
   "component": "DholeOperationsService",
-  "version": "0.4.1",
-  "ecosystemVersion": "1.69.1",
-  "releaseId": "DH-20261117-OPS-CONFIG-SCHEMA-186",
+  "version": "0.5.0",
+  "ecosystemVersion": "1.73.0",
+  "releaseId": "DH-20261117-CRM-OPS-CONTACTS-204",
   "releaseStatus": "candidate-ci-and-staging-pending",
-  "businessReleaseId": "DH-20261117-OPS-CONFIG-SCHEMA-186"
+  "businessReleaseId": "DH-20261117-CRM-OPS-CONTACTS-204"
 }
