@@ -28,12 +28,13 @@ public static class OperationsTeamValidationEndpoints
                 return Results.Forbid();
             var company = OperationsCaseAccess.CompanyId(http.User);
             var readAll = OperationsCaseAccess.HasScope(http.User, "operations.case.read-all");
-            if (!OperationsCaseAccess.IsSystemAdministrator(http.User) && company is null) return Results.Forbid();
+            var administrator = OperationsCaseAccess.IsSystemAdministrator(http.User);
             var query = db.Cases.AsNoTracking()
                 .Where(c => c.Stages.Any(s => s.DepartmentCode == "APERTURAS"));
-            if (!OperationsCaseAccess.IsSystemAdministrator(http.User))
-                query = query.Where(c => c.CompanyId == company);
-            if (!readAll)
+            if (!administrator && company.HasValue)
+                query = query.Where(c => c.CompanyId == company.Value);
+            // Without a tenant claim, even read-all is limited to explicit involvement.
+            if (!readAll || (!administrator && !company.HasValue))
                 query = query.Where(c => c.CreatedBy == actor.Value ||
                     c.Stages.Any(s => db.ApertureValidations.Any(v =>
                         v.CaseStageId == s.Id && v.UserId == actor.Value)) ||

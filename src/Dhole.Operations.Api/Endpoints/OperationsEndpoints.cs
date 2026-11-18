@@ -131,8 +131,15 @@ public static class OperationsEndpoints
             var size = Math.Clamp(pageSize ?? 25, 1, 100);
             var offset = (Math.Max(1, page ?? 1) - 1) * size;
             var query = db.Cases.AsNoTracking();
-            if (!OperationsCaseAccess.HasScope(http.User, "operations.case.read-all"))
+            var company = OperationsCaseAccess.CompanyId(http.User);
+            var administrator = OperationsCaseAccess.IsSystemAdministrator(http.User);
+            if (!administrator && company.HasValue)
+                query = query.Where(x => x.CompanyId == company.Value);
+            if (!OperationsCaseAccess.HasScope(http.User, "operations.case.read-all") ||
+                (!administrator && !company.HasValue))
                 query = query.Where(x => x.CreatedBy == actor.Value ||
+                    db.ApertureValidations.Any(v =>
+                        v.CaseStage.CaseId == x.Id && v.UserId == actor.Value) ||
                     x.Stages.Any(s => db.StageAssignments.Any(a =>
                         a.CaseStageId == s.Id && a.UserId == actor.Value && a.ReleasedAtUtc == null)) ||
                     x.Stages.Any(s => s.TeamId.HasValue &&

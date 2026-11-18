@@ -1,3 +1,9 @@
+## [0.7.1] - 2026-11-17 (DH-20261117-OPS-QUEUE-CLAIMLESS-209 · Visibilidad de validadores internos)
+
+- PATCH: permite que los validadores de Auth sin claim company_id vean únicamente Aperturas creadas por ellos, asignadas explícitamente o de su propio equipo.
+- Cierra acceso read-all global sin claim de empresa; con claim siempre limita al tenant y SuperUsuario conserva acceso administrativo.
+- Operations 0.7.0 → 0.7.1, ecosistema 1.78.0 → 1.78.1. Mantiene auditoría PostgreSQL + AuditLogs y dos revisores obligatorios.
+
 ## [0.7.0] - 2026-11-17 (DH-20261117-OPS-DUAL-VALIDATION-208 · Equipos y doble validación Aperturas)
 
 - MINOR: pool por equipo, 2 revisores distintos, decisiones individuales, cola inicial y auditoría persistente PostgreSQL y AuditLogs por Outbox/Streams.
