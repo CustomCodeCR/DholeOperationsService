@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Http.Headers;
 using Dhole.Operations.Api.Security;
 using Dhole.Operations.Application.Cases;
 using Dhole.Operations.Domain.Models;
@@ -43,6 +45,55 @@ public static class OperationsEndpoints
                 return Results.Created($"/api/operations/cases/{result.Id}", result);
             }
             catch (ArgumentException e) { return Results.BadRequest(new { error = e.Message }); }
+        });
+
+        // Read current CRM operations contacts for the case's own customer account.
+        // Never maintain a shadow copy of personal contact data in Operations.
+        api.MapGet("/cases/{id:guid}/operations-contacts", async (
+            Guid id, HttpContext http, OperationsCaseAccess access, OperationsDbContext db,
+            IHttpClientFactory factory, IConfiguration configuration, CancellationToken ct) =>
+        {
+            if (!OperationsCaseAccess.HasScope(http.User, "operations.case.read") ||
+                !await access.CanReadAsync(id, http.User, ct)) return Results.Forbid();
+            var accountId = await db.Cases.AsNoTracking().Where(x => x.Id == id)
+                .Select(x => (Guid?)x.AccountId).SingleOrDefaultAsync(ct);
+            if (accountId is null) return Results.NotFound();
+
+            // This URI is deployment-owned; never accept an arbitrary URL from callers.
+            var configured = configuration["Crm:ApiBaseUrl"];
+            if (!Uri.TryCreate(configured, UriKind.Absolute, out var baseUrl) ||
+                (baseUrl.Scheme != Uri.UriSchemeHttp && baseUrl.Scheme != Uri.UriSchemeHttps) ||
+                !string.IsNullOrWhiteSpace(baseUrl.UserInfo))
+                return Results.Problem(statusCode: 503, title: "CRM reference service is not configured");
+
+            if (!AuthenticationHeaderValue.TryParse(http.Request.Headers.Authorization.ToString(),
+                    out var authorization) ||
+                !string.Equals(authorization.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase))
+                return Results.Unauthorized();
+
+            var url = new Uri(new Uri(baseUrl.ToString().TrimEnd('/') + "/"),
+                $"api/crm/accounts/{accountId.Value:D}/operations-contacts");
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Authorization = authorization;
+            try
+            {
+                using var response = await factory.CreateClient("crm-operations-contacts")
+                    .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+                if (response.StatusCode == HttpStatusCode.Forbidden) return Results.Forbid();
+                if (response.StatusCode == HttpStatusCode.Unauthorized) return Results.Unauthorized();
+                if (!response.IsSuccessStatusCode)
+                    return Results.Problem(statusCode: 503, title: "CRM operations contacts temporarily unavailable");
+                var body = await response.Content.ReadAsStringAsync(ct);
+                return Results.Content(body, "application/json");
+            }
+            catch (HttpRequestException)
+            {
+                return Results.Problem(statusCode: 503, title: "CRM operations contacts temporarily unavailable");
+            }
+            catch (TaskCanceledException) when (!ct.IsCancellationRequested)
+            {
+                return Results.Problem(statusCode: 503, title: "CRM operations contacts request timed out");
+            }
         });
 
         api.MapGet("/cases/{id:guid}", async (
