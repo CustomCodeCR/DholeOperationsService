@@ -47,7 +47,7 @@ public static class OperationsTeamValidationEndpoints
                         c.Status, c.Priority, c.CreatedAtUtc,
                         Validators = db.ApertureValidations.Where(v => v.CaseStage.CaseId == c.Id)
                             .OrderBy(v => v.Slot)
-                            .Select(v => new { v.Id, v.Slot, v.UserId, v.Status })
+                            .Select(v => new { v.Id, v.Slot, v.UserId, v.Status }).ToArray()
                     }).ToArrayAsync(ct)
             });
         });
