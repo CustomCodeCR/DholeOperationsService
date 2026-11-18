@@ -3,7 +3,7 @@
 - MINOR: registro seguro de conexiones y capacidades marítimas, sin activar llamadas externas o credenciales no verificadas.
 - Nueva persistencia de estado Origen, confirmación idempotente de salida y tránsito con Outbox, y notas internas restringidas a equipo/supervisión.
 - No modifica Pricing/CRM/SRM ni crea usuarios; prepara contratos y documenta dependencias verificadas y bloqueos del MVP.
-- Operations 0.5.0 → 0.6.0; ecosistema 1.74.0 → 1.75.0. CI/staging pendientes, sin producción autorizada.
+- Operations 0.5.0 → 0.6.0; ecosistema 1.75.0 → 1.76.0. CI/staging pendientes, sin producción autorizada.
 
 ## [0.5.0] - 2026-11-17 (Responsables operativos desde CRM)
 
