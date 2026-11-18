@@ -1,3 +1,10 @@
+## [0.6.0] - 2026-11-17 (DH-20261117-OPS-FOUNDATION-205 · Preparación Operations v1.2)
+
+- MINOR: registro seguro de conexiones y capacidades marítimas, sin activar llamadas externas o credenciales no verificadas.
+- Nueva persistencia de estado Origen, confirmación idempotente de salida y tránsito con Outbox, y notas internas restringidas a equipo/supervisión.
+- No modifica Pricing/CRM/SRM ni crea usuarios; prepara contratos y documenta dependencias verificadas y bloqueos del MVP.
+- Operations 0.5.0 → 0.6.0; ecosistema 1.75.0 → 1.76.0. CI/staging pendientes, sin producción autorizada.
+
 ## [0.5.0] - 2026-11-17 (Responsables operativos desde CRM)
 
 - MINOR DH-20261117-CRM-OPS-CONTACTS-204: consulta GET /api/operations/cases/{id}/operations-contacts, que valida permisos sobre expediente y consulta al CRM los encargados activos de la cuenta (sin replicar datos personales).

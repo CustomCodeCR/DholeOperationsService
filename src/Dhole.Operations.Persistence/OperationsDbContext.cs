@@ -27,6 +27,10 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
     public DbSet<OperationsCaseTask> CaseTasks => Set<OperationsCaseTask>();
     public DbSet<OperationsCaseNote> CaseNotes => Set<OperationsCaseNote>();
     public DbSet<OperationsCaseAuditEntry> CaseAuditEntries => Set<OperationsCaseAuditEntry>();
+    public DbSet<OperationsOriginProgress> OriginProgress => Set<OperationsOriginProgress>();
+    public DbSet<OperationsInternalNote> InternalNotes => Set<OperationsInternalNote>();
+    public DbSet<OperationsCarrierConnection> CarrierConnections => Set<OperationsCarrierConnection>();
+    public DbSet<OperationsCarrierCapability> CarrierCapabilities => Set<OperationsCarrierCapability>();
 
     protected override void OnModelCreating(ModelBuilder m)
     {
@@ -230,6 +234,49 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
             e.HasIndex(x => x.EventId).IsUnique();
             e.HasIndex(x => new { x.CaseId, x.OccurredAtUtc });
             e.HasIndex(x => x.CaseStageId);
+        });
+
+        m.Entity<OperationsOriginProgress>(e =>
+        {
+            e.ToTable("operations_origin_progress");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.CaseStage).WithMany().HasForeignKey(x => x.CaseStageId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.CaseStageId).IsUnique();
+            e.HasIndex(x => x.DepartureEventId).IsUnique();
+            e.Property(x => x.StatusCode).HasMaxLength(40).IsRequired();
+            e.Property(x => x.DepartureSource).HasMaxLength(40);
+            e.Property(x => x.Version).IsConcurrencyToken();
+        });
+        m.Entity<OperationsInternalNote>(e =>
+        {
+            e.ToTable("operations_internal_notes");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Case).WithMany().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<OperationsCaseStage>().WithMany().HasForeignKey(x => x.CaseStageId).OnDelete(DeleteBehavior.Restrict);
+            e.Property(x => x.Body).HasColumnType("text").IsRequired();
+            e.Property(x => x.Version).IsConcurrencyToken();
+            e.HasIndex(x => new { x.CaseId, x.CreatedAtUtc });
+        });
+        m.Entity<OperationsCarrierConnection>(e =>
+        {
+            e.ToTable("operations_carrier_connections");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.CarrierCode).HasMaxLength(30).IsRequired();
+            e.Property(x => x.Environment).HasMaxLength(12).IsRequired();
+            e.Property(x => x.Status).HasMaxLength(40).IsRequired();
+            e.HasIndex(x => new { x.CompanyId, x.CarrierCode, x.Status });
+        });
+        m.Entity<OperationsCarrierCapability>(e =>
+        {
+            e.ToTable("operations_carrier_capabilities");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Connection).WithMany(x => x.Capabilities).HasForeignKey(x => x.ConnectionId).OnDelete(DeleteBehavior.Cascade);
+            e.Property(x => x.ProductCode).HasMaxLength(60).IsRequired();
+            e.Property(x => x.CapabilityCode).HasMaxLength(60).IsRequired();
+            e.Property(x => x.Status).HasMaxLength(30).IsRequired();
+            e.Property(x => x.ApiVersion).HasMaxLength(30);
+            e.Property(x => x.EvidenceRef).HasMaxLength(200);
+            e.HasIndex(x => new { x.ConnectionId, x.ProductCode, x.CapabilityCode }).IsUnique();
         });
 
         // Business entities use the established snake_case convention from Config.
