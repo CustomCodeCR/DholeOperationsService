@@ -135,7 +135,7 @@ public static class OperationsTeamValidationEndpoints
                     var validFirst = await auth.IsEligibleAsync(pair.FirstUserId,
                         http.Request.Headers.Authorization.ToString(), ct, requireReview: true);
                     var validSecond = await auth.IsEligibleAsync(pair.SecondUserId,
-                        http.Request.Headers.Authorization.ToString(), ct);
+                        http.Request.Headers.Authorization.ToString(), ct, requireReview: true);
                     if (validFirst && validSecond) break;
                     candidates.RemoveAll(x => (x.UserId == pair.FirstUserId && !validFirst) ||
                         (x.UserId == pair.SecondUserId && !validSecond));
