@@ -37,6 +37,7 @@ public sealed class OperationsCaseAccess(OperationsDbContext db)
             return await caseQuery.AnyAsync(ct);
         return await caseQuery.AnyAsync(x =>
             x.CreatedBy == actor.Value ||
+            db.ApertureValidations.Any(v => v.CaseStage.CaseId == x.Id && v.UserId == actor.Value) ||
             x.Stages.Any(stage => db.StageAssignments.Any(assignment =>
                 assignment.CaseStageId == stage.Id &&
                 assignment.UserId == actor.Value && assignment.ReleasedAtUtc == null)) ||

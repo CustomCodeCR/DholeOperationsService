@@ -1,3 +1,5 @@
+using Dhole.Operations.Api.Audit;
+using Dhole.Operations.Api.Integrations;
 using System.Net;
 using System.Net.Http.Headers;
 using Dhole.Operations.Api.Security;
@@ -147,11 +149,14 @@ public static class OperationsEndpoints
 
         api.MapPost("/cases/{id:guid}/stages/{stageId:guid}/assign", async (
             Guid id, Guid stageId, HttpContext http,
-            OperationsCaseAccess access, AssignStageHandler handler, CancellationToken ct) =>
+            OperationsCaseAccess access, AssignStageHandler handler, OperationsDbContext db, CancellationToken ct) =>
         {
             var actor = OperationsCaseAccess.UserId(http.User);
             if (actor is null || !OperationsCaseAccess.HasScope(http.User, "operations.assignment.manage") ||
                 !await access.CanReadAsync(id, http.User, ct)) return Results.Forbid();
+            if (await db.CaseStages.AnyAsync(s => s.Id == stageId && s.CaseId == id &&
+                s.DepartmentCode == "APERTURAS", ct))
+                return Results.Conflict(new { code = "APERTURAS_REQUIRES_TWO_VALIDATORS" });
             var result = await handler.HandleAsync(
                 new AssignStageCommand(id, stageId, actor.Value), ct);
             return result is null ? Results.Conflict(new { error = "Stage closed, already assigned, or no eligible pool candidate." })
@@ -173,6 +178,10 @@ public static class OperationsEndpoints
                 Name = input.Name.Trim()
             };
             db.Teams.Add(team);
+            var actor = OperationsCaseAccess.UserId(http.User);
+            if (actor is null) return Results.Forbid();
+            OperationsAuditWriter.Team(db, team.Id, actor.Value, "operations.team.created",
+                null, new { team.Name, team.CompanyId, team.DepartmentCode });
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/operations/teams/{team.Id}", new { team.Id });
         });
@@ -191,7 +200,8 @@ public static class OperationsEndpoints
         });
 
         api.MapPost("/teams/{teamId:guid}/members", async (
-            Guid teamId, NewMemberRequest input, HttpContext http, OperationsDbContext db, CancellationToken ct) =>
+            Guid teamId, NewMemberRequest input, HttpContext http, OperationsDbContext db,
+            OperationsAuthUserVerifier auth, CancellationToken ct) =>
         {
             if (!OperationsCaseAccess.HasScope(http.User, "operations.team.manage")) return Results.Forbid();
             var team = await db.Teams.FindAsync([teamId], ct);
@@ -200,7 +210,20 @@ public static class OperationsEndpoints
                 return Results.Forbid();
             if (input.UserId == Guid.Empty || input.CapacityPoints <= 0 || input.CapacityPoints > 10000)
                 return Results.BadRequest();
+            try
+            {
+                if (!await auth.IsEligibleAsync(input.UserId,
+                    http.Request.Headers.Authorization.ToString(), ct))
+                    return Results.BadRequest(new { code = "AUTH_USER_NOT_ELIGIBLE" });
+            }
+            catch (UnauthorizedAccessException) { return Results.Forbid(); }
+            catch (HttpRequestException) { return Results.Problem(statusCode: 503, title: "Auth eligibility unavailable"); }
+            catch (TaskCanceledException) when (!ct.IsCancellationRequested)
+                { return Results.Problem(statusCode: 503, title: "Auth eligibility timed out"); }
             var member = await db.TeamMembers.FirstOrDefaultAsync(x => x.TeamId == teamId && x.UserId == input.UserId, ct);
+            var before = member is null ? null : new {
+                member.CapacityPoints, member.IsAvailable, member.IsSupervisor
+            };
             if (member is null)
             {
                 member = new OperationsTeamMember { TeamId = teamId, UserId = input.UserId };
@@ -209,6 +232,11 @@ public static class OperationsEndpoints
             member.CapacityPoints = input.CapacityPoints;
             member.IsAvailable = input.IsAvailable;
             member.IsSupervisor = input.IsSupervisor;
+            var actor = OperationsCaseAccess.UserId(http.User);
+            if (actor is null) return Results.Forbid();
+            OperationsAuditWriter.Team(db, teamId, actor.Value,
+                before is null ? "operations.team.member.added" : "operations.team.member.updated",
+                before, new { member.UserId, member.CapacityPoints, member.IsAvailable, member.IsSupervisor });
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { member.Id });
         });

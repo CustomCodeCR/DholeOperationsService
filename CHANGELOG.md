@@ -1,3 +1,9 @@
+## [0.7.0] - 2026-11-17 (DH-20261117-OPS-DUAL-VALIDATION-208 · Equipos y doble validación Aperturas)
+
+- MINOR: pool por equipo, 2 revisores distintos, decisiones individuales, cola inicial y auditoría persistente PostgreSQL y AuditLogs por Outbox/Streams.
+- Auth verifica usuarios internos activos antes de incorporarlos; los scopes y los usuarios se conceden manualmente.
+- Operations 0.6.0 → 0.7.0; global 1.77.1 → 1.78.0. Despliegue producción NO autorizado.
+
 ## [0.6.0] - 2026-11-17 (DH-20261117-OPS-FOUNDATION-205 · Preparación Operations v1.2)
 
 - MINOR: registro seguro de conexiones y capacidades marítimas, sin activar llamadas externas o credenciales no verificadas.
