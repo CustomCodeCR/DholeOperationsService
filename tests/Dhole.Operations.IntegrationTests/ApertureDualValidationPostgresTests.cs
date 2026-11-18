@@ -48,9 +48,12 @@ public sealed class ApertureDualValidationPostgresTests
         await db.SaveChangesAsync();
         Assert.IsTrue(await db.CaseAuditEntries.AnyAsync(a =>
             a.CaseId == created.Id && a.ActionCode == "operations.case.created"));
-        Assert.IsTrue(await db.OutboxMessages.AnyAsync(o =>
-            o.EventName == "audit.event.registered" &&
-            o.PayloadJson.Contains("operations.case.created")));
+        // CustomCodeFramework maps PayloadJson as jsonb; avoid PostgreSQL LIKE on jsonb.
+        var auditPayloads = await db.OutboxMessages
+            .Where(o => o.EventName == "audit.event.registered")
+            .Select(o => o.PayloadJson).ToListAsync();
+        Assert.IsTrue(auditPayloads.Any(p => p.Contains("operations.case.created",
+            StringComparison.Ordinal)));
         Assert.AreEqual(2, await db.ApertureValidations.CountAsync(v =>
             v.CaseStageId == created.InitialStageId));
         Assert.AreEqual(1, await db.TeamAuditEntries.CountAsync(a => a.TeamId == team.Id));
