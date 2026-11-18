@@ -31,6 +31,8 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
     public DbSet<OperationsInternalNote> InternalNotes => Set<OperationsInternalNote>();
     public DbSet<OperationsCarrierConnection> CarrierConnections => Set<OperationsCarrierConnection>();
     public DbSet<OperationsCarrierCapability> CarrierCapabilities => Set<OperationsCarrierCapability>();
+    public DbSet<OperationsApertureValidation> ApertureValidations => Set<OperationsApertureValidation>();
+    public DbSet<OperationsTeamAuditEntry> TeamAuditEntries => Set<OperationsTeamAuditEntry>();
 
     protected override void OnModelCreating(ModelBuilder m)
     {
@@ -277,6 +279,33 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
             e.Property(x => x.ApiVersion).HasMaxLength(30);
             e.Property(x => x.EvidenceRef).HasMaxLength(200);
             e.HasIndex(x => new { x.ConnectionId, x.ProductCode, x.CapabilityCode }).IsUnique();
+        });
+
+        m.Entity<OperationsApertureValidation>(e =>
+        {
+            e.ToTable("operations_aperture_validations");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.CaseStage).WithMany().HasForeignKey(x => x.CaseStageId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<OperationsTeam>().WithMany().HasForeignKey(x => x.TeamId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.Property(x => x.Status).HasMaxLength(20).IsRequired();
+            e.Property(x => x.Comment).HasMaxLength(2000);
+            e.HasIndex(x => new { x.CaseStageId, x.Slot }).IsUnique();
+            e.HasIndex(x => new { x.CaseStageId, x.UserId }).IsUnique();
+            e.HasIndex(x => new { x.UserId, x.Status });
+        });
+        m.Entity<OperationsTeamAuditEntry>(e =>
+        {
+            e.ToTable("operations_team_audit_entries");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Team).WithMany().HasForeignKey(x => x.TeamId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.Property(x => x.ActionCode).HasMaxLength(100).IsRequired();
+            e.Property(x => x.BeforeJson).HasColumnType("jsonb");
+            e.Property(x => x.AfterJson).HasColumnType("jsonb");
+            e.HasIndex(x => x.EventId).IsUnique();
+            e.HasIndex(x => new { x.TeamId, x.OccurredAtUtc });
         });
 
         // Business entities use the established snake_case convention from Config.
