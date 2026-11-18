@@ -10,6 +10,7 @@ services:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
       ConnectionStrings__Postgres: "Host=${POSTGRES_HOST:-postgres};Port=${POSTGRES_PORT:-5432};Database=${OPERATIONS_DB:-dhole_operations};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
       Redis__ConnectionString: ${REDIS_CONNECTION_STRING:-redis:6379}
+      Crm__ApiBaseUrl: ${CRM_HTTP_URL:-http://crm-api:8080}
       Auth__Jwt__Issuer: ${JWT_ISSUER:-DholeAuthService}
       Auth__Jwt__Audience: ${JWT_AUDIENCE:-DholeEcosystem}
       Auth__Jwt__SecretKey: ${JWT_SECRET}
