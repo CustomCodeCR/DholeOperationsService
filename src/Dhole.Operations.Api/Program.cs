@@ -19,6 +19,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddGrpc();
 builder.Services.AddHttpClient("crm-operations-contacts", client =>
     client.Timeout = TimeSpan.FromSeconds(10));
+builder.Services.AddHttpClient("auth-operations-users", client => client.Timeout = TimeSpan.FromSeconds(8));
+builder.Services.AddScoped<Dhole.Operations.Api.Integrations.OperationsAuthUserVerifier>();
 builder.Services.AddSignalR();
 builder.Services.AddScoped<OperationsCrmAccountResolver>();
 builder.Services.AddAuthorization(options =>
@@ -102,6 +104,7 @@ app.MapGet("/api/operations/realtime/events", async (
 }).RequireAuthorization("OperationsRealtimeRead");
 app.MapOperationsEndpoints();
 app.MapOperationsPreparationEndpoints();
+app.MapOperationsTeamValidationEndpoints();
 app.MapHub<OperationsHub>("/hubs/operations");
 app.MapGrpcService<OperationsHealthGrpcService>();
 

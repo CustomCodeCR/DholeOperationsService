@@ -1,7 +1,8 @@
+using Dhole.Operations.Persistence.Audit;
+using Dhole.Operations.Api.Integrations;
 using System.Net;
 using System.Net.Http.Headers;
 using Dhole.Operations.Api.Security;
-using Dhole.Operations.Api.Integrations;
 using Dhole.Operations.Application.Cases;
 using Dhole.Operations.Domain.Models;
 using Dhole.Operations.Persistence;
@@ -35,7 +36,7 @@ public static class OperationsEndpoints
             var actor = OperationsCaseAccess.UserId(http.User);
             var company = OperationsCaseAccess.CompanyId(http.User);
             if (actor is null || !OperationsCaseAccess.HasScope(http.User, "operations.case.create") ||
-                (!http.User.IsInRole("SuperAdmin") && company != request.CompanyId))
+                (!OperationsCaseAccess.IsSystemAdministrator(http.User) && company != request.CompanyId))
                 return Results.Forbid();
             if (request.AccountId == Guid.Empty) return Results.BadRequest(new { code = "CRM_ACCOUNT_REQUIRED" });
             var crmAccount = await crm.ResolveAsync(request.AccountId,
@@ -147,11 +148,14 @@ public static class OperationsEndpoints
 
         api.MapPost("/cases/{id:guid}/stages/{stageId:guid}/assign", async (
             Guid id, Guid stageId, HttpContext http,
-            OperationsCaseAccess access, AssignStageHandler handler, CancellationToken ct) =>
+            OperationsCaseAccess access, AssignStageHandler handler, OperationsDbContext db, CancellationToken ct) =>
         {
             var actor = OperationsCaseAccess.UserId(http.User);
             if (actor is null || !OperationsCaseAccess.HasScope(http.User, "operations.assignment.manage") ||
                 !await access.CanReadAsync(id, http.User, ct)) return Results.Forbid();
+            if (await db.CaseStages.AnyAsync(s => s.Id == stageId && s.CaseId == id &&
+                s.DepartmentCode == "APERTURAS", ct))
+                return Results.Conflict(new { code = "APERTURAS_REQUIRES_TWO_VALIDATORS" });
             var result = await handler.HandleAsync(
                 new AssignStageCommand(id, stageId, actor.Value), ct);
             return result is null ? Results.Conflict(new { error = "Stage closed, already assigned, or no eligible pool candidate." })
@@ -162,7 +166,7 @@ public static class OperationsEndpoints
             OperationsDbContext db, CancellationToken ct) =>
         {
             if (!OperationsCaseAccess.HasScope(http.User, "operations.team.manage") ||
-                (!http.User.IsInRole("SuperAdmin") && OperationsCaseAccess.CompanyId(http.User) != input.CompanyId))
+                (!OperationsCaseAccess.IsSystemAdministrator(http.User) && OperationsCaseAccess.CompanyId(http.User) != input.CompanyId))
                 return Results.Forbid();
             if (input.CompanyId == Guid.Empty || string.IsNullOrWhiteSpace(input.Name) ||
                 input.Name.Length > 150 || string.IsNullOrWhiteSpace(input.DepartmentCode) ||
@@ -173,6 +177,10 @@ public static class OperationsEndpoints
                 Name = input.Name.Trim()
             };
             db.Teams.Add(team);
+            var actor = OperationsCaseAccess.UserId(http.User);
+            if (actor is null) return Results.Forbid();
+            OperationsAuditWriter.Team(db, team.Id, actor.Value, "operations.team.created",
+                null, new { team.Name, team.CompanyId, team.DepartmentCode });
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/operations/teams/{team.Id}", new { team.Id });
         });
@@ -181,9 +189,9 @@ public static class OperationsEndpoints
         {
             if (!OperationsCaseAccess.HasScope(http.User, "operations.team.manage")) return Results.Forbid();
             var company = OperationsCaseAccess.CompanyId(http.User);
-            if (!http.User.IsInRole("SuperAdmin") && company is null) return Results.Forbid();
+            if (!OperationsCaseAccess.IsSystemAdministrator(http.User) && company is null) return Results.Forbid();
             var query = db.Teams.AsNoTracking();
-            if (!http.User.IsInRole("SuperAdmin")) query = query.Where(x => x.CompanyId == company);
+            if (!OperationsCaseAccess.IsSystemAdministrator(http.User)) query = query.Where(x => x.CompanyId == company);
             return Results.Ok(await query.OrderBy(x => x.DepartmentCode).ThenBy(x => x.Name)
                 .Select(x => new { x.Id, x.CompanyId, x.DepartmentCode, x.Name, x.IsActive,
                     Members = x.Members.Select(m => new { m.UserId, m.CapacityPoints, m.IsAvailable, m.IsSupervisor }) })
@@ -191,16 +199,31 @@ public static class OperationsEndpoints
         });
 
         api.MapPost("/teams/{teamId:guid}/members", async (
-            Guid teamId, NewMemberRequest input, HttpContext http, OperationsDbContext db, CancellationToken ct) =>
+            Guid teamId, NewMemberRequest input, HttpContext http, OperationsDbContext db,
+            OperationsAuthUserVerifier auth, CancellationToken ct) =>
         {
             if (!OperationsCaseAccess.HasScope(http.User, "operations.team.manage")) return Results.Forbid();
             var team = await db.Teams.FindAsync([teamId], ct);
             if (team is null) return Results.NotFound();
-            if (!http.User.IsInRole("SuperAdmin") && team.CompanyId != OperationsCaseAccess.CompanyId(http.User))
+            if (!OperationsCaseAccess.IsSystemAdministrator(http.User) && team.CompanyId != OperationsCaseAccess.CompanyId(http.User))
                 return Results.Forbid();
             if (input.UserId == Guid.Empty || input.CapacityPoints <= 0 || input.CapacityPoints > 10000)
                 return Results.BadRequest();
+            try
+            {
+                if (!await auth.IsEligibleAsync(input.UserId,
+                    http.Request.Headers.Authorization.ToString(), ct,
+                    requireReview: team.DepartmentCode == "APERTURAS"))
+                    return Results.BadRequest(new { code = "AUTH_USER_NOT_ELIGIBLE" });
+            }
+            catch (UnauthorizedAccessException) { return Results.Forbid(); }
+            catch (HttpRequestException) { return Results.Problem(statusCode: 503, title: "Auth eligibility unavailable"); }
+            catch (TaskCanceledException) when (!ct.IsCancellationRequested)
+                { return Results.Problem(statusCode: 503, title: "Auth eligibility timed out"); }
             var member = await db.TeamMembers.FirstOrDefaultAsync(x => x.TeamId == teamId && x.UserId == input.UserId, ct);
+            var before = member is null ? null : new {
+                member.CapacityPoints, member.IsAvailable, member.IsSupervisor
+            };
             if (member is null)
             {
                 member = new OperationsTeamMember { TeamId = teamId, UserId = input.UserId };
@@ -209,6 +232,11 @@ public static class OperationsEndpoints
             member.CapacityPoints = input.CapacityPoints;
             member.IsAvailable = input.IsAvailable;
             member.IsSupervisor = input.IsSupervisor;
+            var actor = OperationsCaseAccess.UserId(http.User);
+            if (actor is null) return Results.Forbid();
+            OperationsAuditWriter.Team(db, teamId, actor.Value,
+                before is null ? "operations.team.member.added" : "operations.team.member.updated",
+                before, new { member.UserId, member.CapacityPoints, member.IsAvailable, member.IsSupervisor });
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { member.Id });
         });
@@ -219,7 +247,7 @@ public static class OperationsEndpoints
             if (!OperationsCaseAccess.HasScope(http.User, "operations.team.manage")) return Results.Forbid();
             var team = await db.Teams.FindAsync([input.TeamId], ct);
             if (team is null) return Results.NotFound();
-            if (!http.User.IsInRole("SuperAdmin") && team.CompanyId != OperationsCaseAccess.CompanyId(http.User))
+            if (!OperationsCaseAccess.IsSystemAdministrator(http.User) && team.CompanyId != OperationsCaseAccess.CompanyId(http.User))
                 return Results.Forbid();
             if (!string.Equals(team.DepartmentCode, input.DepartmentCode, StringComparison.OrdinalIgnoreCase) ||
                 input.ModalityCode?.Length > 30 || input.OriginCountryCode?.Length > 2 ||
@@ -232,6 +260,13 @@ public static class OperationsEndpoints
                 DestinationCountryCode = input.DestinationCountryCode?.Trim().ToUpperInvariant()
             };
             db.AssignmentRules.Add(rule);
+            var actor = OperationsCaseAccess.UserId(http.User);
+            if (actor is null) return Results.Forbid();
+            OperationsAuditWriter.Team(db, team.Id, actor.Value,
+                "operations.assignment-rule.created", null, new {
+                    rule.Id, rule.DepartmentCode, rule.Priority, rule.ModalityCode,
+                    rule.OriginCountryCode, rule.DestinationCountryCode
+                });
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/operations/assignment-rules/{rule.Id}", new { rule.Id });
         });
