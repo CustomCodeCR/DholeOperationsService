@@ -37,7 +37,13 @@ public sealed class OperationsCaseAccess(OperationsDbContext db)
         if (actor is null || !HasScope(user, "operations.case.read"))
             return false;
         var caseQuery = db.Cases.AsNoTracking().Where(x => x.Id == caseId);
-        if (HasScope(user, "operations.case.read-all"))
+        var company = CompanyId(user);
+        var administrator = IsSystemAdministrator(user);
+        if (!administrator && company.HasValue)
+            caseQuery = caseQuery.Where(x => x.CompanyId == company.Value);
+        // Internal Auth JWTs may have no company_id. Never let read-all become cross-tenant.
+        if (HasScope(user, "operations.case.read-all") &&
+            (administrator || company.HasValue))
             return await caseQuery.AnyAsync(ct);
         return await caseQuery.AnyAsync(x =>
             x.CreatedBy == actor.Value ||
@@ -54,8 +60,13 @@ public sealed class OperationsCaseAccess(OperationsDbContext db)
         var actor = UserId(user);
         if (actor is null || !HasScope(user, "operations.case.read")) return [];
         var query = db.Cases.AsNoTracking().Where(x => caseIds.Contains(x.Id));
-        if (!HasScope(user, "operations.case.read-all"))
+        var company = CompanyId(user);
+        var administrator = IsSystemAdministrator(user);
+        if (!administrator && company.HasValue)
+            query = query.Where(x => x.CompanyId == company.Value);
+        if (!HasScope(user, "operations.case.read-all") || (!administrator && !company.HasValue))
             query = query.Where(x => x.CreatedBy == actor.Value ||
+                db.ApertureValidations.Any(v => v.CaseStage.CaseId == x.Id && v.UserId == actor.Value) ||
                 x.Stages.Any(stage => db.StageAssignments.Any(assignment =>
                     assignment.CaseStageId == stage.Id &&
                     assignment.UserId == actor.Value && assignment.ReleasedAtUtc == null)) ||
