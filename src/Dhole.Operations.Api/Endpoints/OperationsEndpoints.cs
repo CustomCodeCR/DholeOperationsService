@@ -3,7 +3,6 @@ using Dhole.Operations.Api.Integrations;
 using System.Net;
 using System.Net.Http.Headers;
 using Dhole.Operations.Api.Security;
-using Dhole.Operations.Api.Integrations;
 using Dhole.Operations.Application.Cases;
 using Dhole.Operations.Domain.Models;
 using Dhole.Operations.Persistence;
