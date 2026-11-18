@@ -3,6 +3,7 @@ using System.Text.Json;
 using Dhole.Operations.Api.Endpoints;
 using Dhole.Operations.Api.Grpc;
 using Dhole.Operations.Api.Hubs;
+using Dhole.Operations.Api.Integrations;
 using Dhole.Operations.Api.Realtime;
 using Dhole.Operations.Api.Security;
 using Dhole.Operations.Application.DependencyInjection;
@@ -19,6 +20,7 @@ builder.Services.AddGrpc();
 builder.Services.AddHttpClient("crm-operations-contacts", client =>
     client.Timeout = TimeSpan.FromSeconds(10));
 builder.Services.AddSignalR();
+builder.Services.AddScoped<OperationsCrmAccountResolver>();
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("OperationsRealtimeRead", policy => policy.RequireAssertion(context =>
@@ -99,6 +101,7 @@ app.MapGet("/api/operations/realtime/events", async (
         new { x.EventId, x.EventName, x.CaseId, ProcessedAtUtc = x.At }));
 }).RequireAuthorization("OperationsRealtimeRead");
 app.MapOperationsEndpoints();
+app.MapOperationsPreparationEndpoints();
 app.MapHub<OperationsHub>("/hubs/operations");
 app.MapGrpcService<OperationsHealthGrpcService>();
 

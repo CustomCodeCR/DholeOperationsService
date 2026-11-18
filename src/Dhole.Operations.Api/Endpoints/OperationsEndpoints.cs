@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using Dhole.Operations.Api.Security;
+using Dhole.Operations.Api.Integrations;
 using Dhole.Operations.Application.Cases;
 using Dhole.Operations.Domain.Models;
 using Dhole.Operations.Persistence;
@@ -28,18 +29,24 @@ public static class OperationsEndpoints
         var api = app.MapGroup("/api/operations").RequireAuthorization();
 
         api.MapPost("/cases", async (
-            NewCaseRequest request, HttpContext http, CreateManualCaseHandler handler, CancellationToken ct) =>
+            NewCaseRequest request, HttpContext http, CreateManualCaseHandler handler,
+            OperationsCrmAccountResolver crm, CancellationToken ct) =>
         {
             var actor = OperationsCaseAccess.UserId(http.User);
             var company = OperationsCaseAccess.CompanyId(http.User);
             if (actor is null || !OperationsCaseAccess.HasScope(http.User, "operations.case.create") ||
                 (!http.User.IsInRole("SuperAdmin") && company != request.CompanyId))
                 return Results.Forbid();
+            if (request.AccountId == Guid.Empty) return Results.BadRequest(new { code = "CRM_ACCOUNT_REQUIRED" });
+            var crmAccount = await crm.ResolveAsync(request.AccountId,
+                http.Request.Headers.Authorization.ToString(), ct);
+            if (crmAccount.ErrorCode is not null)
+                return Results.Json(new { code = crmAccount.ErrorCode }, statusCode: crmAccount.StatusCode);
             try
             {
                 var result = await handler.HandleAsync(
                     new CreateManualCaseCommand(request.CompanyId, request.SeriesCode,
-                        request.AccountId, request.ExecutiveUserId, request.ModalityCode,
+                        request.AccountId, crmAccount.ExecutiveUserId!.Value, request.ModalityCode,
                         request.Priority, request.ComplexityPoints, actor.Value,
                         request.OriginCountryCode, request.DestinationCountryCode), ct);
                 return Results.Created($"/api/operations/cases/{result.Id}", result);

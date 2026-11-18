@@ -1,3 +1,10 @@
+## [0.6.0] - 2026-11-17 (DH-20261117-OPS-FOUNDATION-205 · Preparación backend Operations v1.2)
+
+- MINOR: registro de conexiones multicarrier de estado REQUESTED sin habilitar APIs externas ni credenciales ficticias.
+- Migración aditiva para estado de Origen, salida idempotente a Tránsito mediante Outbox y bitácora interna restringida.
+- Resolución del vendedor responsable mediante cuenta CRM autenticada, sin tomar el ejecutivo proporcionado por el cliente como fuente de verdad.
+- Operations 0.5.0 → 0.6.0; release validado en CI y staging. Promoción coordinada a master por autorización expresa.
+
 ## [0.5.0] - 2026-11-17 (Responsables operativos desde CRM)
 
 - MINOR DH-20261117-CRM-OPS-CONTACTS-204: consulta GET /api/operations/cases/{id}/operations-contacts, que valida permisos sobre expediente y consulta al CRM los encargados activos de la cuenta (sin replicar datos personales).
