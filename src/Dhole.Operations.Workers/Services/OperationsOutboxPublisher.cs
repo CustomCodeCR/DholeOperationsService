@@ -28,13 +28,28 @@ public sealed class OperationsOutboxPublisher(
                 {
                     try
                     {
-                        await redis.GetDatabase().StreamAddAsync(stream, new NameValueEntry[]
+                        if (entry.EventName == "audit.event.registered")
                         {
-                            new("id", entry.EventId.ToString("D")),
-                            new("type", entry.EventName),
-                            new("data", entry.PayloadJson),
-                            new("occurredAt", entry.CreatedAtUtc.ToString("O"))
-                        });
+                            // CustomCodeFramework.Redis.Streams wire format consumed by DholeAuditLogs.
+                            await redis.GetDatabase().StreamAddAsync(
+                                config["Redis:Streams:AuditStreamName"] ?? "dhole.audit.events",
+                                new NameValueEntry[] {
+                                    new("message_type", "audit.event.registered"),
+                                    new("payload_json", entry.PayloadJson),
+                                    new("header:source_service", "DholeOperationsService"),
+                                    new("header:message_id", entry.EventId.ToString("D"))
+                                });
+                        }
+                        else
+                        {
+                            await redis.GetDatabase().StreamAddAsync(stream, new NameValueEntry[]
+                            {
+                                new("id", entry.EventId.ToString("D")),
+                                new("type", entry.EventName),
+                                new("data", entry.PayloadJson),
+                                new("occurredAt", entry.CreatedAtUtc.ToString("O"))
+                            });
+                        }
                         entry.Status = OutboxMessageStatus.Processed;
                         entry.ProcessedAtUtc = DateTime.UtcNow;
                         entry.ErrorMessage = null;

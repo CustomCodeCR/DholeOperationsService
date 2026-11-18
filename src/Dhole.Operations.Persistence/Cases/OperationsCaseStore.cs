@@ -1,3 +1,4 @@
+using Dhole.Operations.Persistence.Audit;
 using System.Data;
 using System.Text.Json;
 using Dhole.Operations.Application.Cases;
@@ -37,6 +38,10 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
         var openingStage = new OperationsCaseStage { CaseId = operation.Id, DepartmentCode = "APERTURAS" };
         operation.Stages.Add(openingStage);
         db.Cases.Add(operation);
+        OperationsAuditWriter.Case(db, operation.Id, openingStage.Id, input.ActorUserId,
+            "operations.case.created", null, new {
+                operation.Idtra, operation.CompanyId, operation.AccountId, operation.ModalityCode
+            });
         Enqueue("operations.case.created.v1", new { caseId = operation.Id, idtra, actorId = input.ActorUserId, version = operation.Version });
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
@@ -101,6 +106,10 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
         operation.UpdatedAtUtc = DateTimeOffset.UtcNow;
         operation.Version++;
         db.StageAssignments.Add(assignment);
+        OperationsAuditWriter.Case(db, operation.Id, stage.Id, input.ActorUserId,
+            "operations.stage.assigned", null, new {
+                assignment.TeamId, assignment.UserId, stage.DepartmentCode
+            });
         Enqueue("operations.case.assigned.v1",
             new { caseId = operation.Id, stageId = stage.Id, actorId = input.ActorUserId, version = operation.Version });
         await db.SaveChangesAsync(ct);
@@ -124,6 +133,9 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
         };
         document.Versions.Add(version);
         db.Documents.Add(document);
+        OperationsAuditWriter.Case(db, input.CaseId, null, input.ActorUserId,
+            "operations.document.registered", null,
+            new { documentId = document.Id, versionId = version.Id, input.DocumentTypeCode });
         Enqueue("operations.document.registered.v1", new { caseId = input.CaseId, documentId = document.Id, versionId = version.Id });
         await db.SaveChangesAsync(ct);
         return new DocumentRegisteredResult(document.Id, version.Id);
@@ -151,6 +163,9 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
             DocumentVersionId = doc.Id, RequestedBy = input.ActorUserId
         };
         db.ExtractionJobs.Add(job);
+        OperationsAuditWriter.Case(db, input.CaseId, null, input.ActorUserId,
+            "operations.document.extraction.queued", null,
+            new { jobId = job.Id, documentVersionId = doc.Id });
         // DataExtraction/AI consumer contract is a separate integration: never invent a successful analysis.
         Enqueue("operations.document.extraction.requested.v1",
             new { caseId = input.CaseId, documentVersionId = doc.Id, storageFileId = doc.StorageFileId, jobId = job.Id });
