@@ -16,6 +16,8 @@ using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddGrpc();
+builder.Services.AddHttpClient("crm-operations-contacts", client =>
+    client.Timeout = TimeSpan.FromSeconds(10));
 builder.Services.AddSignalR();
 builder.Services.AddAuthorization(options =>
 {
