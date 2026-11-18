@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Net;
 using System.Net.Http.Headers;
 
@@ -6,7 +7,7 @@ namespace Dhole.Operations.Api.Integrations;
 /// <summary>Fail-closed Auth lookups: only internal, active, unlocked users can be allocated.</summary>
 public sealed class OperationsAuthUserVerifier(IHttpClientFactory clients, IConfiguration configuration)
 {
-    public async Task<bool> IsEligibleAsync(Guid userId, string authorization, CancellationToken ct)
+    public async Task<bool> IsEligibleAsync(Guid userId, string authorization, CancellationToken ct, bool requireReview = false)
     {
         if (userId == Guid.Empty) return false;
         var configured = configuration["Auth:ApiBaseUrl"];
@@ -29,6 +30,12 @@ public sealed class OperationsAuthUserVerifier(IHttpClientFactory clients, IConf
             throw new UnauthorizedAccessException("Auth does not permit eligibility lookup");
         if (!response.IsSuccessStatusCode)
             throw new HttpRequestException("Auth eligibility could not be verified");
+        if (requireReview)
+        {
+            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+            return json.RootElement.TryGetProperty("canReviewAperturas", out var canReview) &&
+                canReview.ValueKind == JsonValueKind.True;
+        }
         return true;
     }
 }

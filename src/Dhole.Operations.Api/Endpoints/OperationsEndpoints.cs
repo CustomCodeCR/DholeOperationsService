@@ -212,7 +212,8 @@ public static class OperationsEndpoints
             try
             {
                 if (!await auth.IsEligibleAsync(input.UserId,
-                    http.Request.Headers.Authorization.ToString(), ct))
+                    http.Request.Headers.Authorization.ToString(), ct,
+                    requireReview: team.DepartmentCode == "APERTURAS"))
                     return Results.BadRequest(new { code = "AUTH_USER_NOT_ELIGIBLE" });
             }
             catch (UnauthorizedAccessException) { return Results.Forbid(); }

@@ -46,6 +46,11 @@ public sealed class ApertureDualValidationPostgresTests
             ActorUserId = Guid.NewGuid(), ActionCode = "operations.team.created"
         });
         await db.SaveChangesAsync();
+        Assert.IsTrue(await db.CaseAuditEntries.AnyAsync(a =>
+            a.CaseId == created.Id && a.ActionCode == "operations.case.created"));
+        Assert.IsTrue(await db.OutboxMessages.AnyAsync(o =>
+            o.EventName == "audit.event.registered" &&
+            o.PayloadJson.Contains("operations.case.created")));
         Assert.AreEqual(2, await db.ApertureValidations.CountAsync(v =>
             v.CaseStageId == created.InitialStageId));
         Assert.AreEqual(1, await db.TeamAuditEntries.CountAsync(a => a.TeamId == team.Id));

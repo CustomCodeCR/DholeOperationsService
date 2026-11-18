@@ -133,7 +133,7 @@ public static class OperationsTeamValidationEndpoints
                     operation.ComplexityPoints)) is not null)
                 {
                     var validFirst = await auth.IsEligibleAsync(pair.FirstUserId,
-                        http.Request.Headers.Authorization.ToString(), ct);
+                        http.Request.Headers.Authorization.ToString(), ct, requireReview: true);
                     var validSecond = await auth.IsEligibleAsync(pair.SecondUserId,
                         http.Request.Headers.Authorization.ToString(), ct);
                     if (validFirst && validSecond) break;
