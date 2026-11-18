@@ -24,7 +24,7 @@ public sealed class OperationsPreparationTests
         };
         Assert.AreEqual("REQUESTED", connection.Status);
         Assert.IsNull(connection.LastValidatedAtUtc);
-        Assert.AreEqual(0, connection.Capabilities.Count);
+        Assert.IsEmpty(connection.Capabilities);
         Assert.AreEqual("UNVERIFIED", new OperationsCarrierCapability().Status);
     }
 
