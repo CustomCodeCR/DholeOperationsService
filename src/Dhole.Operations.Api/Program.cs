@@ -105,6 +105,7 @@ app.MapGet("/api/operations/realtime/events", async (
 app.MapOperationsEndpoints();
 app.MapOperationsPreparationEndpoints();
 app.MapOperationsTeamValidationEndpoints();
+app.MapOperationsDashboardEndpoints();
 app.MapOperationsTeamCatalogEndpoints();
 app.MapHub<OperationsHub>("/hubs/operations");
 app.MapGrpcService<OperationsHealthGrpcService>();
