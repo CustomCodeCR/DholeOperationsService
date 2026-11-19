@@ -1,3 +1,10 @@
+## [0.9.0] - 2026-11-19 (DH-20261119-OPERATIONS-SCOPES-CONTEXT-246 · Auth scopes y contexto empresarial Operations)
+
+- MINOR: corrige el 403 de Teams/initialize cuando Auth emite JWT de usuario interno sin company_id; selecciona únicamente la empresa operativa existente si es única.
+- En un entorno sin empresas, solo SuperUsuario puede inicializar un espacio operativo estable; se serializa con advisory lock y se conservan historial AuditLogs, Outbox y los permisos requeridos.
+- En instalaciones multiempresa ambiguas devuelve 409 y no mezcla tenants. La resolución segura se aplica a equipos, integrantes, auditoría y Aperturas.
+- DholeOperationsService 0.8.0 → 0.9.0; ecosistema 1.89.0 → 1.90.0. Release coordinado con DholeAuthService. CI/staging pendientes; producción no autorizada.
+
 ## [0.8.0] - 2026-11-18 (DH-20261118-OPERATIONS-TEAM-UX-241 · catálogo de equipos estándar)
 
 - MINOR: inicializador idempotente por empresa de diez equipos operativos, sin altas de personas, membresías, roles ni permisos automáticos.
