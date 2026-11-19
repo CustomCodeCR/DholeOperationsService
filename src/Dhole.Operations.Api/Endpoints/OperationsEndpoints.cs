@@ -31,10 +31,10 @@ public static class OperationsEndpoints
 
         api.MapPost("/cases", async (
             NewCaseRequest request, HttpContext http, CreateManualCaseHandler handler,
-            OperationsCrmAccountResolver crm, CancellationToken ct) =>
+            OperationsCaseAccess access, OperationsCrmAccountResolver crm, CancellationToken ct) =>
         {
             var actor = OperationsCaseAccess.UserId(http.User);
-            var company = OperationsCaseAccess.CompanyId(http.User);
+            var company = await access.ResolveCompanyIdAsync(http.User, ct);
             if (actor is null || !OperationsCaseAccess.HasScope(http.User, "operations.case.create") ||
                 (!OperationsCaseAccess.IsSystemAdministrator(http.User) && company != request.CompanyId))
                 return Results.Forbid();
@@ -163,10 +163,11 @@ public static class OperationsEndpoints
         });
 
         api.MapPost("/teams", async (NewTeamRequest input, HttpContext http,
-            OperationsDbContext db, CancellationToken ct) =>
+            OperationsCaseAccess access, OperationsDbContext db, CancellationToken ct) =>
         {
-            if (!OperationsCaseAccess.HasScope(http.User, "operations.team.manage") ||
-                (!OperationsCaseAccess.IsSystemAdministrator(http.User) && OperationsCaseAccess.CompanyId(http.User) != input.CompanyId))
+            if (!OperationsCaseAccess.HasScope(http.User, "operations.team.manage")) return Results.Forbid();
+            if (!OperationsCaseAccess.IsSystemAdministrator(http.User) &&
+                await access.ResolveCompanyIdAsync(http.User, ct) != input.CompanyId)
                 return Results.Forbid();
             if (input.CompanyId == Guid.Empty || string.IsNullOrWhiteSpace(input.Name) ||
                 input.Name.Length > 150 || string.IsNullOrWhiteSpace(input.DepartmentCode) ||
@@ -185,10 +186,10 @@ public static class OperationsEndpoints
             return Results.Created($"/api/operations/teams/{team.Id}", new { team.Id });
         });
 
-        api.MapGet("/teams", async (HttpContext http, OperationsDbContext db, CancellationToken ct) =>
+        api.MapGet("/teams", async (HttpContext http, OperationsCaseAccess access, OperationsDbContext db, CancellationToken ct) =>
         {
             if (!OperationsCaseAccess.HasScope(http.User, "operations.team.manage")) return Results.Forbid();
-            var company = OperationsCaseAccess.CompanyId(http.User);
+            var company = await access.ResolveCompanyIdAsync(http.User, ct);
             if (!OperationsCaseAccess.IsSystemAdministrator(http.User) && company is null) return Results.Forbid();
             var query = db.Teams.AsNoTracking();
             if (!OperationsCaseAccess.IsSystemAdministrator(http.User)) query = query.Where(x => x.CompanyId == company);
@@ -199,13 +200,13 @@ public static class OperationsEndpoints
         });
 
         api.MapPost("/teams/{teamId:guid}/members", async (
-            Guid teamId, NewMemberRequest input, HttpContext http, OperationsDbContext db,
+            Guid teamId, NewMemberRequest input, HttpContext http, OperationsCaseAccess access, OperationsDbContext db,
             OperationsAuthUserVerifier auth, CancellationToken ct) =>
         {
             if (!OperationsCaseAccess.HasScope(http.User, "operations.team.manage")) return Results.Forbid();
             var team = await db.Teams.FindAsync([teamId], ct);
             if (team is null) return Results.NotFound();
-            if (!OperationsCaseAccess.IsSystemAdministrator(http.User) && team.CompanyId != OperationsCaseAccess.CompanyId(http.User))
+            if (!OperationsCaseAccess.IsSystemAdministrator(http.User) && team.CompanyId != await access.ResolveCompanyIdAsync(http.User, ct))
                 return Results.Forbid();
             if (input.UserId == Guid.Empty || input.CapacityPoints <= 0 || input.CapacityPoints > 10000)
                 return Results.BadRequest();
@@ -242,12 +243,12 @@ public static class OperationsEndpoints
         });
 
         api.MapPost("/assignment-rules", async (
-            NewAssignmentRuleRequest input, HttpContext http, OperationsDbContext db, CancellationToken ct) =>
+            NewAssignmentRuleRequest input, HttpContext http, OperationsCaseAccess access, OperationsDbContext db, CancellationToken ct) =>
         {
             if (!OperationsCaseAccess.HasScope(http.User, "operations.team.manage")) return Results.Forbid();
             var team = await db.Teams.FindAsync([input.TeamId], ct);
             if (team is null) return Results.NotFound();
-            if (!OperationsCaseAccess.IsSystemAdministrator(http.User) && team.CompanyId != OperationsCaseAccess.CompanyId(http.User))
+            if (!OperationsCaseAccess.IsSystemAdministrator(http.User) && team.CompanyId != await access.ResolveCompanyIdAsync(http.User, ct))
                 return Results.Forbid();
             if (!string.Equals(team.DepartmentCode, input.DepartmentCode, StringComparison.OrdinalIgnoreCase) ||
                 input.ModalityCode?.Length > 30 || input.OriginCountryCode?.Length > 2 ||
