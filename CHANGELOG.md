@@ -1,3 +1,10 @@
+## [0.12.0] - 2026-11-19 (DH-20261119-OPS-ROLE-TEAM-DASHBOARD-254 · Resumen operativo con permisos por equipo)
+
+- MINOR: GET /api/operations/dashboard devuelve totales, estados de doble validación, equipos permitidos y últimas 30 aperturas.
+- Las agregaciones, expedientes y teamId se filtran en PostgreSQL por company, scope y membresía; los identificadores de equipos ajenos se rechazan con 403.
+- El endpoint no concede permisos ni crea usuarios o integrantes; reutiliza REST/JWT y conserva arquitectura realtime y outbox/inbox existente.
+- DholeOperationsService 0.11.0 → 0.12.0; ecosistema 1.96.0. CI, integración y pruebas de staging pendientes. Producción no autorizada.
+
 ## [0.11.0] - 2026-11-19 (DH-20261119-OPS-TEAM-BULK-251 · Selección múltiple de equipos)
 
 - MINOR: nuevo endpoint POST /api/operations/teams/{teamId}/members/bulk, con validación de todos los usuarios mediante Auth y una única transacción de persistencia con auditoría.

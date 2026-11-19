@@ -1,0 +1,20 @@
+{
+  "releaseId": "DH-20261119-OPS-ROLE-TEAM-DASHBOARD-254",
+  "component": "DholeOperationsService",
+  "previousVersion": "0.11.0",
+  "version": "0.12.0",
+  "ecosystemVersion": "1.96.0",
+  "branch": "feature/operations-role-team-dashboard-20261119",
+  "security": [
+    "operations.case.read mandatory",
+    "scoped by company and user membership",
+    "foreign teamId rejected",
+    "aggregates derived only from authorized cases"
+  ],
+  "verification": {
+    "build": "pending",
+    "tests": "pending",
+    "staging": "pending"
+  },
+  "productionDeploymentAuthorized": false
+}
