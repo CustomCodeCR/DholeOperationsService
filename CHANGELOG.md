@@ -1,3 +1,9 @@
+## [0.12.0] - 2026-11-19 (DH-20261119-OPS-ROLE-TEAM-DASHBOARD-254 · Dashboard Aperturas por equipo)
+
+- MINOR: endpoint autorizado GET /api/operations/dashboard, totalizados por permiso de expediente y equipo, con validaciones y últimos 30 casos.
+- Filtrado PostgreSQL por usuario, empresa y rol; se rechaza teamId no permitido con 403. Conserva REST y SignalR.
+- Promoción selectiva desde develop validado en staging, Operations 0.11.0 → 0.12.0; versión global 1.96.0. Sin incluir otros cambios de develop.
+
 ## [0.11.0] - 2026-11-19 (DH-20261119-OPS-TEAM-BULK-251 · Selección múltiple de equipos)
 
 - MINOR: nuevo endpoint POST /api/operations/teams/{teamId}/members/bulk, con validación de todos los usuarios mediante Auth y una única transacción de persistencia con auditoría.
