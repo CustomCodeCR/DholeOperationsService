@@ -30,12 +30,14 @@ public sealed class OperationsAuthUserVerifier(IHttpClientFactory clients, IConf
             throw new UnauthorizedAccessException("Auth does not permit eligibility lookup");
         if (!response.IsSuccessStatusCode)
             throw new HttpRequestException("Auth eligibility could not be verified");
-        if (requireReview)
-        {
-            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
-            return json.RootElement.TryGetProperty("canReviewAperturas", out var canReview) &&
-                canReview.ValueKind == JsonValueKind.True;
-        }
-        return true;
+        // Auth is the authoritative source for role membership. A valid internal
+        // user is not enough; only the two business-approved logistics roles
+        // may participate in teams, including manual API calls.
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        if (!json.RootElement.TryGetProperty("eligibleForOperations", out var eligible) ||
+            eligible.ValueKind != JsonValueKind.True) return false;
+        if (!requireReview) return true;
+        return json.RootElement.TryGetProperty("canReviewAperturas", out var canReview) &&
+            canReview.ValueKind == JsonValueKind.True;
     }
 }
