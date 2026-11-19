@@ -21,12 +21,12 @@ public static class OperationsTeamValidationEndpoints
     {
         var api = app.MapGroup("/api/operations").RequireAuthorization();
         api.MapGet("/apertures/validation-queue", async (
-            HttpContext http, OperationsDbContext db, int? page, int? pageSize, CancellationToken ct) =>
+            HttpContext http, OperationsCaseAccess access, OperationsDbContext db, int? page, int? pageSize, CancellationToken ct) =>
         {
             var actor = OperationsCaseAccess.UserId(http.User);
             if (actor is null || !OperationsCaseAccess.HasScope(http.User, "operations.case.read"))
                 return Results.Forbid();
-            var company = OperationsCaseAccess.CompanyId(http.User);
+            var company = await access.ResolveCompanyIdAsync(http.User, ct);
             var readAll = OperationsCaseAccess.HasScope(http.User, "operations.case.read-all");
             if (!OperationsCaseAccess.IsSystemAdministrator(http.User) && company is null) return Results.Forbid();
             var query = db.Cases.AsNoTracking()
@@ -72,7 +72,7 @@ public static class OperationsTeamValidationEndpoints
 
         api.MapPost("/cases/{caseId:guid}/aperture-validations/assign", async (
             Guid caseId, AssignReviewersRequest input, HttpContext http,
-            OperationsDbContext db, OperationsAuthUserVerifier auth, CancellationToken ct) =>
+            OperationsCaseAccess access, OperationsDbContext db, OperationsAuthUserVerifier auth, CancellationToken ct) =>
         {
             var actor = OperationsCaseAccess.UserId(http.User);
             if (actor is null ||
@@ -83,7 +83,7 @@ public static class OperationsTeamValidationEndpoints
             var operation = await db.Cases.SingleOrDefaultAsync(c => c.Id == caseId, ct);
             if (operation is null) return Results.NotFound();
             if (!OperationsCaseAccess.IsSystemAdministrator(http.User) &&
-                OperationsCaseAccess.CompanyId(http.User) != operation.CompanyId) return Results.Forbid();
+                await access.ResolveCompanyIdAsync(http.User, ct) != operation.CompanyId) return Results.Forbid();
             var key = "apertures-pool:" + operation.CompanyId.ToString("N");
             await db.Database.ExecuteSqlInterpolatedAsync(
                 $"SELECT pg_advisory_xact_lock(hashtextextended({key}, 0));", ct);
@@ -259,7 +259,7 @@ public static class OperationsTeamValidationEndpoints
 
         api.MapPatch("/teams/{teamId:guid}/active", async (
             Guid teamId, SetTeamActiveRequest input, HttpContext http,
-            OperationsDbContext db, CancellationToken ct) =>
+            OperationsCaseAccess access, OperationsDbContext db, CancellationToken ct) =>
         {
             var actor = OperationsCaseAccess.UserId(http.User);
             if (actor is null || !OperationsCaseAccess.HasScope(http.User, "operations.team.manage"))
@@ -267,7 +267,7 @@ public static class OperationsTeamValidationEndpoints
             var team = await db.Teams.SingleOrDefaultAsync(t => t.Id == teamId, ct);
             if (team is null) return Results.NotFound();
             if (!OperationsCaseAccess.IsSystemAdministrator(http.User) &&
-                OperationsCaseAccess.CompanyId(http.User) != team.CompanyId) return Results.Forbid();
+                await access.ResolveCompanyIdAsync(http.User, ct) != team.CompanyId) return Results.Forbid();
             if (team.IsActive == input.IsActive) return Results.Ok(new { team.Id, team.IsActive, duplicate = true });
             OperationsAuditWriter.Team(db, teamId, actor.Value, "operations.team.active.changed",
                 new { team.IsActive }, new { input.IsActive });
@@ -277,7 +277,7 @@ public static class OperationsTeamValidationEndpoints
         });
 
         api.MapDelete("/teams/{teamId:guid}/members/{userId:guid}", async (
-            Guid teamId, Guid userId, HttpContext http, OperationsDbContext db, CancellationToken ct) =>
+            Guid teamId, Guid userId, HttpContext http, OperationsCaseAccess access, OperationsDbContext db, CancellationToken ct) =>
         {
             var actor = OperationsCaseAccess.UserId(http.User);
             if (actor is null || !OperationsCaseAccess.HasScope(http.User, "operations.team.manage"))
@@ -285,7 +285,7 @@ public static class OperationsTeamValidationEndpoints
             var team = await db.Teams.SingleOrDefaultAsync(t => t.Id == teamId, ct);
             if (team is null) return Results.NotFound();
             if (!OperationsCaseAccess.IsSystemAdministrator(http.User) &&
-                OperationsCaseAccess.CompanyId(http.User) != team.CompanyId) return Results.Forbid();
+                await access.ResolveCompanyIdAsync(http.User, ct) != team.CompanyId) return Results.Forbid();
             var member = await db.TeamMembers.SingleOrDefaultAsync(m =>
                 m.TeamId == teamId && m.UserId == userId, ct);
             if (member is null) return Results.NoContent();
@@ -301,7 +301,7 @@ public static class OperationsTeamValidationEndpoints
         });
 
         api.MapGet("/teams/{teamId:guid}/audit", async (
-            Guid teamId, HttpContext http, OperationsDbContext db, CancellationToken ct) =>
+            Guid teamId, HttpContext http, OperationsCaseAccess access, OperationsDbContext db, CancellationToken ct) =>
         {
             if (!OperationsCaseAccess.HasScope(http.User, "operations.audit.read") ||
                 !OperationsCaseAccess.HasScope(http.User, "operations.team.manage"))
@@ -309,7 +309,7 @@ public static class OperationsTeamValidationEndpoints
             var team = await db.Teams.AsNoTracking().SingleOrDefaultAsync(t => t.Id == teamId, ct);
             if (team is null) return Results.NotFound();
             if (!OperationsCaseAccess.IsSystemAdministrator(http.User) &&
-                OperationsCaseAccess.CompanyId(http.User) != team.CompanyId) return Results.Forbid();
+                await access.ResolveCompanyIdAsync(http.User, ct) != team.CompanyId) return Results.Forbid();
             return Results.Ok(await db.TeamAuditEntries.AsNoTracking()
                 .Where(a => a.TeamId == teamId).OrderByDescending(a => a.OccurredAtUtc)
                 .Take(100).Select(a => new { a.EventId, a.ActionCode, a.ActorUserId,
