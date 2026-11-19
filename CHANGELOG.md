@@ -1,3 +1,10 @@
+## [0.8.0] - 2026-11-18 (DH-20261118-OPERATIONS-TEAM-UX-241 · catálogo de equipos estándar)
+
+- MINOR: inicializador idempotente por empresa de diez equipos operativos, sin altas de personas, membresías, roles ni permisos automáticos.
+- Configura reglas iniciales de Aperturas y pool de Origen USA FCL/LCL/AIR, sin reglas internacionales ambiguas. Respeta reglas ya creadas y serializa concurrencia por empresa.
+- Auth continúa validando elegibilidad para cada integrante. Cada equipo/regla nueva genera historial auditado, Outbox duradero y señal de inicialización para la arquitectura realtime.
+- Operations 0.7.0 → 0.8.0; DholeWeb 1.84.0 → 1.85.0; ecosistema 1.89.0. CI/staging pendientes; no despliegue de producción autorizado.
+
 ## [0.7.0] - 2026-11-17 (DH-20261117-OPS-DUAL-VALIDATION-208 · Equipos y doble validación Aperturas)
 
 - MINOR: pool por equipo, 2 revisores distintos, decisiones individuales, cola inicial y auditoría persistente PostgreSQL y AuditLogs por Outbox/Streams.
