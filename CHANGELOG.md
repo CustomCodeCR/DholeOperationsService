@@ -1,3 +1,10 @@
+## [0.11.0] - 2026-11-19 (DH-20261119-OPS-TEAM-BULK-251 · Selección múltiple de equipos)
+
+- MINOR: nuevo endpoint POST /api/operations/teams/{teamId}/members/bulk, con validación de todos los usuarios mediante Auth y una única transacción de persistencia con auditoría.
+- Asignación idempotente: no reinicia los integrantes existentes; rechaza lotes repetidos, vacíos o inválidos.
+- La pertenencia a Aperturas exige el rol autorizado; las decisiones de validación conservan la verificación separada de scopes de revisión.
+- DholeOperationsService 0.10.0 → 0.11.0; ecosistema 1.94.0. Release coordinado con Auth, Operations, Web y System. CI y staging pendientes.
+
 ## [0.10.0] - 2026-11-19 (DH-20261119-OPS-AUDIT-ROLE-247 · Roles permitidos de Operations)
 
 - MINOR: verifica la elegibilidad por rol devuelta por Auth antes de permitir altas/modificaciones de integrantes y la doble validación de Aperturas. Solo Operador Logístico o Supervisor Operativo son asignables.
