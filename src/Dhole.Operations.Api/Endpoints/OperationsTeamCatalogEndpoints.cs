@@ -2,6 +2,7 @@ using System.Data;
 using System.Text.Json;
 using Dhole.Operations.Api.Security;
 using Dhole.Operations.Domain.Models;
+using Dhole.Operations.Domain.Services;
 using Dhole.Operations.Persistence;
 using Dhole.Operations.Persistence.Audit;
 using Dhole.Operations.Persistence.Messaging;
@@ -35,12 +36,26 @@ public static class OperationsTeamCatalogEndpoints
             HttpContext http, OperationsDbContext db, CancellationToken ct) =>
         {
             var actor = OperationsCaseAccess.UserId(http.User);
-            var company = OperationsCaseAccess.CompanyId(http.User);
-            if (actor is null || company is null || company == Guid.Empty ||
-                !OperationsCaseAccess.HasScope(http.User, "operations.team.manage"))
+            if (actor is null || !OperationsCaseAccess.HasScope(http.User, "operations.team.manage"))
                 return Results.Forbid();
 
             await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
+            // Serializes first-run provisioning before a tenant identity is persisted.
+            await db.Database.ExecuteSqlRawAsync(
+                "SELECT pg_advisory_xact_lock(839162097424);", ct);
+            var knownCompanies = await db.Teams.AsNoTracking().Select(x => x.CompanyId)
+                .Union(db.Cases.AsNoTracking().Select(x => x.CompanyId))
+                .Distinct().Take(2).ToArrayAsync(ct);
+            var company = OperationsCompanyBootstrapSelector.ResolveForBootstrap(
+                OperationsCaseAccess.CompanyId(http.User),
+                OperationsCaseAccess.IsSystemAdministrator(http.User),
+                knownCompanies, Guid.NewGuid());
+            if (company is null)
+                return Results.Conflict(new {
+                    code = "OPERATIONS_COMPANY_CONTEXT_REQUIRED",
+                    message = "La empresa operativa no se puede identificar de forma segura. Seleccione una empresa o solicite a un SuperUsuario que inicialice el entorno."
+                });
+
             var lockKey = "operations-team-catalog:" + company.Value.ToString("N");
             await db.Database.ExecuteSqlInterpolatedAsync(
                 $"SELECT pg_advisory_xact_lock(hashtextextended({lockKey}, 0));", ct);
