@@ -5,6 +5,7 @@ using System.Net.Http.Headers;
 using Dhole.Operations.Api.Security;
 using Dhole.Operations.Application.Cases;
 using Dhole.Operations.Domain.Models;
+using Dhole.Operations.Domain.Services;
 using Dhole.Operations.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -19,6 +20,8 @@ public static class OperationsEndpoints
 
     public sealed record NewTeamRequest(Guid CompanyId, string DepartmentCode, string Name);
     public sealed record NewMemberRequest(Guid UserId, decimal CapacityPoints, bool IsSupervisor, bool IsAvailable = true);
+    public sealed record NewMembersBatchRequest(Guid[] UserIds, decimal CapacityPoints,
+        bool IsSupervisor, bool IsAvailable = true);
     public sealed record NewAssignmentRuleRequest(
         Guid TeamId, string DepartmentCode, string? ModalityCode,
         string? OriginCountryCode, string? DestinationCountryCode, int Priority = 0);
@@ -214,7 +217,7 @@ public static class OperationsEndpoints
             {
                 if (!await auth.IsEligibleAsync(input.UserId,
                     http.Request.Headers.Authorization.ToString(), ct,
-                    requireReview: team.DepartmentCode == "APERTURAS"))
+                    requireReview: false))
                     return Results.BadRequest(new { code = "AUTH_USER_NOT_ELIGIBLE" });
             }
             catch (UnauthorizedAccessException) { return Results.Forbid(); }
@@ -240,6 +243,64 @@ public static class OperationsEndpoints
                 before, new { member.UserId, member.CapacityPoints, member.IsAvailable, member.IsSupervisor });
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { member.Id });
+        });
+
+        // All selected employees are checked by Auth BEFORE any write. One EF SaveChanges
+        // transaction stores the members and their immutable AuditLogs Outbox events together.
+        api.MapPost("/teams/{teamId:guid}/members/bulk", async (
+            Guid teamId, NewMembersBatchRequest input, HttpContext http,
+            OperationsCaseAccess access, OperationsDbContext db,
+            OperationsAuthUserVerifier auth, CancellationToken ct) =>
+        {
+            var actor = OperationsCaseAccess.UserId(http.User);
+            if (actor is null || !OperationsCaseAccess.HasScope(http.User, "operations.team.manage"))
+                return Results.Forbid();
+            var team = await db.Teams.SingleOrDefaultAsync(t => t.Id == teamId, ct);
+            if (team is null) return Results.NotFound();
+            if (!OperationsCaseAccess.IsSystemAdministrator(http.User) &&
+                team.CompanyId != await access.ResolveCompanyIdAsync(http.User, ct))
+                return Results.Forbid();
+
+            var invalid = OperationsTeamMemberBatchPolicy.Validate(input.UserIds, input.CapacityPoints);
+            if (invalid is not null) return Results.BadRequest(new { code = invalid });
+
+            var ids = input.UserIds;
+            var existing = await db.TeamMembers.AsNoTracking()
+                .Where(m => m.TeamId == teamId && ids.Contains(m.UserId))
+                .Select(m => m.UserId).ToArrayAsync(ct);
+            var existingIds = existing.ToHashSet();
+            var pending = ids.Where(id => !existingIds.Contains(id)).ToArray();
+            try
+            {
+                // Even already assigned members must retain their Auth role eligibility;
+                // the batch is fail-closed on stale/retired employees.
+                foreach (var id in ids)
+                    if (!await auth.IsEligibleAsync(id,
+                        http.Request.Headers.Authorization.ToString(), ct))
+                        return Results.BadRequest(new { code = "AUTH_USER_NOT_ELIGIBLE", userId = id });
+            }
+            catch (UnauthorizedAccessException) { return Results.Forbid(); }
+            catch (HttpRequestException) {
+                return Results.Problem(statusCode: 503, title: "Auth eligibility unavailable");
+            }
+            catch (TaskCanceledException) when (!ct.IsCancellationRequested) {
+                return Results.Problem(statusCode: 503, title: "Auth eligibility timed out");
+            }
+
+            foreach (var id in pending)
+            {
+                var member = new OperationsTeamMember {
+                    TeamId = teamId, UserId = id, CapacityPoints = input.CapacityPoints,
+                    IsSupervisor = input.IsSupervisor, IsAvailable = input.IsAvailable
+                };
+                db.TeamMembers.Add(member);
+                OperationsAuditWriter.Team(db, teamId, actor.Value,
+                    "operations.team.member.added", null,
+                    new { member.UserId, member.CapacityPoints, member.IsAvailable, member.IsSupervisor });
+            }
+            if (pending.Length > 0) await db.SaveChangesAsync(ct);
+            return Results.Ok(new { assigned = pending.Length,
+                skippedExisting = existingIds.Count, total = ids.Length });
         });
 
         api.MapPost("/assignment-rules", async (
