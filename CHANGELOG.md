@@ -1,3 +1,8 @@
+## [0.10.0] - 2026-11-19 (DH-20261119-OPS-AUDIT-ROLE-247 · Roles permitidos de Operations)
+
+- MINOR: verifica la elegibilidad por rol devuelta por Auth antes de permitir altas/modificaciones de integrantes y la doble validación de Aperturas. Solo Operador Logístico o Supervisor Operativo son asignables.
+- Conserva REST, SignalR, outbox/inbox, ACL y auditoría; DholeOperationsService 0.9.0→0.10.0, ecosistema 1.90.0→1.91.0. Release coordinado con Auth, Web y System.
+
 ## [0.9.0] - 2026-11-19 (DH-20261119-OPERATIONS-SCOPES-CONTEXT-246 · Auth scopes y contexto empresarial Operations)
 
 - MINOR: corrige el 403 de Teams/initialize cuando Auth emite JWT de usuario interno sin company_id; selecciona únicamente la empresa operativa existente si es única.
