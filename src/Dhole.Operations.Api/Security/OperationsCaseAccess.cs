@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Dhole.Operations.Persistence;
+using Dhole.Operations.Domain.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace Dhole.Operations.Api.Security;
@@ -30,6 +31,21 @@ public sealed class OperationsCaseAccess(OperationsDbContext db)
          user.Claims.Where(x => x.Type is "scope" or "scp" or "scopes")
              .SelectMany(x => x.Value.Split([' ', ',', ';'], StringSplitOptions.RemoveEmptyEntries))
              .Contains(scope, StringComparer.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Auth currently issues internal-user JWTs without a company identifier.
+    /// Accept such a context only when the Operations database has precisely one
+    /// company; never turn a missing company claim into multi-tenant access.
+    /// </summary>
+    public async Task<Guid?> ResolveCompanyIdAsync(ClaimsPrincipal user, CancellationToken ct)
+    {
+        var claimed = CompanyId(user);
+        if (claimed.HasValue && claimed.Value != Guid.Empty) return claimed;
+        var known = await db.Teams.AsNoTracking().Select(x => x.CompanyId)
+            .Union(db.Cases.AsNoTracking().Select(x => x.CompanyId))
+            .Distinct().Take(2).ToArrayAsync(ct);
+        return OperationsCompanyBootstrapSelector.ResolveExisting(claimed, known);
+    }
 
     public async Task<bool> CanReadAsync(Guid caseId, ClaimsPrincipal user, CancellationToken ct)
     {

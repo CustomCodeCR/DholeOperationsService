@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "ecosystem": "Dhole",
   "component": "DholeOperationsService",
-  "version": "0.8.0",
-  "ecosystemVersion": "1.89.0",
-  "releaseId": "DH-20261118-OPERATIONS-TEAM-UX-241",
+  "version": "0.9.0",
+  "ecosystemVersion": "1.90.0",
+  "releaseId": "DH-20261119-OPERATIONS-SCOPES-CONTEXT-246",
   "releaseStatus": "candidate-ci-and-staging-pending",
-  "businessReleaseId": "DH-20261118-OPERATIONS-TEAM-UX-241"
+  "businessReleaseId": "DH-20261119-OPERATIONS-SCOPES-CONTEXT-246"
 }
