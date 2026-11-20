@@ -101,8 +101,8 @@ public static class ApertureDraftRules
         if (details.VolumeValue.HasValue && details.VolumeUnit is not ("CBM" or "CFT"))
             errors.Add("volumeUnit");
         if (details.Equipment is null || details.Equipment.Count > 100 ||
-            details.Equipment.Any(x => string.IsNullOrWhiteSpace(x.EquipmentCode)
-                || x.EquipmentCode.Length > 30 || x.Quantity <= 0))
+            details.Equipment.Any(x => x.EquipmentCode.Length > 30 ||
+                (x.Quantity < 0)))
             errors.Add("equipment");
         if (details.ServiceCodes is null || details.ServiceCodes.Count > 120 ||
             details.ServiceCodes.Any(x => string.IsNullOrWhiteSpace(x) || x.Length > 60))
@@ -131,6 +131,7 @@ public static class ApertureDraftRules
                 (details.VolumeUnit == "CFT" ? CubicFeetToCubicMetres : 1m), 6,
                 MidpointRounding.AwayFromZero) : null;
         details.Equipment = details.Equipment
+            .Where(x => !string.IsNullOrWhiteSpace(x.EquipmentCode) && x.Quantity > 0)
             .GroupBy(x => x.EquipmentCode.Trim().ToUpperInvariant())
             .Select(g => new ApertureEquipmentLine {
                 EquipmentCode = g.Key, Quantity = g.Sum(x => x.Quantity)
