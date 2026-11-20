@@ -26,11 +26,13 @@ public sealed class OperationsPreparationPostgresTests
         await using (var db = Db())
         {
             await db.Database.MigrateAsync();
+        await db.Database.ExecuteSqlRawAsync(
+            "UPDATE operations.operations_case_sequences SET is_authoritatively_synced = true WHERE series_code = '00000'");
             var applied = await db.Database.GetAppliedMigrationsAsync();
             CollectionAssert.Contains(applied.ToList(), "202611172230_OperationsPreparationV12");
 
             var created = await new CreateManualCaseHandler(new OperationsCaseStore(db)).HandleAsync(
-                new CreateManualCaseCommand(Guid.NewGuid(), "00000", Guid.NewGuid(),
+                new CreateManualCaseCommand(Guid.NewGuid(), Guid.NewGuid(),
                     Guid.NewGuid(), "FCL", 1, 1m, Guid.NewGuid()), CancellationToken.None);
             caseId = created.Id;
             var stage = new OperationsCaseStage
