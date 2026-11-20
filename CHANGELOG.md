@@ -1,3 +1,12 @@
+## [0.15.0] - 2026-11-20 (DH-20261120-OPERATIONS-IDTRA-FORM-351 · IDTRA global + Apertura completa)
+
+- MINOR: el identificador visible de nuevas aperturas será IDTRA12345 (prefijo sin guiones ni serie elegible). Un contador global transaccional de PostgreSQL no limita el número a seis dígitos.
+- Migración aditiva: reconcilia consecutivos locales antiguos; **NO cambia IDTRA históricos** y obliga a sincronizar la última numeración externa real de Dynamics mediante operación exclusiva de superadministrador, auditada y monotónica, antes de emitir nuevos trámites.
+- Nuevo contrato de apertura manual con borrador estructurado: CRM, referencia/PO, división y contactos operativos, modalidad, Incoterm, POL/POE/POD, mercancía, unidades exactas, bultos, varios equipos, servicios, recolecta/WHS, naviera/agente, ETA/ETD y observaciones.
+- Guardar DRAFT admite faltantes. Guardar/editar usa versión optimista; enviar a validación exige requisitos condicionales según modalidad/servicio y publica evento Outbox.
+- Version 0.14.0 → 0.15.0, global 1.106.1 → 1.107.0. El consumidor automático Pricing aceptado sigue en fase posterior; se mantendrá un mismo generador IDTRA para ambos orígenes.
+- No se autoriza producción hasta reconciliar el contador externo real y pasar pruebas en staging.
+
 ## [0.14.0] - 2026-11-20 (DH-20261120-OPERATIONS-TRAMITES-UX-332 · Expediente IDTRA unificado)
 
 - MINOR: Trámites unifica consulta, búsqueda por IDTRA, QUO y modalidad, además de filtro por cuenta CRM, con autorización, paginación y consultas desde PostgreSQL.
