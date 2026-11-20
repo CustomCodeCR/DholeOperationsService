@@ -71,6 +71,8 @@ public sealed class OperationsPostgresTests
         if (string.IsNullOrWhiteSpace(Connection)) Assert.Inconclusive("DHOLE_TEST_POSTGRES is required for PostgreSQL integration tests.");
         await using var db = NewDb();
         await db.Database.MigrateAsync();
+        await db.Database.ExecuteSqlRawAsync(
+            "UPDATE operations.operations_case_sequences SET is_authoritatively_synced = true WHERE series_code = '00000'");
         var companyId = Guid.NewGuid();
         var first = Guid.NewGuid();
         var second = Guid.NewGuid();
