@@ -39,7 +39,7 @@ public sealed class OperationsPostgresTests
         var assignedNumbers = results.Select(x => long.Parse(x.Idtra["IDTRA".Length..]))
             .Order().ToArray();
         Assert.AreEqual(12, assignedNumbers.Distinct().Count());
-        Assert.IsTrue(assignedNumbers[0] >= 1);
+        Assert.IsGreaterThanOrEqualTo(assignedNumbers[0], 1L);
         for (var i = 1; i < assignedNumbers.Length; i++)
             Assert.AreEqual(assignedNumbers[i - 1] + 1, assignedNumbers[i]);
 
