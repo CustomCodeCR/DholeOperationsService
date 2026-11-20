@@ -116,37 +116,63 @@ public static class OperationsEndpoints
                 {
                     x.Id, x.Idtra, x.CompanyId, x.AccountId, x.ExecutiveUserId,
                     x.ModalityCode, x.OriginCountryCode, x.DestinationCountryCode,
-                    x.ApertureType, x.Status, x.Priority, x.CreatedAtUtc,
+                    x.ApertureType, x.SourceQuoteId, x.SourceQuoteOptionId,
+                    x.Status, x.Priority, x.CreatedAtUtc,
                     x.UpdatedAtUtc, x.Version,
                     Stages = x.Stages.Select(s => new { s.Id, s.DepartmentCode, s.Status, s.TeamId, s.Version })
                 }).SingleAsync(ct);
             return Results.Ok(result);
         });
 
+        // Server-side filtering is required: a page-local search hides authorized
+        // IDTRAs on later pages and makes dashboard counters disagree with Trámites.
         api.MapGet("/cases", async (
-            int? page, int? pageSize, HttpContext http, OperationsCaseAccess access,
+            int? page, int? pageSize, string? q, string? status, string? apertureType,
+            HttpContext http, OperationsCaseAccess access,
             OperationsDbContext db, CancellationToken ct) =>
         {
-            if (!OperationsCaseAccess.HasScope(http.User, "operations.case.read"))
-                return Results.Forbid();
             var actor = OperationsCaseAccess.UserId(http.User);
-            if (actor is null) return Results.Forbid();
+            if (actor is null || !OperationsCaseAccess.HasScope(http.User, "operations.case.read"))
+                return Results.Forbid();
+            var isAdmin = OperationsCaseAccess.IsSystemAdministrator(http.User);
+            var company = await access.ResolveCompanyIdAsync(http.User, ct);
+            if (!isAdmin && company is null) return Results.Forbid();
+            if (q is { Length: > 120 } || status is { Length: > 40 } ||
+                (apertureType is not null && apertureType is not ("" or "MANUAL" or "AUTOMATIC")))
+                return Results.BadRequest(new { code = "OPERATIONS_CASE_FILTER_INVALID" });
+
             var size = Math.Clamp(pageSize ?? 25, 1, 100);
-            var offset = (Math.Max(1, page ?? 1) - 1) * size;
+            var currentPage = Math.Max(1, page ?? 1);
             var query = db.Cases.AsNoTracking();
+            if (!isAdmin) query = query.Where(c => c.CompanyId == company);
             if (!OperationsCaseAccess.HasScope(http.User, "operations.case.read-all"))
-                query = query.Where(x => x.CreatedBy == actor.Value ||
-                    x.Stages.Any(s => db.StageAssignments.Any(a =>
+                query = query.Where(c => c.CreatedBy == actor.Value ||
+                    db.ApertureValidations.Any(v => v.CaseStage.CaseId == c.Id && v.UserId == actor.Value) ||
+                    c.Stages.Any(s => db.StageAssignments.Any(a =>
                         a.CaseStageId == s.Id && a.UserId == actor.Value && a.ReleasedAtUtc == null)) ||
-                    x.Stages.Any(s => s.TeamId.HasValue &&
+                    c.Stages.Any(s => s.TeamId.HasValue &&
                         db.TeamMembers.Any(m => m.TeamId == s.TeamId && m.UserId == actor.Value && m.IsAvailable)));
+            if (!string.IsNullOrWhiteSpace(q))
+            {
+                var pattern = "%" + q.Trim().Replace("%", @"\%").Replace("_", @"\_") + "%";
+                query = query.Where(c => EF.Functions.ILike(c.Idtra, pattern, @"\"));
+            }
+            if (!string.IsNullOrWhiteSpace(status))
+            {
+                var value = status.Trim().ToUpperInvariant();
+                query = query.Where(c => c.Status == value);
+            }
+            if (!string.IsNullOrWhiteSpace(apertureType))
+                query = query.Where(c => c.ApertureType == apertureType);
             var total = await query.CountAsync(ct);
-            var items = await query.OrderByDescending(x => x.CreatedAtUtc).ThenBy(x => x.Id)
-                .Skip(offset).Take(size).Select(x => new
+            var items = await query.OrderByDescending(c => c.CreatedAtUtc).ThenBy(c => c.Id)
+                .Skip((currentPage - 1) * size).Take(size).Select(c => new
                 {
-                    x.Id, x.Idtra, x.AccountId, x.ModalityCode, x.Status, x.Priority, x.UpdatedAtUtc
+                    c.Id, c.Idtra, c.AccountId, c.ExecutiveUserId, c.ModalityCode,
+                    c.ApertureType, c.SourceQuoteId, c.SourceQuoteOptionId,
+                    c.Status, c.Priority, c.CreatedAtUtc, c.UpdatedAtUtc
                 }).ToArrayAsync(ct);
-            return Results.Ok(new { page = Math.Max(1, page ?? 1), pageSize = size, total, items });
+            return Results.Ok(new { page = currentPage, pageSize = size, total, items });
         });
 
         api.MapPost("/cases/{id:guid}/stages/{stageId:guid}/assign", async (
