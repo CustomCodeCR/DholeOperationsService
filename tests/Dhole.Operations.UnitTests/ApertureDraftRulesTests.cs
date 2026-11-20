@@ -32,7 +32,7 @@ public sealed class ApertureDraftRulesTests
         Assert.AreEqual(1.000000m,
             decimal.Round(data.VolumeCbm!.Value, 6));
         Assert.AreEqual(3, data.Equipment.Sum(x => x.Quantity));
-        Assert.AreEqual(2, data.Equipment.Count);
+        Assert.HasCount(2, data.Equipment);
     }
 
     [TestMethod]
