@@ -15,7 +15,9 @@ namespace Dhole.Operations.Api.Endpoints;
 /// </summary>
 public static class OperationsCaseWorkspaceEndpoints
 {
-    public sealed record ApertureDraftUpdateRequest(long ExpectedVersion, ApertureDraft Details);
+    public sealed record ApertureDraftUpdateRequest(long ExpectedVersion, ApertureDraft Details,
+        string ModalityCode, string? OriginCountryCode, string? DestinationCountryCode,
+        short Priority, decimal ComplexityPoints);
     public sealed record SubmitApertureRequest(long ExpectedVersion);
 
     public sealed record UpdateCaseRequest(
@@ -107,7 +109,14 @@ public static class OperationsCaseWorkspaceEndpoints
                 id, actor.Value, http, access, db, ct)) return Results.Forbid();
             if (input.Details is null)
                 return Results.BadRequest(new { code = "APERTURE_DETAILS_REQUIRED" });
-            var errors = ApertureDraftRules.ValidateDraft(input.Details);
+            var errors = ApertureDraftRules.ValidateDraft(input.Details).ToList();
+            if (input.ModalityCode is not ("FCL" or "LCL" or "FTL" or "LTL" or "AIR" or "MULTIMODAL"))
+                errors.Add("modalityCode");
+            if (!ValidIso(NormalizeIso(input.OriginCountryCode)) ||
+                !ValidIso(NormalizeIso(input.DestinationCountryCode)))
+                errors.Add("countryCodes");
+            if (input.Priority is < 1 or > 5 || input.ComplexityPoints is < 0.5m or > 1000m)
+                errors.Add("priorityOrComplexity");
             if (errors.Count != 0)
                 return Results.BadRequest(new { code = "INVALID_APERTURE_FIELDS", fields = errors });
             var operation = await db.Cases.SingleOrDefaultAsync(x => x.Id == id, ct);
@@ -116,14 +125,22 @@ public static class OperationsCaseWorkspaceEndpoints
                 return Results.Conflict(new { code = "OPERATIONS_CASE_VERSION_CONFLICT",
                     currentVersion = operation.Version });
             var normalized = ApertureDraftRules.Normalize(input.Details);
-            var before = operation.ApertureDetailsJson;
+            var before = new { operation.ApertureDetailsJson, operation.ModalityCode,
+                operation.OriginCountryCode, operation.DestinationCountryCode,
+                operation.Priority, operation.ComplexityPoints };
+            operation.ModalityCode = input.ModalityCode;
+            operation.OriginCountryCode = NormalizeIso(input.OriginCountryCode);
+            operation.DestinationCountryCode = NormalizeIso(input.DestinationCountryCode);
+            operation.Priority = input.Priority;
+            operation.ComplexityPoints = input.ComplexityPoints;
             operation.ApertureDetailsJson = JsonSerializer.Serialize(normalized,
                 ApertureDraftRules.JsonOptions);
             operation.Version++;
             operation.UpdatedAtUtc = DateTimeOffset.UtcNow;
             OperationsAuditWriter.Case(db, id, null, actor.Value,
                 "operations.aperture.details.updated", before, new {
-                    details = normalized, operation.Version });
+                    details = normalized, operation.ModalityCode, operation.Priority,
+                    operation.ComplexityPoints, operation.Version });
             db.OutboxMessages.Add(OperationsOutboxFactory.Create(
                 "operations.case.updated.v1",
                 JsonSerializer.Serialize(new { caseId = id, version = operation.Version })));
