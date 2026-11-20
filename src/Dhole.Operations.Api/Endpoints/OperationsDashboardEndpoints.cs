@@ -60,6 +60,8 @@ public static class OperationsDashboardEndpoints
                         v.CaseStage.CaseId == c.Id && v.TeamId == teamId.Value));
 
             var total = await query.CountAsync(ct);
+            var manual = await query.CountAsync(c => c.ApertureType == "MANUAL", ct);
+            var automatic = await query.CountAsync(c => c.ApertureType == "AUTOMATIC", ct);
             var awaitingAssignment = await query.CountAsync(c =>
                 !db.ApertureValidations.Any(v => v.CaseStage.CaseId == c.Id), ct);
             var inReview = await query.CountAsync(c =>
@@ -75,6 +77,7 @@ public static class OperationsDashboardEndpoints
                 .Select(c => new
                 {
                     c.Id, c.Idtra, c.ModalityCode, c.Status, c.Priority,
+                    c.ApertureType, c.SourceQuoteId,
                     c.CreatedAtUtc,
                     TeamId = c.Stages.Where(s => s.DepartmentCode == "APERTURAS")
                         .Select(s => s.TeamId).FirstOrDefault(),
@@ -87,7 +90,7 @@ public static class OperationsDashboardEndpoints
             return Results.Ok(new
             {
                 teams,
-                stats = new { total, awaitingAssignment, inReview, approved },
+                stats = new { total, manual, automatic, awaitingAssignment, inReview, approved },
                 items
             });
         }).RequireAuthorization();
