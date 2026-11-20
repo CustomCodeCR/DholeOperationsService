@@ -48,6 +48,7 @@ public sealed class ApertureDraft
     public string? Observations { get; set; }
     public List<ApertureEquipmentLine> Equipment { get; set; } = [];
     public List<string> ServiceCodes { get; set; } = [];
+    public List<Guid> OperationalContactIds { get; set; } = [];
 }
 public sealed class ApertureEquipmentLine
 {
@@ -106,6 +107,9 @@ public static class ApertureDraftRules
         if (details.ServiceCodes is null || details.ServiceCodes.Count > 120 ||
             details.ServiceCodes.Any(x => string.IsNullOrWhiteSpace(x) || x.Length > 60))
             errors.Add("serviceCodes");
+        if (details.OperationalContactIds is null || details.OperationalContactIds.Count > 50 ||
+            details.OperationalContactIds.Any(x => x == Guid.Empty))
+            errors.Add("operationalContactIds");
         if (details.EstimatedDepartureAtUtc.HasValue &&
             details.EstimatedArrivalAtUtc.HasValue &&
             details.EstimatedDepartureAtUtc > details.EstimatedArrivalAtUtc)
@@ -134,6 +138,7 @@ public static class ApertureDraftRules
         details.ServiceCodes = details.ServiceCodes
             .Select(x => x.Trim().ToUpperInvariant())
             .Distinct(StringComparer.Ordinal).ToList();
+        details.OperationalContactIds = details.OperationalContactIds.Distinct().ToList();
         return details;
     }
 
@@ -157,7 +162,7 @@ public static class ApertureDraftRules
             (string.IsNullOrWhiteSpace(details.PickupAddress) ||
              string.IsNullOrWhiteSpace(details.PickupContact)))
             missing.Add("pickup");
-        if (details.IncotermCode == "FCA" && modality is "LCL" or "LTL" &&
+        if (details.IncotermCode == "FCA" && modality is ("LCL" or "LTL") &&
             string.IsNullOrWhiteSpace(details.WarehouseName)) missing.Add("warehouseName");
         // Air and ground modalities do not require an ocean carrier.
         if (details.TransportTypeCode == "MARITIME" &&
