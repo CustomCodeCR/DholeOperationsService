@@ -128,7 +128,7 @@ public static class OperationsEndpoints
                     x.Id, x.Idtra, x.CompanyId, x.AccountId, x.ExecutiveUserId,
                     x.ModalityCode, x.OriginCountryCode, x.DestinationCountryCode,
                     x.ApertureType, x.SourceQuoteId, x.SourceQuoteOptionId,
-                    x.Status, x.Priority, x.CreatedAtUtc,
+                    x.Status, x.Priority, x.ComplexityPoints, x.CreatedAtUtc,
                     x.UpdatedAtUtc, x.Version,
                     Stages = x.Stages.Select(s => new { s.Id, s.DepartmentCode, s.Status, s.TeamId, s.Version })
                 }).SingleAsync(ct);
@@ -166,7 +166,15 @@ public static class OperationsEndpoints
             if (!string.IsNullOrWhiteSpace(q))
             {
                 var pattern = "%" + q.Trim().Replace("%", @"\%").Replace("_", @"\_") + "%";
-                query = query.Where(c => EF.Functions.ILike(c.Idtra, pattern, @"\"));
+                var lookup = q.Trim();
+                var hasGuid = Guid.TryParse(lookup, out var guid);
+                query = query.Where(c =>
+                    EF.Functions.ILike(c.Idtra, pattern, @"\\") ||
+                    EF.Functions.ILike(c.ModalityCode, pattern, @"\\") ||
+                    (hasGuid && (c.AccountId == guid || c.SourceQuoteId == guid)) ||
+                    db.CaseQuoteLinks.Any(link => link.CaseId == c.Id &&
+                        link.QuoteNumber != null &&
+                        EF.Functions.ILike(link.QuoteNumber, pattern, @"\\")));
             }
             if (!string.IsNullOrWhiteSpace(status))
             {
@@ -180,8 +188,11 @@ public static class OperationsEndpoints
                 .Skip((currentPage - 1) * size).Take(size).Select(c => new
                 {
                     c.Id, c.Idtra, c.AccountId, c.ExecutiveUserId, c.ModalityCode,
+                    c.OriginCountryCode, c.DestinationCountryCode,
                     c.ApertureType, c.SourceQuoteId, c.SourceQuoteOptionId,
-                    c.Status, c.Priority, c.CreatedAtUtc, c.UpdatedAtUtc
+                    c.Status, c.Priority, c.CreatedAtUtc, c.UpdatedAtUtc,
+                    DepartmentCode = c.Stages.OrderByDescending(s => s.StartedAtUtc)
+                        .Select(s => s.DepartmentCode).FirstOrDefault()
                 }).ToArrayAsync(ct);
             return Results.Ok(new { page = currentPage, pageSize = size, total, items });
         });
