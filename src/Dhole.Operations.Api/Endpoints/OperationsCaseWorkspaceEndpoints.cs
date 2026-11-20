@@ -22,6 +22,8 @@ public static class OperationsCaseWorkspaceEndpoints
         string? OriginCountryCode,
         string? DestinationCountryCode);
 
+    public sealed record UpdateOriginStatusRequest(long ExpectedVersion, string StatusCode);
+
     private static readonly string[] DepartmentTabs =
     [
         "COORDINACION_ORIGEN", "DOCUMENTACION", "TRANSITO", "PANAMA", "COSTA_RICA", "FINANZAS"
@@ -175,6 +177,75 @@ public static class OperationsCaseWorkspaceEndpoints
             }
             return Results.Ok(new { operation.Id, operation.Version,
                 operation.UpdatedAtUtc });
+        });
+
+        // Manual origin progression, not a claim of confirmed physical departure.
+        // IN_TRANSIT is exclusively handled by evidence-backed departure confirmation.
+        api.MapPost("/cases/{id:guid}/origin/progress", async (
+            Guid id, UpdateOriginStatusRequest input, HttpContext http,
+            OperationsCaseAccess access, OperationsDbContext db, CancellationToken ct) =>
+        {
+            var actor = OperationsCaseAccess.UserId(http.User);
+            if (actor is null ||
+                !OperationsCaseAccess.HasScope(http.User, "operations.origin.update") ||
+                !await access.CanReadAsync(id, http.User, ct)) return Results.Forbid();
+            var operation = await db.Cases.SingleOrDefaultAsync(x => x.Id == id, ct);
+            var stage = await db.CaseStages.SingleOrDefaultAsync(x =>
+                x.CaseId == id && x.DepartmentCode == "COORDINACION_ORIGEN", ct);
+            if (operation is null || stage is null) return Results.NotFound();
+            if (operation.Status is "CANCELLED" or "COMPLETED" ||
+                stage.Status is not ("READY" or "IN_PROGRESS") ||
+                !await CanEditStageAsync(stage.Id, stage.TeamId, actor.Value, http, db, ct))
+                return Results.Forbid();
+
+            var status = input.StatusCode?.Trim().ToUpperInvariant();
+            var allowed = operation.ModalityCode switch
+            {
+                "FCL" or "LCL" => new[] { "ORIGIN_COORDINATION", "BOOKING_READY", "PORT_OF_LOADING" },
+                "AIR" => new[] { "ORIGIN_COORDINATION", "ORIGIN_WAREHOUSE", "DEPARTURE_AIRPORT" },
+                "FTL" or "MULTIMODAL" => new[] { "ORIGIN_COORDINATION", "PREPARING_DISPATCH" },
+                "LTL" => new[] { "ORIGIN_COORDINATION", "ORIGIN_WAREHOUSE", "PREPARING_DISPATCH" },
+                _ => new[] { "ORIGIN_COORDINATION" }
+            };
+            if (status is null || !allowed.Contains(status, StringComparer.Ordinal))
+                return Results.BadRequest(new { code = "ORIGIN_STATUS_NOT_APPLICABLE" });
+            var progress = await db.OriginProgress.SingleOrDefaultAsync(x => x.CaseStageId == stage.Id, ct);
+            if (progress?.ActualDepartureAtUtc is not null)
+                return Results.Conflict(new { code = "ORIGIN_ALREADY_IN_TRANSIT" });
+            var currentVersion = progress?.Version ?? 0L;
+            if (currentVersion != input.ExpectedVersion)
+                return Results.Conflict(new { code = "ORIGIN_VERSION_CONFLICT", currentVersion });
+            if (progress is null)
+            {
+                progress = new OperationsOriginProgress { CaseStageId = stage.Id, Version = 0 };
+                db.OriginProgress.Add(progress);
+            }
+            var beforeStatus = progress.StatusCode;
+            if (beforeStatus == status)
+                return Results.Ok(new { progress.StatusCode, progress.Version });
+            progress.StatusCode = status;
+            progress.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            progress.Version++;
+            if (stage.Status == "READY")
+            {
+                stage.Status = "IN_PROGRESS";
+                stage.StartedAtUtc ??= DateTimeOffset.UtcNow;
+                stage.Version++;
+            }
+            operation.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            operation.Version++;
+            OperationsAuditWriter.Case(db, id, stage.Id, actor.Value,
+                "operations.origin.status.changed", new { status = beforeStatus },
+                new { status, progress.Version });
+            db.OutboxMessages.Add(OperationsOutboxFactory.Create("operations.origin.status-changed.v1",
+                JsonSerializer.Serialize(new { caseId = id, stageId = stage.Id,
+                    statusCode = status, version = operation.Version })));
+            try { await db.SaveChangesAsync(ct); }
+            catch (DbUpdateConcurrencyException)
+            {
+                return Results.Conflict(new { code = "ORIGIN_VERSION_CONFLICT" });
+            }
+            return Results.Ok(new { progress.StatusCode, progress.Version });
         });
 
         return app;
