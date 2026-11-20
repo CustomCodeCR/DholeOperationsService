@@ -103,6 +103,7 @@ app.MapGet("/api/operations/realtime/events", async (
         new { x.EventId, x.EventName, x.CaseId, ProcessedAtUtc = x.At }));
 }).RequireAuthorization("OperationsRealtimeRead");
 app.MapOperationsEndpoints();
+app.MapOperationsCaseWorkspaceEndpoints();
 app.MapOperationsPreparationEndpoints();
 app.MapOperationsTeamValidationEndpoints();
 app.MapOperationsDashboardEndpoints();
