@@ -21,7 +21,9 @@ public static class OperationsTeamValidationEndpoints
     {
         var api = app.MapGroup("/api/operations").RequireAuthorization();
         api.MapGet("/apertures/validation-queue", async (
-            HttpContext http, OperationsCaseAccess access, OperationsDbContext db, int? page, int? pageSize, CancellationToken ct) =>
+            HttpContext http, OperationsCaseAccess access, OperationsDbContext db,
+            int? page, int? pageSize, string? q, string? status, string? apertureType,
+            CancellationToken ct) =>
         {
             var actor = OperationsCaseAccess.UserId(http.User);
             if (actor is null || !OperationsCaseAccess.HasScope(http.User, "operations.case.read"))
@@ -39,6 +41,21 @@ public static class OperationsTeamValidationEndpoints
                         v.CaseStageId == s.Id && v.UserId == actor.Value)) ||
                     c.Stages.Any(s => s.TeamId.HasValue && db.TeamMembers.Any(m =>
                         m.TeamId == s.TeamId && m.UserId == actor.Value)));
+            if (q is { Length: > 120 } || status is { Length: > 40 } ||
+                (apertureType is not null && apertureType is not ("" or "MANUAL" or "AUTOMATIC")))
+                return Results.BadRequest(new { code = "OPERATIONS_APERTURE_FILTER_INVALID" });
+            if (!string.IsNullOrWhiteSpace(q))
+            {
+                var pattern = "%" + q.Trim().Replace("%", @"\%").Replace("_", @"\_") + "%";
+                query = query.Where(c => EF.Functions.ILike(c.Idtra, pattern, @"\"));
+            }
+            if (!string.IsNullOrWhiteSpace(status))
+            {
+                var value = status.Trim().ToUpperInvariant();
+                query = query.Where(c => c.Status == value);
+            }
+            if (!string.IsNullOrWhiteSpace(apertureType))
+                query = query.Where(c => c.ApertureType == apertureType);
             var n = Math.Max(page ?? 1, 1);
             var size = Math.Clamp(pageSize ?? 25, 1, 100);
             return Results.Ok(new {
@@ -46,7 +63,8 @@ public static class OperationsTeamValidationEndpoints
                 items = await query.OrderByDescending(c => c.CreatedAtUtc).ThenBy(c => c.Id)
                     .Skip((n - 1) * size).Take(size).Select(c => new {
                         c.Id, c.Idtra, c.CompanyId, c.AccountId, c.ModalityCode,
-                        c.Status, c.Priority, c.CreatedAtUtc,
+                        c.Status, c.Priority, c.ApertureType, c.SourceQuoteId, c.SourceQuoteOptionId,
+                        c.CreatedAtUtc,
                         Validators = db.ApertureValidations.Where(v => v.CaseStage.CaseId == c.Id)
                             .OrderBy(v => v.Slot)
                             .Select(v => new { v.Id, v.Slot, v.UserId, v.Status }).ToArray()
