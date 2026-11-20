@@ -6,6 +6,7 @@ public sealed class OperationsCase
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid CompanyId { get; set; }
     public string Idtra { get; set; } = string.Empty;
+    public string? ApertureDetailsJson { get; set; }
     public string SeriesCode { get; set; } = string.Empty;
     public long SequenceNumber { get; set; }
     public Guid AccountId { get; set; }
@@ -31,6 +32,7 @@ public sealed class OperationsCaseSequence
     public Guid Id { get; set; } = Guid.NewGuid();
     public string SeriesCode { get; set; } = string.Empty;
     public long LastNumber { get; set; }
+    public bool IsAuthoritativelySynced { get; set; }
     public DateTimeOffset UpdatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
 }
 
