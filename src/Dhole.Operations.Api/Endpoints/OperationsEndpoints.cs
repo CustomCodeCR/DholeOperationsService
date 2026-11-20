@@ -32,6 +32,17 @@ public static class OperationsEndpoints
     {
         var api = app.MapGroup("/api/operations").RequireAuthorization();
 
+        // Resolves the current tenant on the server. The client never infers a
+        // company from a user, a selected CRM account, or a hard-coded GUID.
+        api.MapGet("/apertures/create-context", async (
+            HttpContext http, OperationsCaseAccess access, CancellationToken ct) =>
+        {
+            if (!OperationsCaseAccess.HasScope(http.User, "operations.case.create"))
+                return Results.Forbid();
+            var company = await access.ResolveCompanyIdAsync(http.User, ct);
+            return Results.Ok(new { companyId = company });
+        });
+
         api.MapPost("/cases", async (
             NewCaseRequest request, HttpContext http, CreateManualCaseHandler handler,
             OperationsCaseAccess access, OperationsCrmAccountResolver crm, CancellationToken ct) =>
