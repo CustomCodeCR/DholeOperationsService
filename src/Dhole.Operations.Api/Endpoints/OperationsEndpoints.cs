@@ -169,12 +169,12 @@ public static class OperationsEndpoints
                 var lookup = q.Trim();
                 var hasGuid = Guid.TryParse(lookup, out var guid);
                 query = query.Where(c =>
-                    EF.Functions.ILike(c.Idtra, pattern, @"\\") ||
-                    EF.Functions.ILike(c.ModalityCode, pattern, @"\\") ||
+                    EF.Functions.ILike(c.Idtra, pattern, @"\") ||
+                    EF.Functions.ILike(c.ModalityCode, pattern, @"\") ||
                     (hasGuid && (c.AccountId == guid || c.SourceQuoteId == guid)) ||
                     db.CaseQuoteLinks.Any(link => link.CaseId == c.Id &&
                         link.QuoteNumber != null &&
-                        EF.Functions.ILike(link.QuoteNumber, pattern, @"\\")));
+                        EF.Functions.ILike(link.QuoteNumber, pattern, @"\")));
             }
             if (!string.IsNullOrWhiteSpace(status))
             {
