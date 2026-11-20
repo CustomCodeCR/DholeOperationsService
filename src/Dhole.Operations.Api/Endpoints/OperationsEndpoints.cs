@@ -14,8 +14,8 @@ namespace Dhole.Operations.Api.Endpoints;
 public static class OperationsEndpoints
 {
     public sealed record NewCaseRequest(
-        Guid CompanyId, string SeriesCode, Guid AccountId, Guid ExecutiveUserId,
-        string ModalityCode, short Priority = 1, decimal ComplexityPoints = 1m,
+        Guid CompanyId, string SeriesCode, Guid AccountId, string ModalityCode,
+        Guid? ExecutiveUserId = null, short Priority = 1, decimal ComplexityPoints = 1m,
         string? OriginCountryCode = null, string? DestinationCountryCode = null);
 
     public sealed record NewTeamRequest(Guid CompanyId, string DepartmentCode, string Name);
