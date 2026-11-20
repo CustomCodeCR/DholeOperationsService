@@ -1,3 +1,12 @@
+## [0.14.0] - 2026-11-20 (DH-20261120-OPERATIONS-TRAMITES-UX-332 · Expediente IDTRA unificado)
+
+- MINOR: Trámites unifica consulta, búsqueda por IDTRA, QUO y modalidad, además de filtro por cuenta CRM, con autorización, paginación y consultas desde PostgreSQL.
+- GET /api/operations/cases/{id}/tabs calcula permisos por tab y equipo/etapa; GET .../workspace devuelve etapas, equipos, QUO, hitos y tareas persistidas.
+- PATCH /api/operations/cases/{id} permite corregir únicamente datos de Aperturas mientras siga pendiente; exige operations.case.update, relación efectiva con el expediente, versión optimista, auditoría y Outbox de invalidación SignalR.
+- GET /api/operations/cases/{id}/commercial/costs distingue costos de datos de venta mediante permisos explícitos; no hay costos ficticios ni cambios comerciales implícitos.
+- Operations 0.13.0 → 0.14.0; release global 1.105.1 → 1.106.0. No cambia esquemas de PostgreSQL ni datos de CRM/Pricing.
+- No incluye la creación automática desde QUO aceptada ni captura extensiva de todos los departamentos: permanecen en fases siguientes y no se simulan.
+
 ## [0.13.0] - 2026-11-20 (DH-20261120-OPERATIONS-APERTURES-330 · Bandeja de Aperturas y Trámites)
 
 - MINOR: filtros paginados en backend para IDTRA, estado y origen manual/automático en Trámites y cola de Aperturas, respetando empresa, scopes y asignaciones.
