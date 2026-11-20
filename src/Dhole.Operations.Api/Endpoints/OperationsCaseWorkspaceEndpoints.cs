@@ -114,10 +114,13 @@ public static class OperationsCaseWorkspaceEndpoints
         {
             if (!OperationsCaseAccess.HasScope(http.User, "operations.cost.read") ||
                 !await access.CanReadAsync(id, http.User, ct)) return Results.Forbid();
+            // Cost visibility does not imply permission to see customer sale values.
+            var canSeeSale = OperationsCaseAccess.HasScope(http.User, "operations.finance.manage");
             var costs = await db.CaseQuoteCosts.AsNoTracking()
                 .Where(c => c.QuoteLink.CaseId == id)
                 .Select(c => new { c.Id, c.CostCode, c.Description,
-                    c.SupplierName, c.CurrencyCode, c.CostAmount, c.SaleAmount,
+                    c.SupplierName, c.CurrencyCode, c.CostAmount,
+                    SaleAmount = canSeeSale ? (decimal?)c.SaleAmount : null,
                     c.CapturedAtUtc }).ToArrayAsync(ct);
             return Results.Ok(new { caseId = id, items = costs });
         });
