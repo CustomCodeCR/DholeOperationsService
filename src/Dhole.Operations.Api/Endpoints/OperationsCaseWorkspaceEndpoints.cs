@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Dhole.Operations.Api.Security;
+using Dhole.Operations.Application.Cases;
 using Dhole.Operations.Domain.Models;
 using Dhole.Operations.Persistence;
 using Dhole.Operations.Persistence.Audit;
@@ -14,6 +15,11 @@ namespace Dhole.Operations.Api.Endpoints;
 /// </summary>
 public static class OperationsCaseWorkspaceEndpoints
 {
+    public sealed record ApertureDraftUpdateRequest(long ExpectedVersion, ApertureDraft Details,
+        string ModalityCode, string? OriginCountryCode, string? DestinationCountryCode,
+        short Priority, decimal ComplexityPoints);
+    public sealed record SubmitApertureRequest(long ExpectedVersion);
+
     public sealed record UpdateCaseRequest(
         long ExpectedVersion,
         string ModalityCode,
@@ -73,6 +79,117 @@ public static class OperationsCaseWorkspaceEndpoints
                 tabs.Add(new { code, accessLevel = level });
             }
             return Results.Ok(new { caseId = id, tabs });
+        });
+
+        // Same draft intake works for manual openings and future accepted-QUO
+        // snapshots; it is independent from Pricing's commercial prices.
+        api.MapGet("/cases/{id:guid}/aperture-details", async (
+            Guid id, HttpContext http, OperationsCaseAccess access,
+            OperationsDbContext db, CancellationToken ct) =>
+        {
+            if (!await access.CanReadAsync(id, http.User, ct)) return Results.Forbid();
+            var row = await db.Cases.AsNoTracking().Where(x => x.Id == id)
+                .Select(x => new { x.ApertureDetailsJson, x.ModalityCode, x.Status,
+                    x.Version }).SingleOrDefaultAsync(ct);
+            if (row is null) return Results.NotFound();
+            var details = string.IsNullOrEmpty(row.ApertureDetailsJson)
+                ? new ApertureDraft() :
+                JsonSerializer.Deserialize<ApertureDraft>(row.ApertureDetailsJson,
+                    ApertureDraftRules.JsonOptions) ?? new ApertureDraft();
+            return Results.Ok(new { details, row.Version, row.Status,
+                missingBlocking = ApertureDraftRules.BlockingFields(row.ModalityCode, details) });
+        });
+
+        api.MapPut("/cases/{id:guid}/aperture-details", async (
+            Guid id, ApertureDraftUpdateRequest input, HttpContext http,
+            OperationsCaseAccess access, OperationsDbContext db, CancellationToken ct) =>
+        {
+            var actor = OperationsCaseAccess.UserId(http.User);
+            if (actor is null || !await CanEditApertureAsync(
+                id, actor.Value, http, access, db, ct)) return Results.Forbid();
+            if (input.Details is null)
+                return Results.BadRequest(new { code = "APERTURE_DETAILS_REQUIRED" });
+            var errors = ApertureDraftRules.ValidateDraft(input.Details).ToList();
+            if (input.ModalityCode is not ("FCL" or "LCL" or "FTL" or "LTL" or "AIR" or "MULTIMODAL"))
+                errors.Add("modalityCode");
+            if (!ValidIso(NormalizeIso(input.OriginCountryCode)) ||
+                !ValidIso(NormalizeIso(input.DestinationCountryCode)))
+                errors.Add("countryCodes");
+            if (input.Priority is < 1 or > 5 || input.ComplexityPoints is < 0.5m or > 1000m)
+                errors.Add("priorityOrComplexity");
+            if (errors.Count != 0)
+                return Results.BadRequest(new { code = "INVALID_APERTURE_FIELDS", fields = errors });
+            var operation = await db.Cases.SingleOrDefaultAsync(x => x.Id == id, ct);
+            if (operation is null) return Results.NotFound();
+            if (operation.Version != input.ExpectedVersion)
+                return Results.Conflict(new { code = "OPERATIONS_CASE_VERSION_CONFLICT",
+                    currentVersion = operation.Version });
+            var normalized = ApertureDraftRules.Normalize(input.Details);
+            var before = new { operation.ApertureDetailsJson, operation.ModalityCode,
+                operation.OriginCountryCode, operation.DestinationCountryCode,
+                operation.Priority, operation.ComplexityPoints };
+            operation.ModalityCode = input.ModalityCode;
+            operation.OriginCountryCode = NormalizeIso(input.OriginCountryCode);
+            operation.DestinationCountryCode = NormalizeIso(input.DestinationCountryCode);
+            operation.Priority = input.Priority;
+            operation.ComplexityPoints = input.ComplexityPoints;
+            operation.ApertureDetailsJson = JsonSerializer.Serialize(normalized,
+                ApertureDraftRules.JsonOptions);
+            operation.Version++;
+            operation.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            OperationsAuditWriter.Case(db, id, null, actor.Value,
+                "operations.aperture.details.updated", before, new {
+                    details = normalized, operation.ModalityCode, operation.Priority,
+                    operation.ComplexityPoints, operation.Version });
+            db.OutboxMessages.Add(OperationsOutboxFactory.Create(
+                "operations.case.updated.v1",
+                JsonSerializer.Serialize(new { caseId = id, version = operation.Version })));
+            try { await db.SaveChangesAsync(ct); }
+            catch (DbUpdateConcurrencyException) {
+                return Results.Conflict(new { code = "OPERATIONS_CASE_VERSION_CONFLICT" });
+            }
+            return Results.Ok(new { operation.Id, operation.Version,
+                missingBlocking = ApertureDraftRules.BlockingFields(operation.ModalityCode, normalized) });
+        });
+
+        // Drafts may be incomplete. Submission is deliberately separate and
+        // never changes Pricing's authoritative quotation.
+        api.MapPost("/cases/{id:guid}/submit-aperture", async (
+            Guid id, SubmitApertureRequest input, HttpContext http,
+            OperationsCaseAccess access, OperationsDbContext db, CancellationToken ct) =>
+        {
+            var actor = OperationsCaseAccess.UserId(http.User);
+            if (actor is null || !await CanEditApertureAsync(
+                id, actor.Value, http, access, db, ct)) return Results.Forbid();
+            var operation = await db.Cases.SingleOrDefaultAsync(x => x.Id == id, ct);
+            if (operation is null) return Results.NotFound();
+            if (operation.Version != input.ExpectedVersion)
+                return Results.Conflict(new { code = "OPERATIONS_CASE_VERSION_CONFLICT",
+                    currentVersion = operation.Version });
+            if (operation.Status == "PENDING_VALIDATION")
+                return Results.Ok(new { operation.Id, operation.Status, operation.Version });
+            var details = string.IsNullOrWhiteSpace(operation.ApertureDetailsJson)
+                ? new ApertureDraft() :
+                JsonSerializer.Deserialize<ApertureDraft>(operation.ApertureDetailsJson,
+                    ApertureDraftRules.JsonOptions) ?? new ApertureDraft();
+            var missing = ApertureDraftRules.BlockingFields(operation.ModalityCode, details);
+            if (missing.Count != 0)
+                return Results.UnprocessableEntity(new { code = "APERTURE_INCOMPLETE",
+                    missingBlocking = missing });
+            operation.Status = "PENDING_VALIDATION";
+            operation.Version++;
+            operation.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            OperationsAuditWriter.Case(db, id, null, actor.Value,
+                "operations.aperture.submitted", null,
+                new { operation.Status, operation.Version });
+            db.OutboxMessages.Add(OperationsOutboxFactory.Create(
+                "operations.case.updated.v1",
+                JsonSerializer.Serialize(new { caseId = id, version = operation.Version })));
+            try { await db.SaveChangesAsync(ct); }
+            catch (DbUpdateConcurrencyException) {
+                return Results.Conflict(new { code = "OPERATIONS_CASE_VERSION_CONFLICT" });
+            }
+            return Results.Ok(new { operation.Id, operation.Status, operation.Version });
         });
 
         // Existing persisted operations data only: no placeholder costs or dummy notes.

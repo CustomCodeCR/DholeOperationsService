@@ -16,16 +16,20 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
     public async Task<CaseCreatedResult> CreateManualAsync(CreateManualCaseCommand input, CancellationToken ct)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
-        var next = await NextSequenceAsync(input.SeriesCode, ct);
-        if (next > 999999) throw new InvalidOperationException("IDTRA series exhausted; configure a new approved series.");
-
-        var idtra = $"IDTRA-{input.SeriesCode}-{next:000000}";
+        // The same single transactional ledger must be used by the future
+        // idempotent Pricing consumer; no series or suffix is user-selectable.
+        var next = await NextSequenceAsync(ct);
+        var idtra = $"IDTRA{next}";
         var operation = new OperationsCase
         {
             CompanyId = input.CompanyId,
-            SeriesCode = input.SeriesCode,
+            SeriesCode = "00000", // Reserved internal ledger key, never visible.
             SequenceNumber = next,
             Idtra = idtra,
+            ApertureDetailsJson = input.Details is null ? null :
+                JsonSerializer.Serialize(ApertureDraftRules.Normalize(input.Details),
+                    ApertureDraftRules.JsonOptions),
+            Status = "DRAFT",
             AccountId = input.AccountId,
             ExecutiveUserId = input.ExecutiveUserId,
             ModalityCode = input.ModalityCode.Trim().ToUpperInvariant(),
@@ -174,19 +178,21 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
         return new DocumentExtractionQueuedResult(job.Id, job.Status);
     }
 
-    private async Task<long> NextSequenceAsync(string seriesCode, CancellationToken ct)
+    private async Task<long> NextSequenceAsync(CancellationToken ct)
     {
         var connection = (NpgsqlConnection)db.Database.GetDbConnection();
         await using var cmd = new NpgsqlCommand("""
-            INSERT INTO operations.operations_case_sequences (id, series_code, last_number, updated_at_utc)
-            VALUES (@id, @series, 1, now())
-            ON CONFLICT (series_code)
-            DO UPDATE SET last_number = operations_case_sequences.last_number + 1, updated_at_utc = now()
+            UPDATE operations.operations_case_sequences
+            SET last_number = last_number + 1, updated_at_utc = now()
+            WHERE series_code = '00000' AND is_authoritatively_synced = true
             RETURNING last_number;
             """, connection, (NpgsqlTransaction)db.Database.CurrentTransaction!.GetDbTransaction());
-        cmd.Parameters.AddWithValue("id", Guid.NewGuid());
-        cmd.Parameters.AddWithValue("series", seriesCode);
-        return Convert.ToInt64(await cmd.ExecuteScalarAsync(ct));
+        // PostgreSQL row lock serializes all concurrent manual and automatic
+        // creations. A missing baseline blocks writes rather than reusing IDTRA1.
+        var result = await cmd.ExecuteScalarAsync(ct);
+        if (result is null || result is DBNull)
+            throw new InvalidOperationException("IDTRA_COUNTER_NOT_SYNCHRONIZED");
+        return Convert.ToInt64(result);
     }
 
     private void Enqueue(string name, object payload) =>

@@ -51,6 +51,7 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
             e.ToTable("operations_cases", t => t.HasCheckConstraint("ck_operations_case_points", "complexity_points > 0 AND priority BETWEEN 1 AND 5"));
             e.HasKey(x => x.Id);
             e.Property(x => x.Idtra).HasMaxLength(32).IsRequired();
+            e.Property(x => x.ApertureDetailsJson).HasColumnType("jsonb");
             e.Property(x => x.SeriesCode).HasMaxLength(5).IsRequired();
             e.Property(x => x.ModalityCode).HasMaxLength(30).IsRequired();
             e.Property(x => x.ApertureType).HasMaxLength(20).IsRequired();
@@ -70,6 +71,7 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
             e.ToTable("operations_case_sequences");
             e.HasKey(x => x.Id);
             e.Property(x => x.SeriesCode).HasMaxLength(5);
+            e.Property(x => x.IsAuthoritativelySynced).IsRequired();
             e.HasIndex(x => x.SeriesCode).IsUnique();
         });
         m.Entity<OperationsCaseStage>(e =>

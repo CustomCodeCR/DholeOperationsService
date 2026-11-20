@@ -1,0 +1,20 @@
+{
+  "releaseId": "DH-20261120-OPERATIONS-IDTRA-FORM-351",
+  "component": "DholeOperationsService",
+  "previousVersion": "0.14.0",
+  "version": "0.15.0",
+  "ecosystemVersion": "1.107.0",
+  "type": "MINOR",
+  "date": "2026-11-20",
+  "features": [
+    "Global transactional IDTRA + unlimited digit width",
+    "Explicit mandatory synchronization with historical Dynamics last IDTRA",
+    "Full structured manual aperture drafts",
+    "Conditional validation by modality",
+    "Server-side authorizations and durable audit/outbox"
+  ],
+  "productionAuthorized": false,
+  "stagingVerified": false,
+  "requiresHistoricalCounterBaseline": true,
+  "automaticPricingConsumer": "pending"
+}

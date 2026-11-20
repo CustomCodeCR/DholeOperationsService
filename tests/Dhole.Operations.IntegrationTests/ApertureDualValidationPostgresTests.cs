@@ -23,11 +23,13 @@ public sealed class ApertureDualValidationPostgresTests
     {
         await using var db = Db();
         await db.Database.MigrateAsync();
+        await db.Database.ExecuteSqlRawAsync(
+            "UPDATE operations.operations_case_sequences SET is_authoritatively_synced = true WHERE series_code = '00000'");
         CollectionAssert.Contains((await db.Database.GetAppliedMigrationsAsync()).ToList(),
             "202611180100_ApertureDualValidation208");
         var company = Guid.NewGuid();
         var created = await new CreateManualCaseHandler(new OperationsCaseStore(db))
-            .HandleAsync(new CreateManualCaseCommand(company, "00000",
+            .HandleAsync(new CreateManualCaseCommand(company,
                 Guid.NewGuid(), Guid.NewGuid(), "FCL", 1, 1m, Guid.NewGuid()), CancellationToken.None);
         var team = new OperationsTeam { CompanyId = company, DepartmentCode = "APERTURAS",
             Name = "Validadores " + Guid.NewGuid().ToString("N") };
