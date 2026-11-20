@@ -53,6 +53,12 @@ public sealed class OperationsCaseAccess(OperationsDbContext db)
         if (actor is null || !HasScope(user, "operations.case.read"))
             return false;
         var caseQuery = db.Cases.AsNoTracking().Where(x => x.Id == caseId);
+        if (!IsSystemAdministrator(user))
+        {
+            var company = await ResolveCompanyIdAsync(user, ct);
+            if (company is null) return false;
+            caseQuery = caseQuery.Where(x => x.CompanyId == company.Value);
+        }
         if (HasScope(user, "operations.case.read-all"))
             return await caseQuery.AnyAsync(ct);
         return await caseQuery.AnyAsync(x =>
@@ -70,6 +76,12 @@ public sealed class OperationsCaseAccess(OperationsDbContext db)
         var actor = UserId(user);
         if (actor is null || !HasScope(user, "operations.case.read")) return [];
         var query = db.Cases.AsNoTracking().Where(x => caseIds.Contains(x.Id));
+        if (!IsSystemAdministrator(user))
+        {
+            var company = await ResolveCompanyIdAsync(user, ct);
+            if (company is null) return [];
+            query = query.Where(x => x.CompanyId == company.Value);
+        }
         if (!HasScope(user, "operations.case.read-all"))
             query = query.Where(x => x.CreatedBy == actor.Value ||
                 x.Stages.Any(stage => db.StageAssignments.Any(assignment =>
