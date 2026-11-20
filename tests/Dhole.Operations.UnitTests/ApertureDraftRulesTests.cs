@@ -22,7 +22,7 @@ public sealed class ApertureDraftRulesTests
         var data = ApertureDraftRules.Normalize(new ApertureDraft
         {
             WeightValue = 100m, WeightUnit = "LB",
-            VolumeValue = 35.315m, VolumeUnit = "CFT",
+            VolumeValue = 35.3146667m, VolumeUnit = "CFT",
             Equipment = [
                 new() { EquipmentCode = "40HC", Quantity = 2 },
                 new() { EquipmentCode = "20GP", Quantity = 1 }
@@ -61,6 +61,6 @@ public sealed class ApertureDraftRulesTests
             Equipment = [new() { EquipmentCode = "", Quantity = 1 }]
         });
         Assert.IsEmpty(data.Equipment);
-        Assert.DoesNotContain("carrierCode", ApertureDraftRules.BlockingFields("AIR", data));
+        CollectionAssert.DoesNotContain(ApertureDraftRules.BlockingFields("AIR", data).ToArray(), "carrierCode");
     }
 }
