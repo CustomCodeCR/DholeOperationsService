@@ -138,7 +138,7 @@ public static class OperationsEndpoints
         // Server-side filtering is required: a page-local search hides authorized
         // IDTRAs on later pages and makes dashboard counters disagree with Trámites.
         api.MapGet("/cases", async (
-            int? page, int? pageSize, string? q, string? status, string? apertureType,
+            int? page, int? pageSize, string? q, string? status, string? apertureType, Guid? accountId,
             HttpContext http, OperationsCaseAccess access,
             OperationsDbContext db, CancellationToken ct) =>
         {
@@ -183,6 +183,8 @@ public static class OperationsEndpoints
             }
             if (!string.IsNullOrWhiteSpace(apertureType))
                 query = query.Where(c => c.ApertureType == apertureType);
+            if (accountId.HasValue && accountId.Value != Guid.Empty)
+                query = query.Where(c => c.AccountId == accountId.Value);
             var total = await query.CountAsync(ct);
             var items = await query.OrderByDescending(c => c.CreatedAtUtc).ThenBy(c => c.Id)
                 .Skip((currentPage - 1) * size).Take(size).Select(c => new
