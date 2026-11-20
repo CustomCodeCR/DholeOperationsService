@@ -1,3 +1,11 @@
+## [0.13.0] - 2026-11-20 (DH-20261120-OPERATIONS-APERTURES-330 · Bandeja de Aperturas y Trámites)
+
+- MINOR: filtros paginados en backend para IDTRA, estado y origen manual/automático en Trámites y cola de Aperturas, respetando empresa, scopes y asignaciones.
+- Dashboard: indicadores separados para aperturas manuales y expedientes recibidos desde Pricing, con conteos realizados en PostgreSQL sin recortar a la página actual.
+- GET /api/operations/apertures/create-context resuelve empresa desde el JWT y membresías actuales; el ejecutivo de apertura manual sigue resolviéndose desde CRM y no se suplanta por un GUID ficticio.
+- Conserva arquitectura REST y eventos Outbox/Inbox/SignalR existentes. El evento de aceptación comercial definitivo y su consumidor automático continúan pendientes: el aviso por correo de Pricing no es evento de creación de expediente.
+- Operations 0.12.0 → 0.13.0; ecosistema candidato 1.105.0; CI, pruebas de migración, staging y despliegue de producción pendientes.
+
 ## [0.12.0] - 2026-11-19 (DH-20261119-OPS-ROLE-TEAM-DASHBOARD-254 · Resumen operativo con permisos por equipo)
 
 - MINOR: GET /api/operations/dashboard devuelve totales, estados de doble validación, equipos permitidos y últimas 30 aperturas.

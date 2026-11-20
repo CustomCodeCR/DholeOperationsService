@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "ecosystem": "Dhole",
+  "releaseId": "DH-20261120-OPERATIONS-APERTURES-330",
+  "releaseType": "MINOR",
+  "ecosystemVersion": "1.105.0",
+  "branch": "feature/aperturas-dashboard-tramites-20261119",
+  "targetBranches": [
+    "develop",
+    "master"
+  ],
+  "components": [
+    {
+      "repository": "CustomCodeCR/DholeOperationsService",
+      "previousVersion": "0.12.0",
+      "version": "0.13.0"
+    },
+    {
+      "repository": "CustomCodeCR/DholeWeb",
+      "previousVersion": "1.104.3",
+      "version": "1.105.0"
+    }
+  ],
+  "pendingIntegrations": [
+    "Pricing customer acceptance event and immutable commercial snapshot",
+    "Operations idempotent automatic case consumer",
+    "Auth/CRM service-to-service identity for worker",
+    "Full operation form and per-tab ACL"
+  ],
+  "checks": {
+    "ci": "pending",
+    "staging": "pending",
+    "production": "not-authorized"
+  },
+  "productionDeploymentAuthorized": false,
+  "component": "DholeOperationsService"
+}
