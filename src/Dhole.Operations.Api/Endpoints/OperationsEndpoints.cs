@@ -1,6 +1,9 @@
 using Dhole.Operations.Persistence.Audit;
 using Dhole.Operations.Api.Integrations;
 using System.Net;
+using System.Globalization;
+using System.Text.Json;
+using Dhole.Operations.Persistence.Messaging;
 using System.Net.Http.Headers;
 using Dhole.Operations.Api.Security;
 using Dhole.Operations.Application.Cases;
@@ -14,9 +17,12 @@ namespace Dhole.Operations.Api.Endpoints;
 public static class OperationsEndpoints
 {
     public sealed record NewCaseRequest(
-        Guid CompanyId, string SeriesCode, Guid AccountId, string ModalityCode,
-        Guid? ExecutiveUserId = null, short Priority = 1, decimal ComplexityPoints = 1m,
-        string? OriginCountryCode = null, string? DestinationCountryCode = null);
+        Guid CompanyId, Guid AccountId, string ModalityCode,
+        short Priority = 1, decimal ComplexityPoints = 1m,
+        string? OriginCountryCode = null, string? DestinationCountryCode = null,
+        ApertureDraft? Details = null);
+    public sealed record SynchronizeIdtraCounterRequest(
+        string LastIssuedIdtra, string Reference);
 
     public sealed record NewTeamRequest(Guid CompanyId, string DepartmentCode, string Name);
     public sealed record NewMemberRequest(Guid UserId, decimal CapacityPoints, bool IsSupervisor, bool IsAvailable = true);
@@ -35,12 +41,57 @@ public static class OperationsEndpoints
         // Resolves the current tenant on the server. The client never infers a
         // company from a user, a selected CRM account, or a hard-coded GUID.
         api.MapGet("/apertures/create-context", async (
-            HttpContext http, OperationsCaseAccess access, CancellationToken ct) =>
+            HttpContext http, OperationsCaseAccess access, OperationsDbContext db,
+            CancellationToken ct) =>
         {
             if (!OperationsCaseAccess.HasScope(http.User, "operations.case.create"))
                 return Results.Forbid();
             var company = await access.ResolveCompanyIdAsync(http.User, ct);
-            return Results.Ok(new { companyId = company });
+            var synced = await db.CaseSequences.AsNoTracking()
+                .Where(x => x.SeriesCode == "00000")
+                .Select(x => x.IsAuthoritativelySynced).SingleOrDefaultAsync(ct);
+            return Results.Ok(new { companyId = company, idtraCounterReady = synced });
+        });
+
+        // Sync exactly the last EXISTING IDTRA from Dynamics or the legacy
+        // numbering authority before Dhole assigns its first new number.
+        // Never guess the number from an empty Operations database.
+        api.MapPost("/apertures/idtra-counter/synchronize", async (
+            SynchronizeIdtraCounterRequest request, HttpContext http,
+            OperationsDbContext db, CancellationToken ct) =>
+        {
+            var actor = OperationsCaseAccess.UserId(http.User);
+            if (actor is null || !OperationsCaseAccess.IsSystemAdministrator(http.User))
+                return Results.Forbid();
+            var raw = request.LastIssuedIdtra?.Trim().ToUpperInvariant() ?? "";
+            if (!raw.StartsWith("IDTRA", StringComparison.Ordinal) ||
+                !long.TryParse(raw.AsSpan(5), NumberStyles.None,
+                    CultureInfo.InvariantCulture, out var lastIssued) ||
+                lastIssued < 0 || string.IsNullOrWhiteSpace(request.Reference) ||
+                request.Reference.Length > 250)
+                return Results.BadRequest(new { code = "INVALID_HISTORICAL_IDTRA_REFERENCE" });
+            await using var transaction = await db.Database.BeginTransactionAsync(ct);
+            var counter = await db.CaseSequences
+                .FromSqlRaw("SELECT * FROM operations.operations_case_sequences WHERE series_code = '00000' FOR UPDATE")
+                .SingleOrDefaultAsync(ct);
+            if (counter is null)
+                return Results.Conflict(new { code = "IDTRA_COUNTER_MIGRATION_MISSING" });
+            if (lastIssued < counter.LastNumber)
+                return Results.Conflict(new { code = "IDTRA_COUNTER_BELOW_CURRENT",
+                    currentMinimum = counter.LastNumber.ToString(CultureInfo.InvariantCulture) });
+            var before = counter.LastNumber;
+            counter.LastNumber = lastIssued;
+            counter.IsAuthoritativelySynced = true;
+            counter.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            db.OutboxMessages.Add(OperationsOutboxFactory.Create(
+                "operations.idtra.counter-synchronized.v1",
+                JsonSerializer.Serialize(new { actorId = actor, previous = before,
+                    lastIssuedIdtra = raw, reference = request.Reference,
+                    synchronizedAtUtc = counter.UpdatedAtUtc })));
+            await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+            return Results.Ok(new { ready = true, nextFormat = "IDTRA" +
+                (lastIssued + 1).ToString(CultureInfo.InvariantCulture) });
         });
 
         api.MapPost("/cases", async (
@@ -60,13 +111,17 @@ public static class OperationsEndpoints
             try
             {
                 var result = await handler.HandleAsync(
-                    new CreateManualCaseCommand(request.CompanyId, request.SeriesCode,
+                    new CreateManualCaseCommand(request.CompanyId,
                         request.AccountId, crmAccount.ExecutiveUserId!.Value, request.ModalityCode,
                         request.Priority, request.ComplexityPoints, actor.Value,
-                        request.OriginCountryCode, request.DestinationCountryCode), ct);
+                        request.OriginCountryCode, request.DestinationCountryCode,
+                        request.Details), ct);
                 return Results.Created($"/api/operations/cases/{result.Id}", result);
             }
             catch (ArgumentException e) { return Results.BadRequest(new { error = e.Message }); }
+            catch (InvalidOperationException e) when (e.Message == "IDTRA_COUNTER_NOT_SYNCHRONIZED")
+            { return Results.Conflict(new { code = e.Message,
+                message = "Un administrador debe sincronizar el último IDTRA histórico antes de crear trámites." }); }
         });
 
         // Read current CRM operations contacts for the case's own customer account.
