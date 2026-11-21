@@ -1,3 +1,13 @@
+## [0.15.0] - 2026-11-21 (DH-20261121-OPERATIONS-OPENING-IDTRA-392 · Apertura manual con IDTRA global)
+
+- MINOR: IDTRA generado desde contador PostgreSQL único (serie interna 00000) con formato visible IDTRA00001, IDTRA12345, IDTRA100000; sin serie editable ni límite artificial 999999; los IDTRA históricos conservan su cadena.
+- Modelo de apertura manual extendido con opening_data_json (jsonb) en migración no destructiva. Guarda información operativa de la captura: modalidad, trayecto, Incoterm, mercancía, equipo múltiple, recolecta, WHS, proveedores y servicios. No crea costos ni modifica cotizaciones en Pricing.
+- Las aperturas manuales nacen DRAFT; la asignación de validadores comprueba completitud básica por modalidad sin bloquear el guardado del borrador.
+- Edición con concurrencia optimista y eventos Outbox/SignalR existentes.
+- Operations 0.14.0 → 0.15.0; ecosistema Web/System 1.109.3 → 1.110.0.
+- Pendientes: resolver automáticamente snapshots de QUO aceptada y catálogos completos SRM/CRM para la validación definitiva; no declarar la integración Pricing → Operations completada.
+- Validaciones de CI y staging pendientes. Sin autorización de producción.
+
 ## [0.14.0] - 2026-11-20 (DH-20261120-OPERATIONS-TRAMITES-UX-332 · Expediente IDTRA unificado)
 
 - MINOR: Trámites unifica consulta, búsqueda por IDTRA, QUO y modalidad, además de filtro por cuenta CRM, con autorización, paginación y consultas desde PostgreSQL.
