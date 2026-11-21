@@ -37,7 +37,7 @@ public sealed class OperationsPostgresTests
         })
             .Order().ToArray();
         Assert.AreEqual(12, assignedNumbers.Distinct().Count());
-        Assert.IsGreaterThanOrEqualTo(assignedNumbers[0], 1L);
+        Assert.IsGreaterThanOrEqualTo(1L, assignedNumbers[0]);
         for (var i = 1; i < assignedNumbers.Length; i++)
             Assert.AreEqual(assignedNumbers[i - 1] + 1, assignedNumbers[i]);
 
