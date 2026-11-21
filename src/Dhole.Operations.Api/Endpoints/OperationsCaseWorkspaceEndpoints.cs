@@ -157,7 +157,7 @@ public static class OperationsCaseWorkspaceEndpoints
 
             var before = new { operation.ModalityCode, operation.Priority,
                 operation.ComplexityPoints, operation.OriginCountryCode,
-                operation.DestinationCountryCode, operation.Version };
+                operation.DestinationCountryCode, operation.OpeningDataJson, operation.Version };
             operation.ModalityCode = modality;
             operation.Priority = request.Priority;
             operation.ComplexityPoints = request.ComplexityPoints;
@@ -175,7 +175,7 @@ public static class OperationsCaseWorkspaceEndpoints
             OperationsAuditWriter.Case(db, id, null, actor.Value, "operations.case.updated",
                 before, new { operation.ModalityCode, operation.Priority,
                     operation.ComplexityPoints, operation.OriginCountryCode,
-                    operation.DestinationCountryCode, operation.Version });
+                    operation.DestinationCountryCode, operation.OpeningDataJson, operation.Version });
             db.OutboxMessages.Add(OperationsOutboxFactory.Create("operations.case.updated.v1",
                 JsonSerializer.Serialize(new { caseId = id, version = operation.Version })));
             try { await db.SaveChangesAsync(ct); }
