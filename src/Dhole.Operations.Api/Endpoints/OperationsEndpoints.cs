@@ -14,9 +14,10 @@ namespace Dhole.Operations.Api.Endpoints;
 public static class OperationsEndpoints
 {
     public sealed record NewCaseRequest(
-        Guid CompanyId, string SeriesCode, Guid AccountId, string ModalityCode,
+        Guid CompanyId, Guid AccountId, string ModalityCode,
         Guid? ExecutiveUserId = null, short Priority = 1, decimal ComplexityPoints = 1m,
-        string? OriginCountryCode = null, string? DestinationCountryCode = null);
+        string? OriginCountryCode = null, string? DestinationCountryCode = null,
+        System.Text.Json.JsonElement? OpeningData = null);
 
     public sealed record NewTeamRequest(Guid CompanyId, string DepartmentCode, string Name);
     public sealed record NewMemberRequest(Guid UserId, decimal CapacityPoints, bool IsSupervisor, bool IsAvailable = true);
@@ -27,6 +28,20 @@ public static class OperationsEndpoints
         string? OriginCountryCode, string? DestinationCountryCode, int Priority = 0);
     public sealed record NewDocumentRequest(
         string DocumentTypeCode, Guid StorageFileId, string FileName, string MimeType, string? Sha256);
+
+    private static string ValidateOpeningData(System.Text.Json.JsonElement? element)
+    {
+        if (element is null || element.Value.ValueKind is System.Text.Json.JsonValueKind.Null or System.Text.Json.JsonValueKind.Undefined)
+            return "{}";
+        if (element.Value.ValueKind != System.Text.Json.JsonValueKind.Object)
+            throw new ArgumentException("Opening data must be a JSON object.");
+        var json = element.Value.GetRawText();
+        if (json.Length > 65536)
+            throw new ArgumentException("Opening payload exceeds maximum size.");
+        // Operational requirements are captured for the opening, not re-priced here.
+        // Detailed validation occurs before approval; incomplete drafts are permitted.
+        return json;
+    }
 
     public static IEndpointRouteBuilder MapOperationsEndpoints(this IEndpointRouteBuilder app)
     {
@@ -60,10 +75,11 @@ public static class OperationsEndpoints
             try
             {
                 var result = await handler.HandleAsync(
-                    new CreateManualCaseCommand(request.CompanyId, request.SeriesCode,
+                    new CreateManualCaseCommand(request.CompanyId,
                         request.AccountId, crmAccount.ExecutiveUserId!.Value, request.ModalityCode,
                         request.Priority, request.ComplexityPoints, actor.Value,
-                        request.OriginCountryCode, request.DestinationCountryCode), ct);
+                        request.OriginCountryCode, request.DestinationCountryCode,
+                        ValidateOpeningData(request.OpeningData)), ct);
                 return Results.Created($"/api/operations/cases/{result.Id}", result);
             }
             catch (ArgumentException e) { return Results.BadRequest(new { error = e.Message }); }
