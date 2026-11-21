@@ -33,6 +33,7 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
             DestinationCountryCode = input.DestinationCountryCode?.ToUpperInvariant(),
             Priority = input.Priority,
             ComplexityPoints = input.ComplexityPoints,
+            Status = "DRAFT",
             CreatedBy = input.ActorUserId
         };
         var openingStage = new OperationsCaseStage { CaseId = operation.Id, DepartmentCode = "APERTURAS" };
