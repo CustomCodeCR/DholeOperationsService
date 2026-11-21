@@ -111,7 +111,7 @@ public static class OperationsTeamValidationEndpoints
             if (operation.Status is "CANCELLED" or "COMPLETED" or "APERTURA_VALIDADA" ||
                 stage.Status is "COMPLETED" or "SKIPPED" or "CHANGES_REQUIRED")
                 return Results.Conflict(new { code = "APERTURE_NOT_ASSIGNABLE" });
-            if (operation.ApertureType == "MANUAL" && operation.OpeningDataJson != "{}")
+            if (operation.ApertureType == "MANUAL" && (operation.Status == "DRAFT" || operation.OpeningDataJson != "{}"))
             {
                 var missing = OperationsOpeningDraftValidator.MissingFields(
                     operation.ModalityCode, operation.OpeningDataJson);
