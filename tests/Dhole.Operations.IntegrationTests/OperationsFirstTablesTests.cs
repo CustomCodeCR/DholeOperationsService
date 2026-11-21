@@ -29,7 +29,7 @@ public sealed class OperationsFirstTablesTests
 
         var company = Guid.NewGuid();
         var created = await new CreateManualCaseHandler(new OperationsCaseStore(db)).HandleAsync(
-            new CreateManualCaseCommand(company, "00000", Guid.NewGuid(), Guid.NewGuid(),
+            new CreateManualCaseCommand(company, Guid.NewGuid(), Guid.NewGuid(),
                 "FCL", 1, 1m, Guid.NewGuid()), CancellationToken.None);
         var actor = Guid.NewGuid();
         var quoteId = Guid.NewGuid();
@@ -95,7 +95,7 @@ public sealed class OperationsFirstTablesTests
         await using var db = Db();
         await db.Database.MigrateAsync();
         var created = await new CreateManualCaseHandler(new OperationsCaseStore(db)).HandleAsync(
-            new CreateManualCaseCommand(Guid.NewGuid(), "00000", Guid.NewGuid(), Guid.NewGuid(),
+            new CreateManualCaseCommand(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
                 "FCL", 1, 1m, Guid.NewGuid()), CancellationToken.None);
         var link = new OperationsCaseQuoteLink { CaseId = created.Id, QuoteId = Guid.NewGuid(), LinkedBy = Guid.NewGuid() };
         db.CaseQuoteLinks.Add(link);

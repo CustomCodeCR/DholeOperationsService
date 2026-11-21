@@ -6,6 +6,7 @@ public sealed class OperationsCase
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid CompanyId { get; set; }
     public string Idtra { get; set; } = string.Empty;
+    public string OpeningDataJson { get; set; } = "{}";
     public string SeriesCode { get; set; } = string.Empty;
     public long SequenceNumber { get; set; }
     public Guid AccountId { get; set; }

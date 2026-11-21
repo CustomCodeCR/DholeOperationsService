@@ -16,14 +16,14 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
     public async Task<CaseCreatedResult> CreateManualAsync(CreateManualCaseCommand input, CancellationToken ct)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
-        var next = await NextSequenceAsync(input.SeriesCode, ct);
-        if (next > 999999) throw new InvalidOperationException("IDTRA series exhausted; configure a new approved series.");
-
-        var idtra = $"IDTRA-{input.SeriesCode}-{next:000000}";
+        var next = await NextSequenceAsync("00000", ct);
+        // One global, server-owned counter. Minimum five digits, never a series cap.
+        var idtra = $"IDTRA{next:D5}";
         var operation = new OperationsCase
         {
             CompanyId = input.CompanyId,
-            SeriesCode = input.SeriesCode,
+            SeriesCode = "00000",
+            OpeningDataJson = input.OpeningDataJson ?? "{}",
             SequenceNumber = next,
             Idtra = idtra,
             AccountId = input.AccountId,
@@ -33,6 +33,7 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
             DestinationCountryCode = input.DestinationCountryCode?.ToUpperInvariant(),
             Priority = input.Priority,
             ComplexityPoints = input.ComplexityPoints,
+            Status = "DRAFT",
             CreatedBy = input.ActorUserId
         };
         var openingStage = new OperationsCaseStage { CaseId = operation.Id, DepartmentCode = "APERTURAS" };

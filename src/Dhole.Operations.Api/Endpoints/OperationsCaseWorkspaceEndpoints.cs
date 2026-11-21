@@ -20,7 +20,8 @@ public static class OperationsCaseWorkspaceEndpoints
         short Priority,
         decimal ComplexityPoints,
         string? OriginCountryCode,
-        string? DestinationCountryCode);
+        string? DestinationCountryCode,
+        JsonElement? OpeningData = null);
 
     public sealed record UpdateOriginStatusRequest(long ExpectedVersion, string StatusCode);
 
@@ -156,18 +157,25 @@ public static class OperationsCaseWorkspaceEndpoints
 
             var before = new { operation.ModalityCode, operation.Priority,
                 operation.ComplexityPoints, operation.OriginCountryCode,
-                operation.DestinationCountryCode, operation.Version };
+                operation.DestinationCountryCode, operation.OpeningDataJson, operation.Version };
             operation.ModalityCode = modality;
             operation.Priority = request.Priority;
             operation.ComplexityPoints = request.ComplexityPoints;
             operation.OriginCountryCode = origin;
             operation.DestinationCountryCode = destination;
+            if (request.OpeningData.HasValue)
+            {
+                if (request.OpeningData.Value.ValueKind != JsonValueKind.Object ||
+                    request.OpeningData.Value.GetRawText().Length > 65536)
+                    return Results.BadRequest(new { code = "OPERATIONS_OPENING_DATA_INVALID" });
+                operation.OpeningDataJson = request.OpeningData.Value.GetRawText();
+            }
             operation.Version++;
             operation.UpdatedAtUtc = DateTimeOffset.UtcNow;
             OperationsAuditWriter.Case(db, id, null, actor.Value, "operations.case.updated",
                 before, new { operation.ModalityCode, operation.Priority,
                     operation.ComplexityPoints, operation.OriginCountryCode,
-                    operation.DestinationCountryCode, operation.Version });
+                    operation.DestinationCountryCode, operation.OpeningDataJson, operation.Version });
             db.OutboxMessages.Add(OperationsOutboxFactory.Create("operations.case.updated.v1",
                 JsonSerializer.Serialize(new { caseId = id, version = operation.Version })));
             try { await db.SaveChangesAsync(ct); }
