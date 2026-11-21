@@ -3,9 +3,10 @@ using Dhole.Operations.Domain.Models;
 namespace Dhole.Operations.Application.Cases;
 
 public sealed record CreateManualCaseCommand(
-    Guid CompanyId, string SeriesCode, Guid AccountId, Guid ExecutiveUserId,
+    Guid CompanyId, Guid AccountId, Guid ExecutiveUserId,
     string ModalityCode, short Priority, decimal ComplexityPoints, Guid ActorUserId,
-    string? OriginCountryCode = null, string? DestinationCountryCode = null);
+    string? OriginCountryCode = null, string? DestinationCountryCode = null,
+    string? OpeningDataJson = null);
 
 public sealed record AssignStageCommand(
     Guid CaseId, Guid StageId, Guid ActorUserId);
@@ -36,8 +37,6 @@ public sealed class CreateManualCaseHandler(IOperationsCaseStore store)
         if (command.CompanyId == Guid.Empty || command.AccountId == Guid.Empty ||
             command.ExecutiveUserId == Guid.Empty || command.ActorUserId == Guid.Empty)
             throw new ArgumentException("Company, CRM account, executive and actor must be provided.");
-        if (command.SeriesCode.Length != 5 || !command.SeriesCode.All(char.IsAsciiDigit))
-            throw new ArgumentException("The explicit IDTRA series must contain exactly five digits.");
         if (string.IsNullOrWhiteSpace(command.ModalityCode) || command.ModalityCode.Length > 30)
             throw new ArgumentException("A recognized modality code is required.");
         if (command.Priority is < 1 or > 5 || command.ComplexityPoints <= 0 || command.ComplexityPoints > 1000)

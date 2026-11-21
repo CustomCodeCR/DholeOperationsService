@@ -7,11 +7,11 @@ namespace Dhole.Operations.UnitTests;
 public sealed class OperationsFoundationTests
 {
     [TestMethod]
-    public async Task ExplicitIdtraSeriesIsRequiredAndNeverGuessed()
+    public async Task InvalidCompanyIsRejectedWithoutAllocatingAnIdtra()
     {
         var handler = new CreateManualCaseHandler(new NoopStore());
         var command = new CreateManualCaseCommand(
-            Guid.NewGuid(), "XX000", Guid.NewGuid(), Guid.NewGuid(), "FCL", 1, 3m, Guid.NewGuid());
+            Guid.Empty, Guid.NewGuid(), Guid.NewGuid(), "FCL", 1, 3m, Guid.NewGuid());
         await Assert.ThrowsExactlyAsync<ArgumentException>(() => handler.HandleAsync(command, CancellationToken.None));
     }
 

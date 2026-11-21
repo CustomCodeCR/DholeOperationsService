@@ -22,7 +22,7 @@ public sealed class OperationsPostgresTests
         var openings = Enumerable.Range(0, 12).Select(async _ =>
         {
             await using var db = NewDb();
-            var command = new CreateManualCaseCommand(companyId, "00000",
+            var command = new CreateManualCaseCommand(companyId,
                 Guid.NewGuid(), Guid.NewGuid(), "FCL", 1, 1m, Guid.NewGuid());
             return await new CreateManualCaseHandler(new OperationsCaseStore(db))
                 .HandleAsync(command, CancellationToken.None);
@@ -31,16 +31,19 @@ public sealed class OperationsPostgresTests
 
         Assert.AreEqual(12, results.Select(x => x.Idtra).Distinct().Count());
         // Series are global across companies; tests must not assume the first issued value is 1.
-        var assignedNumbers = results.Select(x => long.Parse(x.Idtra.Split('-')[2]))
+        var assignedNumbers = results.Select(x => {
+            Assert.IsTrue(System.Text.RegularExpressions.Regex.IsMatch(x.Idtra, @"^IDTRA\d{5,}$"));
+            return long.Parse(x.Idtra["IDTRA".Length..]);
+        })
             .Order().ToArray();
         Assert.AreEqual(12, assignedNumbers.Distinct().Count());
-        Assert.IsTrue(assignedNumbers[0] >= 1 && assignedNumbers[^1] <= 999999);
+        Assert.IsGreaterThanOrEqualTo(1L, assignedNumbers[0]);
         for (var i = 1; i < assignedNumbers.Length; i++)
             Assert.AreEqual(assignedNumbers[i - 1] + 1, assignedNumbers[i]);
 
         await using var anotherCompanyDb = NewDb();
         var otherCompany = await new CreateManualCaseHandler(new OperationsCaseStore(anotherCompanyDb))
-            .HandleAsync(new CreateManualCaseCommand(Guid.NewGuid(), "00000",
+            .HandleAsync(new CreateManualCaseCommand(Guid.NewGuid(),
                 Guid.NewGuid(), Guid.NewGuid(), "FCL", 1, 1m, Guid.NewGuid()), CancellationToken.None);
         Assert.IsFalse(results.Any(x => x.Idtra == otherCompany.Idtra),
             "Cases belonging to different companies must never share a visible IDTRA.");
@@ -86,7 +89,7 @@ public sealed class OperationsPostgresTests
         await db.SaveChangesAsync();
 
         var caseResult = await new CreateManualCaseHandler(new OperationsCaseStore(db))
-            .HandleAsync(new CreateManualCaseCommand(companyId, "00000",
+            .HandleAsync(new CreateManualCaseCommand(companyId,
                 Guid.NewGuid(), Guid.NewGuid(), "FCL", 1, 2m, Guid.NewGuid()), CancellationToken.None);
         var handler = new AssignStageHandler(new OperationsCaseStore(db));
         var assigned = await handler.HandleAsync(
