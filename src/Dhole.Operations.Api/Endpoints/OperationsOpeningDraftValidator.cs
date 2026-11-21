@@ -53,7 +53,7 @@ public static class OperationsOpeningDraftValidator
                 missing.Add("equipment");
         }
 
-        if (Text("incoterm") == "FCA" && modality is "LCL" or "LTL" &&
+        if (Text("incoterm") == "FCA" && (modality is "LCL" or "LTL") &&
             string.IsNullOrWhiteSpace(Text("whsName")))
             missing.Add("whsName");
         if (Flag("isImo") && (string.IsNullOrWhiteSpace(Text("imoClass")) ||
