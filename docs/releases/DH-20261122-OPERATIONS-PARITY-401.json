@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "ecosystem": "Dhole",
+  "component": "DholeOperationsService",
+  "releaseId": "DH-20261122-OPERATIONS-PARITY-401",
+  "releaseType": "PATCH",
+  "version": "0.15.1",
+  "ecosystemVersion": "1.112.0",
+  "branch": "feature/DH-20261122-OPERATIONS-PARITY-401",
+  "targetBranches": [
+    "develop",
+    "master"
+  ],
+  "components": [
+    {
+      "repository": "CustomCodeCR/DholeOperationsService",
+      "previousVersion": "0.15.0",
+      "version": "0.15.1"
+    },
+    {
+      "repository": "CustomCodeCR/DholeWeb",
+      "previousVersion": "1.111.1",
+      "version": "1.112.0"
+    },
+    {
+      "repository": "CustomCodeCR/DholeSystem",
+      "previousVersion": "1.111.1",
+      "version": "1.112.0"
+    }
+  ],
+  "checks": {
+    "ci": "pending",
+    "staging": "pending",
+    "production": "not-authorized"
+  },
+  "productionDeploymentAuthorized": false
+}
