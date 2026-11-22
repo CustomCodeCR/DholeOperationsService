@@ -1,3 +1,10 @@
+## [0.16.0] - 2026-11-22 · DH-20261122-OPERATIONS-ASSIGNMENT-SUMMARY-408
+
+- MINOR: nuevo catálogo de equipos de Aperturas por empresa con disponibilidad para la doble validación; el creador de una apertura manual puede elegir el equipo de su propio expediente.
+- Los validadores se verifican contra Auth; equipos no elegibles generan errores explicativos y no una asignación ficticia. No se duplica el IDTRA si se reintenta.
+- API REST compatible, permisos por equipo, PostgreSQL, AuditLogs, Outbox/Inbox y SignalR conservados.
+- Operaciones 0.15.1 → 0.16.0; ecosistema 1.116.0. Candidato master aún sin autorización de despliegue.
+
 ## [0.15.1] - 2026-11-22 (DH-20261122-OPERATIONS-PARITY-401 · Validación de equipo en Aperturas)
 
 - PATCH: exigencia de equipos para FTL y multimodal FCL/FTL, sin bloquear LCL/LTL; pruebas de validación de múltiples equipos y cantidades.
