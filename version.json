@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "ecosystem": "Dhole",
   "component": "DholeOperationsService",
-  "version": "0.15.1",
-  "ecosystemVersion": "1.112.0",
-  "releaseId": "DH-20261122-OPERATIONS-PARITY-401",
-  "releaseStatus": "candidate-master-ci-pending",
-  "businessReleaseId": "DH-20261122-OPERATIONS-PARITY-401"
+  "version": "0.16.0",
+  "ecosystemVersion": "1.116.0",
+  "releaseId": "DH-20261122-OPERATIONS-ASSIGNMENT-SUMMARY-408",
+  "releaseStatus": "candidate-develop-ci-pending",
+  "businessReleaseId": "DH-20261122-OPERATIONS-ASSIGNMENT-SUMMARY-408"
 }
