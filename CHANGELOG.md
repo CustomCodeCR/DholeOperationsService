@@ -1,3 +1,9 @@
+## [0.15.1] - 2026-11-22 (DH-20261122-OPERATIONS-PARITY-401 · Validación de equipos en apertura)
+
+- PATCH: el validador de Aperturas requiere equipos para FTL y para embarques FCL/FTL multimodales; conserva LCL/LTL sin requisitos erróneos de equipo.
+- Se agrega regresión que comprueba la validación de múltiples equipos y cantidades, sin modificar el contrato REST ni el snapshot comercial de Pricing.
+- DholeOperationsService 0.15.0 → 0.15.1, ecosistema DholeWeb/System 1.111.1 → 1.112.0. Requiere CI/staging antes de promoción.
+
 ## [0.15.0] - 2026-11-21 (DH-20261121-OPERATIONS-OPENING-IDTRA-392 · Apertura manual con IDTRA global)
 
 - MINOR: IDTRA generado desde contador PostgreSQL único (serie interna 00000) con formato visible IDTRA00001, IDTRA12345, IDTRA100000; sin serie editable ni límite artificial 999999; los IDTRA históricos conservan su cadena.
