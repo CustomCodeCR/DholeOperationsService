@@ -1,3 +1,8 @@
+## [0.15.1] - 2026-11-22 (DH-20261122-OPERATIONS-PARITY-401 · Validación de equipo en Aperturas)
+
+- PATCH: exigencia de equipos para FTL y multimodal FCL/FTL, sin bloquear LCL/LTL; pruebas de validación de múltiples equipos y cantidades.
+- Mantiene snapshot comercial y contratos REST/SignalR. Operations 0.15.0 → 0.15.1, Web/System 1.111.1 → 1.112.0. Requiere CI/staging para promoción.
+
 ## [0.15.0] - 2026-11-21 (DH-20261121-OPERATIONS-OPENING-IDTRA-392 · Apertura manual con IDTRA global)
 
 - MINOR: IDTRA generado desde contador PostgreSQL único (serie interna 00000) con formato visible IDTRA00001, IDTRA12345, IDTRA100000; sin serie editable ni límite artificial 999999; los IDTRA históricos conservan su cadena.
