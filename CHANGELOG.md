@@ -1,3 +1,11 @@
+## [0.16.0] - 2026-11-22 · DH-20261122-OPERATIONS-ASSIGNMENT-SUMMARY-408
+
+- MINOR: endpoint de lectura company-scoped `GET /api/operations/apertures/assignment-teams` muestra únicamente equipos de Aperturas activos y capacidad agregada para dos validadores, sin exponer usuarios.
+- Permite al creador autorizado de su apertura manual en DRAFT seleccionar explícitamente un equipo de Aperturas y asignar dos validadores elegibles. Otros cambios de asignación conservan los permisos estrictos de gestión de equipos.
+- Rechazos de equipos inválidos y pools incompletos devuelven códigos y mensajes específicos; conservan el IDTRA sin duplicaciones y no simulan asignación exitosa.
+- Preserva la validación doble, comprobaciones Auth en tiempo real, Outbox/SignalR, PostgreSQL y contratos REST previos.
+- Coordinado con DholeWeb/DholeSystem 1.116.0 y 14 componentes no modificados.
+
 ## [0.15.1] - 2026-11-22 (DH-20261122-OPERATIONS-PARITY-401 · Validación de equipos en apertura)
 
 - PATCH: el validador de Aperturas requiere equipos para FTL y para embarques FCL/FTL multimodales; conserva LCL/LTL sin requisitos erróneos de equipo.
