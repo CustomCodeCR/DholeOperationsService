@@ -88,18 +88,56 @@ public static class OperationsTeamValidationEndpoints
             return Results.Ok(new { stage, requiredReviewers = 2, validators });
         });
 
+        // Safe, company-scoped team choices for a manual opening. Return only
+        // aggregates; never expose individual Auth identities to form creators.
+        api.MapGet("/apertures/assignment-teams", async (
+            HttpContext http, OperationsCaseAccess access, OperationsDbContext db,
+            Guid? companyId, CancellationToken ct) =>
+        {
+            if (!OperationsCaseAccess.HasScope(http.User, "operations.case.create") &&
+                !OperationsCaseAccess.HasScope(http.User, "operations.aperture.validation.assign"))
+                return Results.Forbid();
+            var ownCompany = await access.ResolveCompanyIdAsync(http.User, ct);
+            var company = OperationsCaseAccess.IsSystemAdministrator(http.User) && companyId.HasValue
+                ? companyId : ownCompany;
+            if (company is null || company == Guid.Empty) return Results.Forbid();
+            if (!OperationsCaseAccess.IsSystemAdministrator(http.User) &&
+                ownCompany != company) return Results.Forbid();
+
+            var teams = await db.Teams.AsNoTracking()
+                .Where(t => t.CompanyId == company && t.IsActive && t.DepartmentCode == "APERTURAS")
+                .Select(t => new {
+                    t.Id, t.Name, t.DepartmentCode,
+                    AvailableReviewers = t.Members
+                        .Where(m => m.IsAvailable && m.CapacityPoints > 0)
+                        .Select(m => m.UserId).Distinct().Count()
+                })
+                .OrderBy(t => t.Name).ToArrayAsync(ct);
+            return Results.Ok(teams.Select(t => new {
+                t.Id, t.Name, t.DepartmentCode, t.AvailableReviewers,
+                CanAssign = t.AvailableReviewers >= 2
+            }));
+        });
+
         api.MapPost("/cases/{caseId:guid}/aperture-validations/assign", async (
             Guid caseId, AssignReviewersRequest input, HttpContext http,
             OperationsCaseAccess access, OperationsDbContext db, OperationsAuthUserVerifier auth, CancellationToken ct) =>
         {
             var actor = OperationsCaseAccess.UserId(http.User);
-            if (actor is null ||
-                !OperationsCaseAccess.HasScope(http.User, "operations.aperture.validation.assign") ||
-                !OperationsCaseAccess.HasScope(http.User, "operations.team.manage"))
-                return Results.Forbid();
+            if (actor is null) return Results.Forbid();
             await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
             var operation = await db.Cases.SingleOrDefaultAsync(c => c.Id == caseId, ct);
             if (operation is null) return Results.NotFound();
+            // Manual-case creators may choose an Aperturas team for their own new
+            // case; broader assignment privileges still require both management scopes.
+            var manager = OperationsCaseAccess.IsSystemAdministrator(http.User) ||
+                (OperationsCaseAccess.HasScope(http.User, "operations.aperture.validation.assign") &&
+                 OperationsCaseAccess.HasScope(http.User, "operations.team.manage"));
+            var creator = operation.ApertureType == "MANUAL" && operation.CreatedBy == actor.Value &&
+                operation.Status == "DRAFT" &&
+                OperationsCaseAccess.HasScope(http.User, "operations.case.create") &&
+                input.TeamId.HasValue;
+            if (!manager && !creator) return Results.Forbid();
             if (!OperationsCaseAccess.IsSystemAdministrator(http.User) &&
                 await access.ResolveCompanyIdAsync(http.User, ct) != operation.CompanyId) return Results.Forbid();
             var key = "apertures-pool:" + operation.CompanyId.ToString("N");
@@ -144,6 +182,9 @@ public static class OperationsTeamValidationEndpoints
             else if (teamIds.Length > 0)
                 teamsQuery = teamsQuery.Where(t => teamIds.Contains(t.Id));
             var teams = await teamsQuery.ToArrayAsync(ct);
+            if (input.TeamId.HasValue && teams.Length == 0)
+                return Results.BadRequest(new { code = "APERTURE_TEAM_NOT_AVAILABLE",
+                    message = "El equipo seleccionado no existe, no pertenece a Aperturas o está inactivo." });
             var workloads = await db.ApertureValidations.AsNoTracking()
                 .Where(v => v.Status == "PENDING" && v.CaseStage.Case.CompanyId == operation.CompanyId)
                 .GroupBy(v => v.UserId).Select(g => new {
@@ -178,7 +219,10 @@ public static class OperationsTeamValidationEndpoints
                 return Results.Problem(statusCode: 503, title: "Auth timed out, validation not assigned");
             }
             if (pair is null)
-                return Results.Conflict(new { code = "POOL_REQUIRES_TWO_ELIGIBLE_DISTINCT_USERS" });
+                return Results.Conflict(new {
+                    code = "POOL_REQUIRES_TWO_ELIGIBLE_DISTINCT_USERS",
+                    message = "El equipo no tiene dos validadores distintos, disponibles y autorizados en Auth. Configure su equipo o seleccione otro; el IDTRA existente se conserva."
+                });
 
             var assignments = new[] {
                 new OperationsApertureValidation { CaseStageId = stage.Id,
