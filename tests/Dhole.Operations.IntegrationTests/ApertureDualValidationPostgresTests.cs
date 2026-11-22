@@ -27,7 +27,7 @@ public sealed class ApertureDualValidationPostgresTests
             "202611180100_ApertureDualValidation208");
         var company = Guid.NewGuid();
         var created = await new CreateManualCaseHandler(new OperationsCaseStore(db))
-            .HandleAsync(new CreateManualCaseCommand(company, "00000",
+            .HandleAsync(new CreateManualCaseCommand(company,
                 Guid.NewGuid(), Guid.NewGuid(), "FCL", 1, 1m, Guid.NewGuid()), CancellationToken.None);
         var team = new OperationsTeam { CompanyId = company, DepartmentCode = "APERTURAS",
             Name = "Validadores " + Guid.NewGuid().ToString("N") };

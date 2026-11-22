@@ -111,6 +111,15 @@ public static class OperationsTeamValidationEndpoints
             if (operation.Status is "CANCELLED" or "COMPLETED" or "APERTURA_VALIDADA" ||
                 stage.Status is "COMPLETED" or "SKIPPED" or "CHANGES_REQUIRED")
                 return Results.Conflict(new { code = "APERTURE_NOT_ASSIGNABLE" });
+            if (operation.ApertureType == "MANUAL" && (operation.Status == "DRAFT" || operation.OpeningDataJson != "{}"))
+            {
+                var missing = OperationsOpeningDraftValidator.MissingFields(
+                    operation.ModalityCode, operation.OpeningDataJson);
+                if (missing.Length > 0)
+                    return Results.Conflict(new {
+                        code = "APERTURE_MISSING_REQUIRED_FIELDS", missingFields = missing
+                    });
+            }
             var existing = await db.ApertureValidations.AsNoTracking()
                 .Where(x => x.CaseStageId == stage.Id).OrderBy(x => x.Slot)
                 .Select(x => new { x.Id, x.UserId, x.Slot, x.Status }).ToArrayAsync(ct);
