@@ -43,8 +43,8 @@ public static class OperationsOpeningDraftValidator
         // keeps its operation modality while storing FCL/FTL in shipmentType.
         // Validate equipment based on the effective shipment, not only modality.
         var shipmentType = Text("shipmentType")?.ToUpperInvariant();
-        var requiresEquipment = modality is "FCL" or "FTL"
-            || (modality == "MULTIMODAL" && shipmentType is "FCL" or "FTL");
+        var requiresEquipment = (modality is "FCL" or "FTL")
+            || (modality == "MULTIMODAL" && (shipmentType is "FCL" or "FTL"));
         if (requiresEquipment)
         {
             if (!data.TryGetProperty("equipment", out var equipment) ||
