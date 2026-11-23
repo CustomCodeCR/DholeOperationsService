@@ -126,6 +126,7 @@ public sealed class AcceptedQuoteOpeningConsumer(
                         ? oldOption : null,
                     QuoteNumber = groupNumber, IsPrimary = true,
                     Status = "ACCEPTED_SNAPSHOT", SnapshotVersion = 1,
+                    CommercialSnapshotJson = payload,
                     LinkedBy = TryGuid(snapshot, "acceptedBy", out var oldActor) ? oldActor : Guid.Empty
                 });
                 logger.LogInformation("Existing IDTRA {Idtra} linked to accepted QUO {QuoteId}, without reallocation",
@@ -304,8 +305,8 @@ public sealed class AcceptedQuoteOpeningConsumer(
             volumeUnit = "CBM",
             equipment,
             services,
-            // Original Pricing units, costs and exact accepted revision stay immutable.
-            commercialSnapshot = snapshot.Clone()
+            // Exact accepted commercial snapshot belongs ONLY to the protected quote link.
+            quoteSnapshotVersion = 1
         });
     }
 
