@@ -167,9 +167,29 @@ public sealed class AcceptedQuoteOpeningConsumer(
                 OpeningDataJson = BuildOpeningData(snapshot, selectedNumber, groupNumber),
                 Status = "PENDING_VALIDATION"
             };
+            // Select a configured eligible Aperturas team, never invent an operator.
+            // The existing dual Auth-verified reviewer allocation remains authoritative.
+            var apertureRules = await db.AssignmentRules.AsNoTracking()
+                .Where(r => r.IsActive && r.DepartmentCode == "APERTURAS" &&
+                    (r.ModalityCode == null || r.ModalityCode == operation.ModalityCode))
+                .OrderByDescending(r => r.Priority)
+                .ThenBy(r => r.Id)
+                .Select(r => new { r.TeamId, r.Priority }).ToArrayAsync(ct);
+            var preferred = apertureRules.Select(r => r.TeamId).ToHashSet();
+            var eligible = await db.Teams.AsNoTracking()
+                .Include(t => t.Members)
+                .Where(t => t.IsActive && t.CompanyId == operation.CompanyId &&
+                    t.DepartmentCode == "APERTURAS").ToListAsync(ct);
+            var assignedTeam = eligible
+                .Where(t => t.Members.Count(m => m.IsAvailable && m.CapacityPoints > 0m) >= 2)
+                .OrderBy(t => preferred.Contains(t.Id) ? 0 : 1)
+                .ThenByDescending(t => apertureRules.Where(r => r.TeamId == t.Id)
+                    .Select(r => r.Priority).DefaultIfEmpty(0).Max())
+                .ThenBy(t => t.Id).FirstOrDefault();
             var stage = new OperationsCaseStage
             {
-                CaseId = caseId, DepartmentCode = "APERTURAS", Status = "PENDING"
+                CaseId = caseId, DepartmentCode = "APERTURAS",
+                TeamId = assignedTeam?.Id, Status = "PENDING"
             };
             operation.Stages.Add(stage);
             db.Cases.Add(operation);
