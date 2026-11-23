@@ -209,8 +209,29 @@ public static class OperationsEndpoints
                     c.OriginCountryCode, c.DestinationCountryCode,
                     c.ApertureType, c.SourceQuoteId, c.SourceQuoteOptionId,
                     c.Status, c.Priority, c.CreatedAtUtc, c.UpdatedAtUtc,
-                    DepartmentCode = c.Stages.OrderByDescending(s => s.StartedAtUtc)
-                        .Select(s => s.DepartmentCode).FirstOrDefault()
+                    DepartmentCode = c.Stages.OrderByDescending(s => s.Status == "IN_PROGRESS")
+                        .ThenByDescending(s => s.Status == "READY")
+                        .ThenByDescending(s => s.StartedAtUtc)
+                        .Select(s => s.DepartmentCode).FirstOrDefault(),
+                    DepartmentStatus = c.Stages.OrderByDescending(s => s.Status == "IN_PROGRESS")
+                        .ThenByDescending(s => s.Status == "READY")
+                        .ThenByDescending(s => s.StartedAtUtc)
+                        .Select(s => s.Status).FirstOrDefault(),
+                    TeamName = c.Stages.OrderByDescending(s => s.Status == "IN_PROGRESS")
+                        .ThenByDescending(s => s.Status == "READY")
+                        .ThenByDescending(s => s.StartedAtUtc)
+                        .Select(s => db.Teams.Where(t => t.Id == s.TeamId)
+                            .Select(t => t.Name).FirstOrDefault()).FirstOrDefault(),
+                    AssignedUserId = c.Stages.OrderByDescending(s => s.Status == "IN_PROGRESS")
+                        .ThenByDescending(s => s.Status == "READY")
+                        .ThenByDescending(s => s.StartedAtUtc)
+                        .Select(s => db.StageAssignments.Where(a =>
+                            a.CaseStageId == s.Id && a.ReleasedAtUtc == null)
+                            .Select(a => (Guid?)a.UserId).FirstOrDefault()).FirstOrDefault(),
+                    OriginStatusCode = db.OriginProgress.Where(p =>
+                            p.CaseStage.CaseId == c.Id &&
+                            p.CaseStage.DepartmentCode == "COORDINACION_ORIGEN")
+                        .Select(p => p.StatusCode).FirstOrDefault()
                 }).ToArrayAsync(ct);
             return Results.Ok(new { page = currentPage, pageSize = size, total, items });
         });
