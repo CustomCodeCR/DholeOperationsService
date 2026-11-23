@@ -163,6 +163,7 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
             e.HasKey(x => x.Id);
             e.HasOne(x => x.Case).WithMany().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
             e.Property(x => x.QuoteNumber).HasMaxLength(60);
+            e.Property(x => x.CommercialSnapshotJson).HasColumnName("commercial_snapshot_json").HasColumnType("jsonb");
             e.Property(x => x.Status).HasMaxLength(30).IsRequired();
             e.HasIndex(x => new { x.CaseId, x.LinkedAtUtc });
             e.HasIndex(x => x.QuoteId);
