@@ -61,7 +61,10 @@ public static class OperationsCaseWorkspaceEndpoints
             foreach (var code in DepartmentTabs)
             {
                 var stage = stages.FirstOrDefault(s => s.DepartmentCode == code);
-                var level = "LOCKED";
+                // Superusuarios can inspect every department even before a stage exists.
+                // No write permission is invented for a stage that has not started.
+                var level = OperationsCaseAccess.IsSystemAdministrator(http.User)
+                    ? "READ_ONLY" : "LOCKED";
                 if (stage is not null)
                 {
                     level = stage.Status == "SKIPPED" ? "NOT_APPLICABLE" : "READ_ONLY";
@@ -93,6 +96,13 @@ public static class OperationsCaseWorkspaceEndpoints
                         .Select(a => (Guid?)a.UserId).FirstOrDefault(),
                     s.StartedAtUtc, s.CompletedAtUtc
                 }).ToArrayAsync(ct);
+            // Aperturas uses dual reviewers, not a single stage assignee.
+            // Include their identities only after case-level authorization.
+            var validators = await db.ApertureValidations.AsNoTracking()
+                .Where(v => v.CaseStage.CaseId == id)
+                .OrderBy(v => v.Slot)
+                .Select(v => new { v.CaseStageId, v.UserId, v.Slot, v.Status,
+                    v.AssignedAtUtc, v.ReviewedAtUtc }).ToArrayAsync(ct);
             var quotes = await db.CaseQuoteLinks.AsNoTracking()
                 .Where(q => q.CaseId == id)
                 .OrderByDescending(q => q.IsPrimary)
@@ -108,7 +118,7 @@ public static class OperationsCaseWorkspaceEndpoints
                 .Select(t => new { t.Id, t.CaseStageId, t.Title, t.Details,
                     t.Status, t.Priority, t.AssignedUserId, t.DueAtUtc,
                     t.CompletedAtUtc }).ToArrayAsync(ct);
-            return Results.Ok(new { caseId = id, stages, quotes, milestones, tasks });
+            return Results.Ok(new { caseId = id, stages, validators, quotes, milestones, tasks });
         });
 
         api.MapGet("/cases/{id:guid}/commercial/costs", async (
