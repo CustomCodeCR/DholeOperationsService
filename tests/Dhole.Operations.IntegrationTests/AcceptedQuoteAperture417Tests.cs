@@ -81,7 +81,7 @@ public sealed class AcceptedQuoteAperture417Tests
             var link = await db.CaseQuoteLinks.Include(x => x.Costs)
                 .SingleAsync(x => x.CaseId == @case.Id);
             Assert.AreEqual(3, link.SnapshotVersion);
-            Assert.AreEqual(1, link.Costs.Count);
+            Assert.HasCount(1, link.Costs);
             Assert.AreEqual(150m, link.Costs[0].CostAmount);
             using var captured = JsonDocument.Parse(link.SnapshotJson);
             Assert.AreEqual(2, captured.RootElement.GetProperty("Containers")[0]
