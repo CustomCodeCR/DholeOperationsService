@@ -108,6 +108,82 @@ public sealed class OperationsPostgresTests
             x => x.CaseStageId == caseResult.InitialStageId && x.ReleasedAtUtc == null));
     }
 
+    [TestMethod]
+    public async Task IncompleteOpeningDraftPersistsInPostgresWithoutAccountOrTeam()
+    {
+        if (string.IsNullOrWhiteSpace(Connection))
+            Assert.Inconclusive("DHOLE_TEST_POSTGRES is required.");
+
+        var company = Guid.NewGuid();
+        var user = Guid.NewGuid();
+        var draftId = Guid.NewGuid();
+        await using (var write = NewDb())
+        {
+            await write.Database.MigrateAsync();
+            write.OpeningDrafts.Add(new OperationsOpeningDraft
+            {
+                Id = draftId,
+                CompanyId = company,
+                UserId = user,
+                PayloadJson = "{\"version\":2,\"form\":{},\"step\":1}"
+            });
+            await write.SaveChangesAsync();
+        }
+
+        await using var read = NewDb();
+        var saved = await read.OpeningDrafts.AsNoTracking().SingleAsync(x => x.Id == draftId);
+        Assert.AreEqual(company, saved.CompanyId);
+        Assert.AreEqual(user, saved.UserId);
+        Assert.IsTrue(saved.PayloadJson.Contains("\"form\"", StringComparison.Ordinal));
+
+        read.OpeningDrafts.Remove(await read.OpeningDrafts.SingleAsync(x => x.Id == draftId));
+        await read.SaveChangesAsync();
+    }
+
+    [TestMethod]
+    public async Task AcceptedQuoteGroupHasExactlyOnePrimaryAutomaticCase()
+    {
+        if (string.IsNullOrWhiteSpace(Connection))
+            Assert.Inconclusive("DHOLE_TEST_POSTGRES is required.");
+
+        var firstId = Guid.NewGuid();
+        var secondId = Guid.NewGuid();
+        var quoteRoot = $"QUO-00000-{Random.Shared.Next(100000, 999999):D6}";
+        var companyId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        var actorId = Guid.NewGuid();
+
+        await using var db = NewDb();
+        await db.Database.MigrateAsync();
+        db.Cases.AddRange(
+            new OperationsCase { Id = firstId, CompanyId = companyId,
+                AccountId = accountId, ExecutiveUserId = actorId, CreatedBy = actorId,
+                ApertureType = "AUTOMATIC", SourceQuoteId = Guid.NewGuid(),
+                SourceQuoteOptionId = Guid.NewGuid(), Idtra = "IDTRA" + Random.Shared.Next(10000000, 90000000),
+                SeriesCode = "00000", SequenceNumber = Random.Shared.Next(10000000, 90000000),
+                ModalityCode = "FCL", Status = "PENDING_VALIDATION" },
+            new OperationsCase { Id = secondId, CompanyId = companyId,
+                AccountId = accountId, ExecutiveUserId = actorId, CreatedBy = actorId,
+                ApertureType = "AUTOMATIC", SourceQuoteId = Guid.NewGuid(),
+                SourceQuoteOptionId = Guid.NewGuid(), Idtra = "IDTRA" + Random.Shared.Next(10000000, 90000000),
+                SeriesCode = "00000", SequenceNumber = Random.Shared.Next(10000000, 90000000),
+                ModalityCode = "FCL", Status = "PENDING_VALIDATION" });
+        db.CaseQuoteLinks.Add(new OperationsCaseQuoteLink
+        {
+            CaseId = firstId, QuoteId = Guid.NewGuid(), QuoteNumber = quoteRoot,
+            IsPrimary = true, Status = "ACCEPTED", LinkedBy = actorId
+        });
+        await db.SaveChangesAsync();
+
+        db.CaseQuoteLinks.Add(new OperationsCaseQuoteLink
+        {
+            CaseId = secondId, QuoteId = Guid.NewGuid(), QuoteNumber = quoteRoot,
+            IsPrimary = true, Status = "ACCEPTED", LinkedBy = actorId
+        });
+        await Assert.ThrowsExactlyAsync<DbUpdateException>(
+            () => db.SaveChangesAsync());
+    }
+
     private static OperationsDbContext NewDb()
     {
         var opts = new DbContextOptionsBuilder<OperationsDbContext>().UseNpgsql(Connection!).Options;

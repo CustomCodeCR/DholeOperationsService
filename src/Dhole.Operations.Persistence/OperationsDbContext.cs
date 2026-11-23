@@ -12,6 +12,7 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<InboxMessage> InboxMessages => Set<InboxMessage>();
     public DbSet<OperationsCase> Cases => Set<OperationsCase>();
+    public DbSet<OperationsOpeningDraft> OpeningDrafts => Set<OperationsOpeningDraft>();
     public DbSet<OperationsCaseSequence> CaseSequences => Set<OperationsCaseSequence>();
     public DbSet<OperationsCaseStage> CaseStages => Set<OperationsCaseStage>();
     public DbSet<OperationsTeam> Teams => Set<OperationsTeam>();
@@ -46,6 +47,13 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
         m.Entity<InboxMessage>().Property<string>("PayloadJson")
             .HasColumnName("payload_json").HasColumnType("text").IsRequired();
 
+        m.Entity<OperationsOpeningDraft>(e =>
+        {
+            e.ToTable("operations_opening_drafts");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.PayloadJson).HasColumnName("payload_json").HasColumnType("jsonb").IsRequired();
+            e.HasIndex(x => new { x.CompanyId, x.UserId, x.UpdatedAtUtc });
+        });
         m.Entity<OperationsCase>(e =>
         {
             e.ToTable("operations_cases", t => t.HasCheckConstraint("ck_operations_case_points", "complexity_points > 0 AND priority BETWEEN 1 AND 5"));
@@ -163,6 +171,7 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
             e.HasKey(x => x.Id);
             e.HasOne(x => x.Case).WithMany().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
             e.Property(x => x.QuoteNumber).HasMaxLength(60);
+            e.Property(x => x.CommercialSnapshotJson).HasColumnName("commercial_snapshot_json").HasColumnType("jsonb");
             e.Property(x => x.Status).HasMaxLength(30).IsRequired();
             e.HasIndex(x => new { x.CaseId, x.LinkedAtUtc });
             e.HasIndex(x => x.QuoteId);

@@ -146,6 +146,20 @@ public static class OperationsCaseWorkspaceEndpoints
             return Results.Ok(new { caseId = id, items = costs });
         });
 
+        // Immutable Pricing acceptance projection. The editable opening draft is separate.
+        api.MapGet("/cases/{id:guid}/commercial/snapshot", async (
+            Guid id, HttpContext http, OperationsCaseAccess access,
+            OperationsDbContext db, CancellationToken ct) =>
+        {
+            if (!OperationsCaseAccess.HasScope(http.User, "operations.cost.read") ||
+                !await access.CanReadAsync(id, http.User, ct)) return Results.Forbid();
+            var snapshot = await db.CaseQuoteLinks.AsNoTracking()
+                .Where(x => x.CaseId == id && x.IsPrimary)
+                .Select(x => x.CommercialSnapshotJson).FirstOrDefaultAsync(ct);
+            if (snapshot is null) return Results.NotFound();
+            return Results.Content(snapshot, "application/json");
+        });
+
         // Editing is intentionally limited to mutable opening metadata. The accepted
         // commercial snapshot, CRM executive and validated workflow are immutable here.
         api.MapPatch("/cases/{id:guid}", async (
