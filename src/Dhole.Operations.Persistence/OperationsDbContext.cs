@@ -12,6 +12,7 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<InboxMessage> InboxMessages => Set<InboxMessage>();
     public DbSet<OperationsCase> Cases => Set<OperationsCase>();
+    public DbSet<OperationsApertureDraft> ApertureDrafts => Set<OperationsApertureDraft>();
     public DbSet<OperationsCaseSequence> CaseSequences => Set<OperationsCaseSequence>();
     public DbSet<OperationsCaseStage> CaseStages => Set<OperationsCaseStage>();
     public DbSet<OperationsTeam> Teams => Set<OperationsTeam>();
@@ -46,6 +47,14 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
         m.Entity<InboxMessage>().Property<string>("PayloadJson")
             .HasColumnName("payload_json").HasColumnType("text").IsRequired();
 
+        m.Entity<OperationsApertureDraft>(e =>
+        {
+            e.ToTable("operations_aperture_drafts");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.PayloadJson).HasColumnType("jsonb").IsRequired();
+            e.Property(x => x.Version).IsConcurrencyToken();
+            e.HasIndex(x => new { x.CompanyId, x.OwnerUserId, x.UpdatedAtUtc });
+        });
         m.Entity<OperationsCase>(e =>
         {
             e.ToTable("operations_cases", t => t.HasCheckConstraint("ck_operations_case_points", "complexity_points > 0 AND priority BETWEEN 1 AND 5"));
