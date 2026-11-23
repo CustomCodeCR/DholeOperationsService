@@ -1,3 +1,12 @@
+## [0.19.0] - 2026-11-23
+
+- Inbox Pricing duradero, creación idempotente de IDTRA, snapshot comercial inmutable y detalle de costos.
+- Borradores independientes en PostgreSQL sin equipo ni consumo prematuro de consecutivo.
+
+## [0.19.0] - 2026-11-23
+
+- Inbox Pricing con recuperación, creación idempotente de IDTRA, snapshot comercial inmutable, costos y borradores PostgreSQL con control de concurrencia.
+
 ## [0.18.0] - 2026-11-23 · DH-20261123-OPS-APERTURES-P1-416
 
 - MINOR candidate para Aperturas P1: previsualización protegida de completitud por campo con CONFIRMADO, PENDIENTE_PERMITIDO, PENDIENTE_BLOQUEANTE y NO_APLICA; consulta del borrador existente en PostgreSQL.

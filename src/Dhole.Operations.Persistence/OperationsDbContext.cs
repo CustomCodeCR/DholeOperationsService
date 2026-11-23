@@ -12,6 +12,8 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<InboxMessage> InboxMessages => Set<InboxMessage>();
     public DbSet<OperationsCase> Cases => Set<OperationsCase>();
+    public DbSet<OperationsApertureDraft> ApertureDrafts => Set<OperationsApertureDraft>();
+    public DbSet<OperationsCaseServiceLine> CaseServiceLines => Set<OperationsCaseServiceLine>();
     public DbSet<OperationsCaseSequence> CaseSequences => Set<OperationsCaseSequence>();
     public DbSet<OperationsCaseStage> CaseStages => Set<OperationsCaseStage>();
     public DbSet<OperationsTeam> Teams => Set<OperationsTeam>();
@@ -46,6 +48,27 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
         m.Entity<InboxMessage>().Property<string>("PayloadJson")
             .HasColumnName("payload_json").HasColumnType("text").IsRequired();
 
+        m.Entity<OperationsCaseServiceLine>(e =>
+        {
+            e.ToTable("operations_case_service_lines");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Source).HasMaxLength(24);
+            e.Property(x => x.ServiceCode).HasMaxLength(80);
+            e.Property(x => x.ServiceName).HasMaxLength(255);
+            e.Property(x => x.ReviewStatus).HasMaxLength(35);
+            e.Property(x => x.Version).IsConcurrencyToken();
+            e.HasIndex(x => new { x.CaseId, x.ReviewStatus });
+            e.HasIndex(x => new { x.CaseId, x.PricingServiceLineId }).IsUnique()
+                .HasFilter("source = 'QUOTED' AND pricing_service_line_id IS NOT NULL");
+        });
+        m.Entity<OperationsApertureDraft>(e =>
+        {
+            e.ToTable("operations_aperture_drafts");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.PayloadJson).HasColumnType("jsonb").IsRequired();
+            e.Property(x => x.Version).IsConcurrencyToken();
+            e.HasIndex(x => new { x.CompanyId, x.OwnerUserId, x.UpdatedAtUtc });
+        });
         m.Entity<OperationsCase>(e =>
         {
             e.ToTable("operations_cases", t => t.HasCheckConstraint("ck_operations_case_points", "complexity_points > 0 AND priority BETWEEN 1 AND 5"));
@@ -63,7 +86,10 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
             e.HasIndex(x => x.Idtra).IsUnique();
             e.HasIndex(x => new { x.CompanyId, x.Status, x.UpdatedAtUtc });
             e.HasIndex(x => x.AccountId);
-            e.HasIndex(x => x.SourceQuoteId);
+            e.HasIndex(x => x.SourceQuoteId).IsUnique()
+                .HasFilter("source_quote_id IS NOT NULL AND aperture_type = 'AUTOMATIC'");
+            e.HasIndex(x => x.SourceQuoteGroupId).IsUnique()
+                .HasFilter("source_quote_group_id IS NOT NULL AND aperture_type = 'AUTOMATIC'");
             e.HasIndex(x => x.ExecutiveUserId);
         });
         m.Entity<OperationsCaseSequence>(e =>
@@ -163,6 +189,8 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
             e.HasKey(x => x.Id);
             e.HasOne(x => x.Case).WithMany().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
             e.Property(x => x.QuoteNumber).HasMaxLength(60);
+            e.Property(x => x.SnapshotJson).HasColumnName("snapshot_json")
+                .HasColumnType("jsonb").IsRequired();
             e.Property(x => x.Status).HasMaxLength(30).IsRequired();
             e.HasIndex(x => new { x.CaseId, x.LinkedAtUtc });
             e.HasIndex(x => x.QuoteId);
