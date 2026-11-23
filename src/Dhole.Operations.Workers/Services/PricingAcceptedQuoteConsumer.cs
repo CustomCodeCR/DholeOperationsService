@@ -174,6 +174,30 @@ public sealed class PricingAcceptedQuoteConsumer(
                     SaleAmount = item.SaleAmount
                 });
             }
+            var servicesToReview = (accepted.IncludedServices ?? [])
+                .Where(service => !(accepted.Costs ?? []).Any(cost =>
+                    !string.IsNullOrWhiteSpace(service.ServiceName) &&
+                    (cost.Description?.Contains(service.ServiceName, StringComparison.OrdinalIgnoreCase) ?? false)
+                    || !string.IsNullOrWhiteSpace(service.ServiceCode) &&
+                    service.ServiceCode.Length >= 3 &&
+                    (cost.Description?.Contains(service.ServiceCode, StringComparison.OrdinalIgnoreCase) ?? false)))
+                .Select(service => service.ServiceName ?? service.ServiceCode ?? "Servicio")
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            if (servicesToReview.Length > 0)
+            {
+                // Informational alert only: a bundled service can be included in
+                // freight. Pricing must confirm before any unquoted charge is added.
+                db.CaseTasks.Add(new OperationsCaseTask
+                {
+                    CaseId = operation.Id,
+                    CaseStageId = stage.Id,
+                    Title = "Verificar servicios sin rubro individual identificado",
+                    Details = string.Join(", ", servicesToReview),
+                    Status = "PENDING_PRICING_CHECK",
+                    CreatedBy = accepted.AcceptedBy.Value,
+                    Priority = 2
+                });
+            }
             db.OutboxMessages.Add(OperationsOutboxFactory.Create(
                 "operations.case.created.v1",
                 JsonSerializer.Serialize(new { caseId = operation.Id, operation.Idtra,
@@ -240,6 +264,10 @@ public sealed class PricingAcceptedQuoteConsumer(
                 ["quantity"] = item.Quantity
             });
         root["equipment"] = equipment;
+        var services = new JsonArray();
+        foreach (var item in source.IncludedServices ?? [])
+            services.Add(new JsonObject { ["name"] = item.ServiceName, ["serviceCode"] = item.ServiceCode });
+        root["services"] = services;
         return root.ToJsonString();
     }
 
@@ -270,7 +298,8 @@ public sealed class PricingAcceptedQuoteConsumer(
         string? PolName, string? PoeName, string? PodName, string? IncotermCode,
         string? PickupAddress, string? CargoLinesJson, decimal QuotedWeightKg,
         decimal QuotedVolumeCbm, IReadOnlyList<AcceptedEquipment>? Equipment,
-        IReadOnlyList<AcceptedCost>? Costs);
+        IReadOnlyList<AcceptedService>? IncludedServices, IReadOnlyList<AcceptedCost>? Costs);
+    public sealed record AcceptedService(string? ServiceCode, string? ServiceName);
     public sealed record AcceptedEquipment(string? ContainerTypeName, int Quantity);
     public sealed record AcceptedCost(Guid SourceCostId, string? CostCode,
         string? Description, string? SupplierName, string? CurrencyCode,
