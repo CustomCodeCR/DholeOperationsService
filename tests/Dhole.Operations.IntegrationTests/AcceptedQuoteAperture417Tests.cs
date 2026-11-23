@@ -13,11 +13,12 @@ public sealed class AcceptedQuoteAperture417Tests
     private static OperationsDbContext NewDb() => new(
         new DbContextOptionsBuilder<OperationsDbContext>().UseNpgsql(Connection!).Options);
 
-    private static string Payload(Guid quote, Guid group, Guid account, Guid executive, Guid actor)
+    private static string Payload(Guid quote, Guid group, Guid account, Guid executive, Guid actor, Guid? operationsCompanyId = null)
     {
         var detailId = Guid.NewGuid();
         return JsonSerializer.Serialize(new {
             schemaVersion = 1, quoteId = quote, quoteGroupId = group,
+            operationsCompanyId,
             selectedOptionId = quote,
             quoteNumber = "QUO-00000-000672", revisionNumber = 3,
             clientAccountId = account, clientName = "Cliente QA",
@@ -59,7 +60,7 @@ public sealed class AcceptedQuoteAperture417Tests
             });
             await db.SaveChangesAsync();
         }
-        var payload = Payload(selected, group, account, executive, actor);
+        var payload = Payload(selected, group, account, executive, actor, company);
         string first;
         await using (var db = NewDb()) {
             first = await new AcceptedQuoteCaseMaterializer(db)
