@@ -28,7 +28,19 @@ public sealed class OperationsOutboxPublisher(
                 {
                     try
                     {
-                        if (entry.EventName == "audit.event.registered")
+                        if (entry.EventName == "operations.pricing.review-requested.v1")
+                        {
+                            await redis.GetDatabase().StreamAddAsync(
+                                config["Redis:Streams:PricingReviewStream"] ?? "dhole.pricing.events",
+                                new NameValueEntry[] {
+                                    new("message_type", entry.EventName),
+                                    new("payload_json", entry.PayloadJson),
+                                    new("header:event_id", entry.EventId.ToString("D")),
+                                    new("header:message_id", entry.EventId.ToString("D")),
+                                    new("header:source_service", "DholeOperationsService"),
+                                });
+                        }
+                        else if (entry.EventName == "audit.event.registered")
                         {
                             // CustomCodeFramework.Redis.Streams wire format consumed by DholeAuditLogs.
                             await redis.GetDatabase().StreamAddAsync(
