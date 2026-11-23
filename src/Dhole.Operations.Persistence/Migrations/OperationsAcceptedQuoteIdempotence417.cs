@@ -11,6 +11,17 @@ public sealed class OperationsAcceptedQuoteIdempotence417 : Migration
     protected override void Up(MigrationBuilder migrationBuilder)
     {
         migrationBuilder.Sql("""
+            CREATE TABLE IF NOT EXISTS operations.operations_opening_drafts (
+                id uuid PRIMARY KEY,
+                company_id uuid NOT NULL,
+                user_id uuid NOT NULL,
+                payload_json jsonb NOT NULL DEFAULT '{}'::jsonb,
+                created_at_utc timestamptz NOT NULL DEFAULT now(),
+                updated_at_utc timestamptz NOT NULL DEFAULT now()
+            );
+            CREATE INDEX IF NOT EXISTS ix_operations_opening_drafts_user_417
+                ON operations.operations_opening_drafts (company_id, user_id, updated_at_utc DESC);
+
             ALTER TABLE operations.operations_case_quote_links
               ADD COLUMN IF NOT EXISTS commercial_snapshot_json jsonb NULL;
 
