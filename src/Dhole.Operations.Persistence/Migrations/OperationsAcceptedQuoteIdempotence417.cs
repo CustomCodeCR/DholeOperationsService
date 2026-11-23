@@ -11,6 +11,9 @@ public sealed class OperationsAcceptedQuoteIdempotence417 : Migration
     protected override void Up(MigrationBuilder migrationBuilder)
     {
         migrationBuilder.Sql("""
+            ALTER TABLE operations.operations_case_quote_links
+              ADD COLUMN IF NOT EXISTS commercial_snapshot_json jsonb NULL;
+
             CREATE UNIQUE INDEX IF NOT EXISTS ux_operations_auto_case_source_quote_417
               ON operations.operations_cases (source_quote_id)
               WHERE source_quote_id IS NOT NULL AND aperture_type = 'AUTOMATIC';
