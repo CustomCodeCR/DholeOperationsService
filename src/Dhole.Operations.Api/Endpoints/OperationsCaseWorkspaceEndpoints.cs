@@ -94,6 +94,12 @@ public static class OperationsCaseWorkspaceEndpoints
                     AssignedUserId = db.StageAssignments.Where(a =>
                         a.CaseStageId == s.Id && a.ReleasedAtUtc == null)
                         .Select(a => (Guid?)a.UserId).FirstOrDefault(),
+                    AssignedAtUtc = db.StageAssignments.Where(a =>
+                        a.CaseStageId == s.Id && a.ReleasedAtUtc == null)
+                        .Select(a => (DateTimeOffset?)a.AssignedAtUtc).FirstOrDefault(),
+                    SupervisorUserIds = db.TeamMembers.Where(m => m.TeamId == s.TeamId &&
+                        m.IsSupervisor && m.IsAvailable)
+                        .Select(m => m.UserId).ToArray(),
                     s.StartedAtUtc, s.CompletedAtUtc
                 }).ToArrayAsync(ct);
             // Aperturas uses dual reviewers, not a single stage assignee.
