@@ -13,6 +13,7 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
     public DbSet<InboxMessage> InboxMessages => Set<InboxMessage>();
     public DbSet<OperationsCase> Cases => Set<OperationsCase>();
     public DbSet<OperationsApertureDraft> ApertureDrafts => Set<OperationsApertureDraft>();
+    public DbSet<OperationsCaseServiceLine> CaseServiceLines => Set<OperationsCaseServiceLine>();
     public DbSet<OperationsCaseSequence> CaseSequences => Set<OperationsCaseSequence>();
     public DbSet<OperationsCaseStage> CaseStages => Set<OperationsCaseStage>();
     public DbSet<OperationsTeam> Teams => Set<OperationsTeam>();
@@ -47,6 +48,19 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
         m.Entity<InboxMessage>().Property<string>("PayloadJson")
             .HasColumnName("payload_json").HasColumnType("text").IsRequired();
 
+        m.Entity<OperationsCaseServiceLine>(e =>
+        {
+            e.ToTable("operations_case_service_lines");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Source).HasMaxLength(24);
+            e.Property(x => x.ServiceCode).HasMaxLength(80);
+            e.Property(x => x.ServiceName).HasMaxLength(255);
+            e.Property(x => x.ReviewStatus).HasMaxLength(35);
+            e.Property(x => x.Version).IsConcurrencyToken();
+            e.HasIndex(x => new { x.CaseId, x.ReviewStatus });
+            e.HasIndex(x => new { x.CaseId, x.PricingServiceLineId }).IsUnique()
+                .HasFilter("source = 'QUOTED' AND pricing_service_line_id IS NOT NULL");
+        });
         m.Entity<OperationsApertureDraft>(e =>
         {
             e.ToTable("operations_aperture_drafts");
