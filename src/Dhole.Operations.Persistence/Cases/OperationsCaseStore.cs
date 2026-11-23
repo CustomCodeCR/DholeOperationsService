@@ -17,8 +17,8 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         var next = await NextSequenceAsync("00000", ct);
-        // One global, server-owned counter. Minimum five digits, never a series cap.
-        var idtra = $"IDTRA{next:D5}";
+        // One global, server-owned counter. No forced zeros or series in the visible IDTRA.
+        var idtra = $"IDTRA{next}";
         var operation = new OperationsCase
         {
             CompanyId = input.CompanyId,

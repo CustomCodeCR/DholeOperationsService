@@ -104,6 +104,7 @@ app.MapGet("/api/operations/realtime/events", async (
 }).RequireAuthorization("OperationsRealtimeRead");
 app.MapOperationsEndpoints();
 app.MapOperationsCaseWorkspaceEndpoints();
+app.MapOperationsApertureCompletenessEndpoints();
 app.MapOperationsPreparationEndpoints();
 app.MapOperationsTeamValidationEndpoints();
 app.MapOperationsDashboardEndpoints();
