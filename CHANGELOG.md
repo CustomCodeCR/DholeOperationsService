@@ -1,3 +1,8 @@
+## [0.19.0] - 2026-11-23 · DH-20261123-OPS-AUTO-419
+
+- MINOR: Dedicated Pricing Redis Inbox, exactly-one IDTRA per QUO, immutable quote cost snapshot, persisted incomplete PostgreSQL drafts, reusable atomic sequence.
+- Global 1.121.0, Pricing 1.26.26 → 1.27.0, Operations 0.18.0 → 0.19.0, Web/System 1.120.2 → 1.121.0; master/production not authorized, CI and staging validation required.
+
 ## [0.18.0] - 2026-11-23 · DH-20261123-OPS-APERTURES-P1-416
 
 - MINOR candidate para Aperturas P1: previsualización protegida de completitud por campo con CONFIRMADO, PENDIENTE_PERMITIDO, PENDIENTE_BLOQUEANTE y NO_APLICA; consulta del borrador existente en PostgreSQL.
