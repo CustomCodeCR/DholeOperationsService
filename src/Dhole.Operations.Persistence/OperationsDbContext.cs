@@ -13,6 +13,7 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
     public DbSet<InboxMessage> InboxMessages => Set<InboxMessage>();
     public DbSet<OperationsCase> Cases => Set<OperationsCase>();
     public DbSet<OperationsOpeningAutosaveDraft> OpeningAutosaveDrafts => Set<OperationsOpeningAutosaveDraft>();
+    public DbSet<OperationsCaseCommercialSnapshot> CommercialSnapshots => Set<OperationsCaseCommercialSnapshot>();
     public DbSet<OperationsCaseSequence> CaseSequences => Set<OperationsCaseSequence>();
     public DbSet<OperationsCaseStage> CaseStages => Set<OperationsCaseStage>();
     public DbSet<OperationsTeam> Teams => Set<OperationsTeam>();
@@ -47,6 +48,13 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
         m.Entity<InboxMessage>().Property<string>("PayloadJson")
             .HasColumnName("payload_json").HasColumnType("text").IsRequired();
 
+        m.Entity<OperationsCaseCommercialSnapshot>(e =>
+        {
+            e.ToTable("operations_case_commercial_snapshots");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CaseId).IsUnique();
+            e.Property(x => x.SnapshotJson).HasColumnName("snapshot_json").HasColumnType("jsonb").IsRequired();
+        });
         m.Entity<OperationsOpeningAutosaveDraft>(e =>
         {
             e.ToTable("operations_opening_autosave_drafts");
