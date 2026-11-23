@@ -106,6 +106,7 @@ app.MapOperationsEndpoints();
 app.MapOperationsCaseWorkspaceEndpoints();
 app.MapOperationsApertureCompletenessEndpoints();
 app.MapOperationsOpeningAutosaveEndpoints();
+app.MapOperationsOriginMeasurementEndpoints();
 app.MapOperationsPreparationEndpoints();
 app.MapOperationsTeamValidationEndpoints();
 app.MapOperationsDashboardEndpoints();
