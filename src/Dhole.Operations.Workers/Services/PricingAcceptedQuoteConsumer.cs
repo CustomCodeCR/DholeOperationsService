@@ -77,9 +77,9 @@ public sealed class PricingAcceptedQuoteConsumer(
     private async Task PersistAsync(Guid eventId, AcceptedQuote accepted, string json, CancellationToken ct)
     {
         if (accepted.QuoteId == Guid.Empty || accepted.SelectedQuoteOptionId != accepted.QuoteId ||
-            accepted.AccountId is null or { } && accepted.AccountId == Guid.Empty ||
-            accepted.ExecutiveUserId is null or { } && accepted.ExecutiveUserId == Guid.Empty ||
-            accepted.AcceptedBy is null or { } && accepted.AcceptedBy == Guid.Empty ||
+            (!accepted.AccountId.HasValue || accepted.AccountId.Value == Guid.Empty) ||
+            (!accepted.ExecutiveUserId.HasValue || accepted.ExecutiveUserId.Value == Guid.Empty) ||
+            (!accepted.AcceptedBy.HasValue || accepted.AcceptedBy.Value == Guid.Empty) ||
             string.IsNullOrWhiteSpace(accepted.QuoteNumber) ||
             string.IsNullOrWhiteSpace(accepted.ModalityCode))
             throw new InvalidOperationException("Accepted QUO has incomplete CRM identity or selection; keep event pending");
