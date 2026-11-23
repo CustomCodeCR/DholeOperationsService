@@ -8,4 +8,5 @@ builder.Services.AddOperationsInfrastructure(builder.Configuration);
 builder.Services.AddHostedService<DatabaseMigrationService>();
 builder.Services.AddHostedService<OperationsOutboxPublisher>();
 builder.Services.AddHostedService<OperationsInboxConsumer>();
+builder.Services.AddHostedService<PricingAcceptedQuoteConsumer>();
 await builder.Build().RunAsync();
