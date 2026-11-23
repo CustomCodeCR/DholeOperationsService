@@ -15,6 +15,7 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
     public DbSet<OperationsOpeningAutosaveDraft> OpeningAutosaveDrafts => Set<OperationsOpeningAutosaveDraft>();
     public DbSet<OperationsCaseCommercialSnapshot> CommercialSnapshots => Set<OperationsCaseCommercialSnapshot>();
     public DbSet<OperationsOriginMeasurement> OriginMeasurements => Set<OperationsOriginMeasurement>();
+    public DbSet<OperationsAdditionalService> AdditionalServices => Set<OperationsAdditionalService>();
     public DbSet<OperationsCaseSequence> CaseSequences => Set<OperationsCaseSequence>();
     public DbSet<OperationsCaseStage> CaseStages => Set<OperationsCaseStage>();
     public DbSet<OperationsTeam> Teams => Set<OperationsTeam>();
@@ -49,6 +50,18 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
         m.Entity<InboxMessage>().Property<string>("PayloadJson")
             .HasColumnName("payload_json").HasColumnType("text").IsRequired();
 
+        m.Entity<OperationsAdditionalService>(e =>
+        {
+            e.ToTable("operations_additional_services");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CaseId);
+            e.Property(x => x.ServiceCode).HasMaxLength(80);
+            e.Property(x => x.ServiceName).HasMaxLength(300);
+            e.Property(x => x.Reason).HasMaxLength(2000);
+            e.Property(x => x.Source).HasMaxLength(30);
+            e.Property(x => x.ReviewStatus).HasMaxLength(50);
+            e.Property(x => x.PricingResolutionNotes).HasMaxLength(2000);
+        });
         m.Entity<OperationsOriginMeasurement>(e =>
         {
             e.ToTable("operations_origin_measurements");
