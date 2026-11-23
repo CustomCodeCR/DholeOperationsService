@@ -13,6 +13,7 @@ public sealed class OperationsCase
     public Guid ExecutiveUserId { get; set; }
     public Guid? SourceQuoteId { get; set; }
     public Guid? SourceQuoteOptionId { get; set; }
+    public Guid? SourceQuoteGroupId { get; set; }
     public string ApertureType { get; set; } = "MANUAL";
     public string ModalityCode { get; set; } = string.Empty;
     public string? OriginCountryCode { get; set; }
