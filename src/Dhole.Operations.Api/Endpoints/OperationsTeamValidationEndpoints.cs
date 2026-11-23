@@ -293,6 +293,18 @@ public static class OperationsTeamValidationEndpoints
             var otherApproved = await db.ApertureValidations.AnyAsync(v =>
                 v.CaseStageId == stage.Id && v.Id != validation.Id && v.Status == "APPROVED", ct);
             var bothApproved = decision == "APPROVED" && otherApproved;
+            if (bothApproved)
+            {
+                var blockers = OperationsOpeningDraftValidator.MissingFields(
+                    operation.ModalityCode, operation.OpeningDataJson);
+                if (blockers.Length > 0)
+                    return Results.Conflict(new
+                    {
+                        code = "APERTURE_MISSING_REQUIRED_FIELDS",
+                        missingFields = blockers,
+                        message = "Complete los datos bloqueantes antes de transferir a Origen."
+                    });
+            }
             if (decision == "REJECTED")
             {
                 stage.Status = "CHANGES_REQUIRED";
@@ -304,11 +316,47 @@ public static class OperationsTeamValidationEndpoints
                 stage.CompletedAtUtc = DateTimeOffset.UtcNow;
                 operation.Status = "APERTURA_VALIDADA";
                 // Origin starts only after BOTH reviewers approve the same opening.
-                if (!await db.CaseStages.AnyAsync(s =>
-                    s.CaseId == caseId && s.DepartmentCode == "COORDINACION_ORIGEN", ct))
-                    db.CaseStages.Add(new OperationsCaseStage {
+                var originStage = await db.CaseStages.SingleOrDefaultAsync(s =>
+                    s.CaseId == caseId && s.DepartmentCode == "COORDINACION_ORIGEN", ct);
+                if (originStage is null)
+                {
+                    originStage = new OperationsCaseStage {
                         CaseId = caseId, DepartmentCode = "COORDINACION_ORIGEN", Status = "PENDING"
-                    });
+                    };
+                    db.CaseStages.Add(originStage);
+                }
+                var pending = OperationsOpeningDraftValidator.EvaluateFields(
+                    operation.ModalityCode, operation.OpeningDataJson)
+                    .Where(f => f.CompletionStatus == "PENDIENTE_PERMITIDO")
+                    .ToArray();
+                foreach (var field in pending)
+                {
+                    var code = "ORIGIN_PENDING:" + field.FieldCode;
+                    if (!await db.CaseTasks.AnyAsync(t => t.CaseId == caseId &&
+                        t.Title == code && t.Status != "COMPLETED", ct))
+                        db.CaseTasks.Add(new OperationsCaseTask
+                        {
+                            CaseId = caseId,
+                            CaseStageId = originStage.Id,
+                            Title = code,
+                            Details = JsonSerializer.Serialize(new
+                            {
+                                field = field.FieldCode,
+                                status = field.CompletionStatus,
+                                reason = field.Reason,
+                                source = "APERTURAS"
+                            }),
+                            Status = "PENDING",
+                            CreatedBy = actor.Value
+                        });
+                }
+                db.OutboxMessages.Add(OperationsOutboxFactory.Create(
+                    "operations.case.validated.v1",
+                    JsonSerializer.Serialize(new
+                    {
+                        caseId, originStageId = originStage.Id, operation.CompanyId,
+                        validatedBy = actor.Value, pendingFields = pending.Select(f => f.FieldCode)
+                    })));
             }
             stage.Version++;
             operation.Version++;
