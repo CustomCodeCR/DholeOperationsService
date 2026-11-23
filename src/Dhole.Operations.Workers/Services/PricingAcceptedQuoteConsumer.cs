@@ -248,13 +248,17 @@ public sealed class PricingAcceptedQuoteConsumer(
         {
             ["shipmentType"] = source.ModalityCode,
             ["pol"] = source.PolName,
+            ["poe"] = source.PoeName,
             ["pod"] = source.PodName ?? source.PoeName,
+            ["operationType"] = source.OperationType,
             ["incoterm"] = source.IncotermCode,
             ["requiresPickup"] = !string.IsNullOrWhiteSpace(source.PickupAddress),
             ["pickupAddress"] = source.PickupAddress,
             ["cargoDescription"] = source.CargoLinesJson,
             ["quotedWeightKg"] = source.QuotedWeightKg,
-            ["quotedVolumeCbm"] = source.QuotedVolumeCbm
+            ["quotedVolumeCbm"] = source.QuotedVolumeCbm,
+            ["originalCargoLinesJson"] = source.CargoLinesJson,
+            ["volumeCbm"] = source.QuotedVolumeCbm
         };
         var equipment = new JsonArray();
         foreach (var item in source.Equipment ?? [])
@@ -295,7 +299,7 @@ public sealed class PricingAcceptedQuoteConsumer(
     public sealed record AcceptedQuote(
         int SchemaVersion, Guid QuoteId, Guid SelectedQuoteOptionId, string? QuoteNumber,
         Guid? AccountId, Guid? ExecutiveUserId, Guid? AcceptedBy, string? ModalityCode,
-        string? PolName, string? PoeName, string? PodName, string? IncotermCode,
+        string? OperationType, string? PolName, string? PoeName, string? PodName, string? IncotermCode,
         string? PickupAddress, string? CargoLinesJson, decimal QuotedWeightKg,
         decimal QuotedVolumeCbm, IReadOnlyList<AcceptedEquipment>? Equipment,
         IReadOnlyList<AcceptedService>? IncludedServices, IReadOnlyList<AcceptedCost>? Costs);
