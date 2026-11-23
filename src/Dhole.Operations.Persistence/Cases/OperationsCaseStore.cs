@@ -5,8 +5,6 @@ using Dhole.Operations.Application.Cases;
 using Dhole.Operations.Persistence.Messaging;
 using Dhole.Operations.Domain.Models;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
-using Npgsql;
 
 namespace Dhole.Operations.Persistence.Cases;
 
@@ -175,19 +173,10 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
         return new DocumentExtractionQueuedResult(job.Id, job.Status);
     }
 
-    private async Task<long> NextSequenceAsync(string seriesCode, CancellationToken ct)
+    private Task<long> NextSequenceAsync(string seriesCode, CancellationToken ct)
     {
-        var connection = (NpgsqlConnection)db.Database.GetDbConnection();
-        await using var cmd = new NpgsqlCommand("""
-            INSERT INTO operations.operations_case_sequences (id, series_code, last_number, updated_at_utc)
-            VALUES (@id, @series, 1, now())
-            ON CONFLICT (series_code)
-            DO UPDATE SET last_number = operations_case_sequences.last_number + 1, updated_at_utc = now()
-            RETURNING last_number;
-            """, connection, (NpgsqlTransaction)db.Database.CurrentTransaction!.GetDbTransaction());
-        cmd.Parameters.AddWithValue("id", Guid.NewGuid());
-        cmd.Parameters.AddWithValue("series", seriesCode);
-        return Convert.ToInt64(await cmd.ExecuteScalarAsync(ct));
+        if (seriesCode != "00000") throw new ArgumentException("Only the global IDTRA series is supported.");
+        return OperationsIdtraAllocator.NextAsync(db, ct);
     }
 
     private void Enqueue(string name, object payload) =>
