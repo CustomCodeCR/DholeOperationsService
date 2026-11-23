@@ -40,6 +40,20 @@ public sealed class OperationsOutboxPublisher(
                                     new("header:message_id", entry.EventId.ToString("D"))
                                 });
                         }
+                        else if (entry.EventName == "notifications.notification.requested")
+                        {
+                            // Same wire contract as Pricing -> Notifications with a
+                            // stable business idempotencyKey inside PayloadJson.
+                            await redis.GetDatabase().StreamAddAsync(
+                                config["Redis:Streams:NotificationStreamName"] ?? "dhole.notifications.events",
+                                new NameValueEntry[] {
+                                    new("message_type", entry.EventName),
+                                    new("payload_json", entry.PayloadJson),
+                                    new("header:source_service", "DholeOperationsService"),
+                                    new("header:message_id", entry.EventId.ToString("D")),
+                                    new("header:event_id", entry.EventId.ToString("D"))
+                                });
+                        }
                         else
                         {
                             await redis.GetDatabase().StreamAddAsync(stream, new NameValueEntry[]
