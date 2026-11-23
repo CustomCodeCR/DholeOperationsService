@@ -20,8 +20,21 @@ public sealed class OperationsReconcileIdtraSequence416 : Migration
                 highest bigint := 0;
                 highest_cases bigint := 0;
             BEGIN
-                SELECT COALESCE(MAX(last_number), 0) INTO highest
-                  FROM operations.operations_case_sequences;
+                -- Legacy migration tests may retain a stub sequence table
+                -- with an ID only. Never mutate it or assume new columns.
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'operations'
+                      AND table_name = 'operations_case_sequences'
+                      AND column_name = 'last_number'
+                ) AND EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'operations'
+                      AND table_name = 'operations_case_sequences'
+                      AND column_name = 'series_code'
+                ) THEN
+                    SELECT COALESCE(MAX(last_number), 0) INTO highest
+                      FROM operations.operations_case_sequences;
 
                 -- Older deployments can have a partial legacy operations_cases
                 -- table without IDTRA or sequence_number. Avoid referencing
@@ -51,6 +64,7 @@ public sealed class OperationsReconcileIdtraSequence416 : Migration
                 DO UPDATE SET last_number = GREATEST(
                     operations_case_sequences.last_number, EXCLUDED.last_number),
                     updated_at_utc = now();
+                END IF;
             END;
             $reconcile$;
             """);
