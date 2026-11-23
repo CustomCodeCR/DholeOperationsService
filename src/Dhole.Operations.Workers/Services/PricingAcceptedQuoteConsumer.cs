@@ -20,7 +20,6 @@ namespace Dhole.Operations.Workers.Services;
 public sealed class PricingAcceptedQuoteConsumer(
     IServiceScopeFactory scopeFactory,
     IConnectionMultiplexer redis,
-    IConfiguration config,
     ILogger<PricingAcceptedQuoteConsumer> logger) : BackgroundService
 {
     private const string StreamName = "dhole.operations.pricing-accepted.v1";
