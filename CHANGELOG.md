@@ -1,3 +1,11 @@
+## [0.18.0] - 2026-11-23 · DH-20261123-OPS-APERTURES-P1-416
+
+- MINOR candidate para Aperturas P1: previsualización protegida de completitud por campo con CONFIRMADO, PENDIENTE_PERMITIDO, PENDIENTE_BLOQUEANTE y NO_APLICA; consulta del borrador existente en PostgreSQL.
+- Validación de FCA/WHS para todas las modalidades, recolecta con contacto/ventana, cada línea de equipo positiva, IMO/UN y sobrepeso. Peso real permanece pendiente para Coordinación Origen en aperturas manuales.
+- IDTRA sin padding obligatorio, con migración no destructiva de conciliación del contador global histórico antes de emitir nuevos números. El contador sigue transaccional y el snapshot comercial de Pricing no se altera.
+- Nuevas pruebas unitarias; build, integración PostgreSQL, CI y staging pendientes. Sin cambios en master ni producción.
+- DholeOperationsService 0.17.0 → 0.18.0; DholeSystem/ecosistema 1.119.1 → 1.120.0; restantes componentes sin cambio.
+
 ## [0.17.0] - 2026-11-22 · DH-20261122-OPS-CASE-OVERVIEW-414
 
 - MINOR: GET /api/operations/cases incorpora departamento/estado, equipo, responsable y estado de Origen; detalle incluye usuario creador y workspace devuelve ambos validadores de Aperturas.
