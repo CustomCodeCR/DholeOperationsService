@@ -111,6 +111,28 @@ public sealed class AcceptedQuoteOpeningConsumer(
             .FirstOrDefaultAsync(x => x.IsPrimary && x.QuoteNumber == groupNumber, ct);
         if (existing is null)
         {
+            // Reuse historical operations already bound to this selected QUO/IDTRA.
+            // Never consume the next visible consecutive IDTRA for a recovered link.
+            var knownIdtra = String(snapshot, "existingIdtraNumber");
+            var previousCase = await db.Cases.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.SourceQuoteId == quoteId ||
+                    (knownIdtra != "" && x.Idtra == knownIdtra), ct);
+            if (previousCase is not null)
+            {
+                db.CaseQuoteLinks.Add(new OperationsCaseQuoteLink
+                {
+                    CaseId = previousCase.Id, QuoteId = quoteId,
+                    QuoteOptionId = TryGuid(snapshot, "quoteOptionId", out var oldOption)
+                        ? oldOption : null,
+                    QuoteNumber = groupNumber, IsPrimary = true,
+                    Status = "ACCEPTED_SNAPSHOT", SnapshotVersion = 1,
+                    LinkedBy = TryGuid(snapshot, "acceptedBy", out var oldActor) ? oldActor : Guid.Empty
+                });
+                logger.LogInformation("Existing IDTRA {Idtra} linked to accepted QUO {QuoteId}, without reallocation",
+                    previousCase.Idtra, quoteId);
+            }
+            else
+            {
             if (!TryGuid(snapshot, "accountId", out var accountId))
             {
                 logger.LogWarning("Accepted QUO {QuoteId} does not have a CRM AccountId. Retaining event for retry.", quoteId);
@@ -187,6 +209,7 @@ public sealed class AcceptedQuoteOpeningConsumer(
                     apertureType = "AUTOMATIC", version = operation.Version })));
             logger.LogInformation("Opening {Idtra} created from accepted QUO {QuoteNumber} / {QuoteId}",
                 operation.Idtra, selectedNumber, quoteId);
+            }
         }
 
         var receipt = new InboxMessage
