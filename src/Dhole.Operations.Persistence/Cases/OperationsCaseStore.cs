@@ -16,7 +16,7 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
     public async Task<CaseCreatedResult> CreateManualAsync(CreateManualCaseCommand input, CancellationToken ct)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
-        var next = await NextSequenceAsync("00000", ct);
+        var next = await OperationsIdtraSequence.NextAsync(db, ct);
         // One global, server-owned counter. No forced zeros or series in the visible IDTRA.
         var idtra = $"IDTRA{next}";
         var operation = new OperationsCase
@@ -173,21 +173,6 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return new DocumentExtractionQueuedResult(job.Id, job.Status);
-    }
-
-    private async Task<long> NextSequenceAsync(string seriesCode, CancellationToken ct)
-    {
-        var connection = (NpgsqlConnection)db.Database.GetDbConnection();
-        await using var cmd = new NpgsqlCommand("""
-            INSERT INTO operations.operations_case_sequences (id, series_code, last_number, updated_at_utc)
-            VALUES (@id, @series, 1, now())
-            ON CONFLICT (series_code)
-            DO UPDATE SET last_number = operations_case_sequences.last_number + 1, updated_at_utc = now()
-            RETURNING last_number;
-            """, connection, (NpgsqlTransaction)db.Database.CurrentTransaction!.GetDbTransaction());
-        cmd.Parameters.AddWithValue("id", Guid.NewGuid());
-        cmd.Parameters.AddWithValue("series", seriesCode);
-        return Convert.ToInt64(await cmd.ExecuteScalarAsync(ct));
     }
 
     private void Enqueue(string name, object payload) =>
