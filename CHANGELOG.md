@@ -1,3 +1,10 @@
+## [0.19.0] - 2026-11-23
+
+- Redis Streams Inbox para QUO aceptadas: IDTRA automático, bloqueo por grupo y deduplicación PostgreSQL.
+- Costos y condiciones comerciales almacenados en instantánea JSONB separada de Aperturas; identidad y autorización de lectura.
+- Borradores incompletos con autoguardado PostgreSQL por usuario, sin requerir asignación de equipo.
+- Índices únicos para impedir doble trámite por QUO, alternativa o reintento.
+
 ## [0.18.0] - 2026-11-23 · DH-20261123-OPS-APERTURES-P1-416
 
 - MINOR candidate para Aperturas P1: previsualización protegida de completitud por campo con CONFIRMADO, PENDIENTE_PERMITIDO, PENDIENTE_BLOQUEANTE y NO_APLICA; consulta del borrador existente en PostgreSQL.
