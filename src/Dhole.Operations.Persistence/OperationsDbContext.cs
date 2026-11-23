@@ -63,7 +63,10 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
             e.HasIndex(x => x.Idtra).IsUnique();
             e.HasIndex(x => new { x.CompanyId, x.Status, x.UpdatedAtUtc });
             e.HasIndex(x => x.AccountId);
-            e.HasIndex(x => x.SourceQuoteId);
+            e.HasIndex(x => x.SourceQuoteId).IsUnique()
+                .HasFilter("source_quote_id IS NOT NULL AND aperture_type = 'AUTOMATIC'");
+            e.HasIndex(x => x.SourceQuoteGroupId).IsUnique()
+                .HasFilter("source_quote_group_id IS NOT NULL AND aperture_type = 'AUTOMATIC'");
             e.HasIndex(x => x.ExecutiveUserId);
         });
         m.Entity<OperationsCaseSequence>(e =>
@@ -163,6 +166,8 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
             e.HasKey(x => x.Id);
             e.HasOne(x => x.Case).WithMany().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
             e.Property(x => x.QuoteNumber).HasMaxLength(60);
+            e.Property(x => x.SnapshotJson).HasColumnName("snapshot_json")
+                .HasColumnType("jsonb").IsRequired();
             e.Property(x => x.Status).HasMaxLength(30).IsRequired();
             e.HasIndex(x => new { x.CaseId, x.LinkedAtUtc });
             e.HasIndex(x => x.QuoteId);
