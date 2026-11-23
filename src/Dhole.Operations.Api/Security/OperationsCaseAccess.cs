@@ -22,8 +22,14 @@ public sealed class OperationsCaseAccess(OperationsDbContext db)
     }
 
     public static bool IsSystemAdministrator(ClaimsPrincipal user) =>
-        user.IsInRole("SuperAdmin") || user.IsInRole("SuperUsuario") ||
-        user.IsInRole("SuperUser") || user.IsInRole("superusuario");
+        user.Identity?.IsAuthenticated == true &&
+        (user.IsInRole("SuperAdmin") || user.IsInRole("SuperUsuario") ||
+         user.IsInRole("SuperUser") ||
+         user.Claims.Where(c => c.Type is ClaimTypes.Role or "role" or "roles")
+             .SelectMany(c => c.Value.Split([',', ';'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+             .Any(role => role.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) ||
+                          role.Equals("SuperUsuario", StringComparison.OrdinalIgnoreCase) ||
+                          role.Equals("SuperUser", StringComparison.OrdinalIgnoreCase)));
 
     public static bool HasScope(ClaimsPrincipal user, string scope) =>
         user.Identity?.IsAuthenticated == true &&
