@@ -37,7 +37,8 @@ public sealed class OperationsAcceptedQuote417 : Migration
                     ALTER TABLE operations.operations_case_quote_links
                         ADD COLUMN IF NOT EXISTS snapshot_json jsonb NOT NULL DEFAULT '{}'::jsonb;
                 END IF;
-            END $migration$;
+            END;
+            $migration$;
             """);
     }
 
