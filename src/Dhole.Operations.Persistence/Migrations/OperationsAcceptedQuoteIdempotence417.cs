@@ -25,13 +25,32 @@ public sealed class OperationsAcceptedQuoteIdempotence417 : Migration
             ALTER TABLE operations.operations_case_quote_links
               ADD COLUMN IF NOT EXISTS commercial_snapshot_json jsonb NULL;
 
-            CREATE UNIQUE INDEX IF NOT EXISTS ux_operations_auto_case_source_quote_417
-              ON operations.operations_cases (source_quote_id)
-              WHERE source_quote_id IS NOT NULL AND aperture_type = 'AUTOMATIC';
+            DO $migration$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'operations' AND table_name = 'operations_cases'
+                    AND column_name = 'source_quote_id'
+                ) AND EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'operations' AND table_name = 'operations_cases'
+                    AND column_name = 'aperture_type'
+                ) THEN
+                    EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS ux_operations_auto_case_source_quote_417
+                        ON operations.operations_cases (source_quote_id)
+                        WHERE source_quote_id IS NOT NULL AND aperture_type = ''AUTOMATIC''';
+                END IF;
 
-            CREATE UNIQUE INDEX IF NOT EXISTS ux_operations_auto_case_quote_group_417
-              ON operations.operations_case_quote_links (quote_number)
-              WHERE is_primary = TRUE AND status = 'ACCEPTED' AND quote_number IS NOT NULL;
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'operations' AND table_name = 'operations_case_quote_links'
+                    AND column_name = 'quote_number'
+                ) THEN
+                    EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS ux_operations_auto_case_quote_group_417
+                        ON operations.operations_case_quote_links (quote_number)
+                        WHERE is_primary = TRUE AND status = ''ACCEPTED'' AND quote_number IS NOT NULL';
+                END IF;
+            END $migration$;
             """);
     }
 
