@@ -108,6 +108,53 @@ public sealed class OperationsPostgresTests
             x => x.CaseStageId == caseResult.InitialStageId && x.ReleasedAtUtc == null));
     }
 
+    [TestMethod]
+    public async Task IncompleteApertureDraftPersistsInPostgresWithoutAllocatingIdtra()
+    {
+        if (string.IsNullOrWhiteSpace(Connection))
+            Assert.Inconclusive("DHOLE_TEST_POSTGRES is required.");
+        var id = Guid.NewGuid();
+        var actor = Guid.NewGuid();
+        await using (var db = NewDb())
+        {
+            await db.Database.MigrateAsync();
+            db.OpeningAutosaveDrafts.Add(new OperationsOpeningAutosaveDraft
+            {
+                Id = id,
+                OwnerUserId = actor,
+                CompanyId = null,
+                PayloadJson = "{\"form\":{},\"version\":2}"
+            });
+            await db.SaveChangesAsync();
+        }
+        await using (var db = NewDb())
+        {
+            var restored = await db.OpeningAutosaveDrafts.AsNoTracking()
+                .SingleAsync(x => x.Id == id && x.OwnerUserId == actor);
+            Assert.IsNull(restored.CompanyId);
+            Assert.IsTrue(restored.PayloadJson.Contains("\"form\""));
+            Assert.IsFalse(await db.Cases.AnyAsync(x => x.Id == id));
+            db.OpeningAutosaveDrafts.Remove(await db.OpeningAutosaveDrafts.SingleAsync(x => x.Id == id));
+            await db.SaveChangesAsync();
+        }
+    }
+
+    [TestMethod]
+    public async Task AcceptedQuoteBusinessKeyHasUniquePostgresIndex()
+    {
+        if (string.IsNullOrWhiteSpace(Connection))
+            Assert.Inconclusive("DHOLE_TEST_POSTGRES is required.");
+        await using var db = NewDb();
+        await db.Database.MigrateAsync();
+        var index = await db.Database.SqlQueryRaw<string>("""
+            SELECT indexname AS "Value"
+            FROM pg_indexes
+            WHERE schemaname='operations' AND tablename='operations_cases'
+                AND indexname='ux_operations_automatic_source_quote'
+            """).ToArrayAsync();
+        CollectionAssert.Contains(index, "ux_operations_automatic_source_quote");
+    }
+
     private static OperationsDbContext NewDb()
     {
         var opts = new DbContextOptionsBuilder<OperationsDbContext>().UseNpgsql(Connection!).Options;
