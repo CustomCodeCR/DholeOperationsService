@@ -1,3 +1,11 @@
+## [0.19.0] - 2026-11-23 · DH-20261123-OPS-P1-COMPLETE-431
+
+- MINOR: nuevo consumidor de eventos Pricing de aceptación QUO con PostgreSQL Inbox transaccional, bloqueo por grupo A/B, una apertura IDTRA con vínculo a cotización y snapshot de costos/servicios/condiciones sin mutar Pricing.
+- Se mantiene reconciliación de contador histórico IDTRA, publicación Outbox Operations y actualización SignalR existente.
+- Autoguardado REST en PostgreSQL de aperturas manuales incompletas, por usuario, sin asignación obligatoria de equipo ni consumir IDTRA prematuramente. Migración y recuperación.
+- No se inventa un tenant: sin cuenta CRM o sin empresa inequívoca la entrega queda pendiente y reintentable en Redis.
+- CI, replay concurrente y prueba end-to-end en staging pendientes; producción no autorizada.
+
 ## [0.18.0] - 2026-11-23 · DH-20261123-OPS-APERTURES-P1-416
 
 - MINOR candidate para Aperturas P1: previsualización protegida de completitud por campo con CONFIRMADO, PENDIENTE_PERMITIDO, PENDIENTE_BLOQUEANTE y NO_APLICA; consulta del borrador existente en PostgreSQL.

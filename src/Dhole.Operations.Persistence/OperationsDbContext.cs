@@ -12,6 +12,7 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<InboxMessage> InboxMessages => Set<InboxMessage>();
     public DbSet<OperationsCase> Cases => Set<OperationsCase>();
+    public DbSet<OperationsManualOpeningDraft> ManualOpeningDrafts => Set<OperationsManualOpeningDraft>();
     public DbSet<OperationsCaseSequence> CaseSequences => Set<OperationsCaseSequence>();
     public DbSet<OperationsCaseStage> CaseStages => Set<OperationsCaseStage>();
     public DbSet<OperationsTeam> Teams => Set<OperationsTeam>();
@@ -65,6 +66,13 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
             e.HasIndex(x => x.AccountId);
             e.HasIndex(x => x.SourceQuoteId);
             e.HasIndex(x => x.ExecutiveUserId);
+        });
+        m.Entity<OperationsManualOpeningDraft>(e =>
+        {
+            e.ToTable("operations_manual_opening_drafts");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.PayloadJson).HasColumnType("jsonb").IsRequired();
+            e.HasIndex(x => new { x.UserId, x.UpdatedAtUtc });
         });
         m.Entity<OperationsCaseSequence>(e =>
         {
@@ -163,6 +171,7 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
             e.HasKey(x => x.Id);
             e.HasOne(x => x.Case).WithMany().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
             e.Property(x => x.QuoteNumber).HasMaxLength(60);
+            e.Property(x => x.CommercialSnapshotJson).HasColumnType("jsonb").IsRequired();
             e.Property(x => x.Status).HasMaxLength(30).IsRequired();
             e.HasIndex(x => new { x.CaseId, x.LinkedAtUtc });
             e.HasIndex(x => x.QuoteId);

@@ -129,6 +129,22 @@ public static class OperationsCaseWorkspaceEndpoints
             return Results.Ok(new { caseId = id, stages, validators, quotes, milestones, tasks });
         });
 
+        // Never return the immutable Pricing snapshot to generic Operations readers.
+        api.MapGet("/cases/{id:guid}/commercial/snapshot", async (
+            Guid id, HttpContext http, OperationsCaseAccess access,
+            OperationsDbContext db, CancellationToken ct) =>
+        {
+            if (!OperationsCaseAccess.HasScope(http.User, "operations.finance.manage") ||
+                !await access.CanReadAsync(id, http.User, ct))
+                return Results.Forbid();
+            var link = await db.CaseQuoteLinks.AsNoTracking()
+                .Where(q => q.CaseId == id && q.IsPrimary)
+                .Select(q => new { q.QuoteId, q.QuoteNumber, q.SnapshotVersion,
+                    q.CommercialSnapshotJson })
+                .FirstOrDefaultAsync(ct);
+            return link is null ? Results.NotFound() : Results.Ok(link);
+        });
+
         api.MapGet("/cases/{id:guid}/commercial/costs", async (
             Guid id, HttpContext http, OperationsCaseAccess access,
             OperationsDbContext db, CancellationToken ct) =>
