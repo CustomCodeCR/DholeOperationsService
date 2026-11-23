@@ -5,6 +5,7 @@ using Dhole.Operations.Domain.Models;
 using Dhole.Operations.Persistence;
 using Dhole.Operations.Persistence.Messaging;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using StackExchange.Redis;
 
 namespace Dhole.Operations.Workers.Services;
