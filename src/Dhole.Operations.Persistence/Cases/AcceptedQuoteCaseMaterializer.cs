@@ -217,6 +217,32 @@ public sealed class AcceptedQuoteCaseMaterializer(OperationsDbContext db)
             quoteLink.Costs.Add(cost);
         }
         db.CaseQuoteLinks.Add(quoteLink);
+        // RateService is keyed by RateHeaderId + ServiceId in Pricing (it has no
+        // separate line GUID). Preserve its real catalog GUID and service code.
+        if (snapshot.TryGetProperty("Services", out var selectedServices) &&
+            selectedServices.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var quoted in selectedServices.EnumerateArray())
+            {
+                if (quoted.ValueKind != JsonValueKind.Object) continue;
+                var name = Text(quoted, "ServiceName");
+                if (string.IsNullOrWhiteSpace(name)) continue;
+                var catalogId = Guid.TryParse(Text(quoted, "ServiceId"), out var parsedService)
+                    ? parsedService : (Guid?)null;
+                db.CaseServiceLines.Add(new OperationsCaseServiceLine {
+                    CaseId = caseId,
+                    ServiceCatalogId = catalogId,
+                    ServiceCode = Text(quoted, "ServiceCode") ?? "",
+                    ServiceName = name,
+                    Source = "QUOTED",
+                    ReviewStatus = "NOT_REQUIRED",
+                    CreatedBy = item.AcceptedBy.Value,
+                    CreatedAtUtc = now
+                });
+            }
+        }
+
+
         db.CaseTasks.Add(new OperationsCaseTask
         {
             CaseId = caseId, CaseStageId = stage.Id, CreatedBy = item.AcceptedBy.Value,
