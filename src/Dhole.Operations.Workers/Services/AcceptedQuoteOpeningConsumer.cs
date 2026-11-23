@@ -142,16 +142,7 @@ public sealed class AcceptedQuoteOpeningConsumer(
                 ApertureType = "AUTOMATIC",
                 ModalityCode = String(snapshot, "modalityCode", "MARITIMO"),
                 OriginCountryCode = null, DestinationCountryCode = null,
-                OpeningDataJson = JsonSerializer.Serialize(new
-                {
-                    source = "PRICING_ACCEPTED_QUO",
-                    acceptedQuoteNumber = selectedNumber,
-                    groupQuoteNumber = groupNumber,
-                    incoterm = String(snapshot, "incoterm"),
-                    shipmentMode = String(snapshot, "shipmentMode"),
-                    operationType = String(snapshot, "operationType"),
-                    commercialSnapshot = snapshot.Clone()
-                }),
+                OpeningDataJson = BuildOpeningData(snapshot, selectedNumber, groupNumber),
                 Status = "PENDING_VALIDATION"
             };
             var stage = new OperationsCaseStage
@@ -212,6 +203,73 @@ public sealed class AcceptedQuoteOpeningConsumer(
         return true;
     }
 
+
+    private static string BuildOpeningData(JsonElement snapshot, string quoteNumber, string groupNumber)
+    {
+        var pol = Nested(snapshot, "pol");
+        var poe = Nested(snapshot, "poe");
+        var pod = Nested(snapshot, "pod");
+        var cargo = Nested(snapshot, "cargo");
+        var pickup = Nested(snapshot, "pickup");
+        var carrier = Nested(snapshot, "carrier");
+        var agent = Nested(snapshot, "agent");
+        var equipment = snapshot.TryGetProperty("equipment", out var containers) &&
+            containers.ValueKind == JsonValueKind.Array
+            ? containers.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.Object)
+                .Select(x => new
+                {
+                    equipmentType = String(x, "ContainerTypeName"),
+                    equipmentCatalogId = String(x, "ContainerTypeId"),
+                    quantity = (int)Decimal(x, "Quantity", 0m)
+                }).ToArray()
+            : [];
+        var services = snapshot.TryGetProperty("services", out var list) &&
+            list.ValueKind == JsonValueKind.Array
+            ? list.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.Object)
+                .Select(x => String(x, "ServiceName", String(x, "ServiceCode")))
+                .Where(x => x.Length > 0).ToArray()
+            : [];
+        var shipmentType = String(snapshot, "shipmentMode");
+        var mode = String(snapshot, "modalityCode", "FCL");
+        var polName = String(pol, "name");
+        var poeName = String(poe, "name");
+        var podName = String(pod, "name", poeName);
+        return JsonSerializer.Serialize(new
+        {
+            source = "PRICING_ACCEPTED_QUO",
+            acceptedQuoteNumber = quoteNumber,
+            groupQuoteNumber = groupNumber,
+            clientName = String(snapshot, "clientName"),
+            executiveName = String(snapshot, "executiveName"),
+            shipmentType,
+            transportType = mode switch
+            {
+                "FTL" or "LTL" => "ROAD",
+                "AIR" => "AIR",
+                _ => "MARITIME"
+            },
+            incoterm = String(snapshot, "incoterm"),
+            operationType = String(snapshot, "operationType"),
+            pol = polName, poe = poeName, pod = podName,
+            carrierReference = String(carrier, "CarrierName"),
+            agentReference = String(agent, "AgentName"),
+            whsName = "",
+            pickupAddress = String(pickup, "PickupAddress"),
+            cargoDescription = String(cargo, "CargoLinesJson"),
+            packageCount = Decimal(cargo, "TotalPackages", 0m),
+            volumeValue = Decimal(cargo, "TotalVolumeCbm", 0m),
+            volumeUnit = "CBM",
+            equipment,
+            services,
+            // Original Pricing units, costs and exact accepted revision stay immutable.
+            commercialSnapshot = snapshot.Clone()
+        });
+    }
+
+    private static JsonElement Nested(JsonElement root, string name)
+        => root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Object
+            ? value : default;
+
     private static async Task<long> NextIdtraAsync(OperationsDbContext db, CancellationToken ct)
     {
         var conn = (Npgsql.NpgsqlConnection)db.Database.GetDbConnection();
@@ -240,7 +298,8 @@ public sealed class AcceptedQuoteOpeningConsumer(
     }
 
     private static string String(JsonElement root, string key, string fallback = "")
-        => root.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String
+        => root.ValueKind == JsonValueKind.Object &&
+            root.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String
             ? value.GetString()?.Trim() ?? fallback : fallback;
 
     private static decimal Decimal(JsonElement root, string key, decimal fallback)
