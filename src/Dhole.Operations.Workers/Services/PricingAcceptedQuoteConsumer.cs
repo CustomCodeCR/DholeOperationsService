@@ -153,8 +153,7 @@ public sealed class PricingAcceptedQuoteConsumer(
             quotedVolumeCbm = GetDecimal(data, "quotedVolumeCbm"),
             packages = GetInt(data, "packages"),
             equipment = Clone(data, "equipment"),
-            services = Clone(data, "services"),
-            commercialSnapshot = data.Clone()
+            services = Clone(data, "services")
         });
 
         var operation = new OperationsCase
@@ -229,6 +228,13 @@ public sealed class PricingAcceptedQuoteConsumer(
             }
         }
         database.CaseQuoteLinks.Add(link);
+        database.CommercialSnapshots.Add(new OperationsCaseCommercialSnapshot
+        {
+            CaseId = caseId,
+            QuoteId = quoteId,
+            RevisionNumber = Math.Max(1, GetInt(data, "revisionNumber")),
+            SnapshotJson = payload
+        });
         OperationsAuditWriter.Case(database, caseId, stage.Id, actorId,
             "operations.case.created.from_accepted_quote", null,
             new { quoteId, selectedQuoteOptionId = selectedId, idtra = operation.Idtra,
