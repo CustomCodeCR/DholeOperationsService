@@ -12,9 +12,21 @@ public sealed class OperationsAcceptedQuoteUniqueness419 : Migration
     {
         // Legacy manual records have no source quote ID; only automatic cases are constrained.
         migrationBuilder.Sql("""
-            CREATE UNIQUE INDEX IF NOT EXISTS ux_operations_automatic_source_quote
-            ON operations.operations_cases (source_quote_id)
-            WHERE aperture_type = 'AUTOMATIC' AND source_quote_id IS NOT NULL;
+            DO $accepted_quote$ BEGIN
+              IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema='operations' AND table_name='operations_cases'
+                AND column_name='aperture_type'
+              ) AND EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema='operations' AND table_name='operations_cases'
+                AND column_name='source_quote_id'
+              ) THEN
+                EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS ux_operations_automatic_source_quote
+                  ON operations.operations_cases (source_quote_id)
+                  WHERE aperture_type = ''AUTOMATIC'' AND source_quote_id IS NOT NULL';
+              END IF;
+            END $accepted_quote$;
             """);
     }
 
