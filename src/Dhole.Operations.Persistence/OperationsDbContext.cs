@@ -12,6 +12,10 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<InboxMessage> InboxMessages => Set<InboxMessage>();
     public DbSet<OperationsCase> Cases => Set<OperationsCase>();
+    public DbSet<OperationsOpeningAutosaveDraft> OpeningAutosaveDrafts => Set<OperationsOpeningAutosaveDraft>();
+    public DbSet<OperationsCaseCommercialSnapshot> CommercialSnapshots => Set<OperationsCaseCommercialSnapshot>();
+    public DbSet<OperationsOriginMeasurement> OriginMeasurements => Set<OperationsOriginMeasurement>();
+    public DbSet<OperationsAdditionalService> AdditionalServices => Set<OperationsAdditionalService>();
     public DbSet<OperationsCaseSequence> CaseSequences => Set<OperationsCaseSequence>();
     public DbSet<OperationsCaseStage> CaseStages => Set<OperationsCaseStage>();
     public DbSet<OperationsTeam> Teams => Set<OperationsTeam>();
@@ -46,6 +50,38 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
         m.Entity<InboxMessage>().Property<string>("PayloadJson")
             .HasColumnName("payload_json").HasColumnType("text").IsRequired();
 
+        m.Entity<OperationsAdditionalService>(e =>
+        {
+            e.ToTable("operations_additional_services");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CaseId);
+            e.Property(x => x.ServiceCode).HasMaxLength(80);
+            e.Property(x => x.ServiceName).HasMaxLength(300);
+            e.Property(x => x.Reason).HasMaxLength(2000);
+            e.Property(x => x.Source).HasMaxLength(30);
+            e.Property(x => x.ReviewStatus).HasMaxLength(50);
+            e.Property(x => x.PricingResolutionNotes).HasMaxLength(2000);
+        });
+        m.Entity<OperationsOriginMeasurement>(e =>
+        {
+            e.ToTable("operations_origin_measurements");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CaseId).IsUnique();
+        });
+        m.Entity<OperationsCaseCommercialSnapshot>(e =>
+        {
+            e.ToTable("operations_case_commercial_snapshots");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CaseId).IsUnique();
+            e.Property(x => x.SnapshotJson).HasColumnName("snapshot_json").HasColumnType("jsonb").IsRequired();
+        });
+        m.Entity<OperationsOpeningAutosaveDraft>(e =>
+        {
+            e.ToTable("operations_opening_autosave_drafts");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.PayloadJson).HasColumnName("payload_json").HasColumnType("jsonb").IsRequired();
+            e.HasIndex(x => new { x.OwnerUserId, x.UpdatedAtUtc });
+        });
         m.Entity<OperationsCase>(e =>
         {
             e.ToTable("operations_cases", t => t.HasCheckConstraint("ck_operations_case_points", "complexity_points > 0 AND priority BETWEEN 1 AND 5"));
