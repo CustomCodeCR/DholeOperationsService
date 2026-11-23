@@ -174,10 +174,24 @@ public sealed class PricingAcceptedQuoteConsumer(
             OpeningDataJson = openingData,
             Status = "DRAFT"
         };
+        // Route to the least-loaded eligible active Aperturas team. Individual
+        // reviewers still require the existing Auth-verified two-validator workflow.
+        var teams = await database.Teams.AsNoTracking()
+            .Where(t => t.CompanyId == companyId && t.DepartmentCode == "APERTURAS" && t.IsActive)
+            .Select(t => new
+            {
+                t.Id,
+                Available = t.Members.Count(m => m.IsAvailable && m.CapacityPoints > 0),
+                Pending = database.CaseStages.Count(st => st.TeamId == t.Id
+                    && st.DepartmentCode == "APERTURAS" && st.Status != "COMPLETED")
+            }).ToArrayAsync(ct);
+        var chosenTeam = teams.Where(t => t.Available >= 2)
+            .OrderBy(t => t.Pending).ThenBy(t => t.Id).FirstOrDefault();
         var stage = new OperationsCaseStage
         {
             CaseId = caseId,
             DepartmentCode = "APERTURAS",
+            TeamId = chosenTeam?.Id,
             Status = "PENDING"
         };
         operation.Stages.Add(stage);
@@ -222,7 +236,8 @@ public sealed class PricingAcceptedQuoteConsumer(
         database.OutboxMessages.Add(OperationsOutboxFactory.Create(
             "operations.case.created.v1",
             JsonSerializer.Serialize(new { caseId, idtra = operation.Idtra,
-                sourceQuoteId = quoteId, selectedQuoteOptionId = selectedId, version = operation.Version })));
+                sourceQuoteId = quoteId, selectedQuoteOptionId = selectedId,
+                companyId, teamId = stage.TeamId, version = operation.Version })));
         RecordReceipt(database, eventId, payload);
         await database.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
