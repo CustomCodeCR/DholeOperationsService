@@ -16,15 +16,12 @@ public sealed class OperationsReconcileIdtraSequence416 : Migration
     {
         migrationBuilder.Sql("""
             WITH case_high AS (
-                SELECT GREATEST(
-                    COALESCE(MAX(sequence_number), 0),
-                    COALESCE(MAX(CASE
+                SELECT COALESCE(MAX(CASE
                         WHEN idtra ~ '^IDTRA[0-9]+$'
                             THEN substring(idtra FROM 6)::bigint
                         WHEN idtra ~ '^IDTRA-[0-9]+-[0-9]+$'
                             THEN split_part(idtra, '-', 3)::bigint
-                        ELSE NULL END), 0)
-                ) AS high
+                        ELSE NULL END), 0) AS high
                 FROM operations.operations_cases
             ),
             all_high AS (
