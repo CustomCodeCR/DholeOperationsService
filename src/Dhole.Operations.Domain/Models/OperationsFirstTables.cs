@@ -13,6 +13,7 @@ public sealed class OperationsCaseQuoteLink
     public bool IsPrimary { get; set; }
     public string Status { get; set; } = "LINKED";
     public int SnapshotVersion { get; set; } = 1;
+    public string? CommercialSnapshotJson { get; set; }
     public Guid LinkedBy { get; set; }
     public DateTimeOffset LinkedAtUtc { get; set; } = DateTimeOffset.UtcNow;
     public List<OperationsCaseQuoteCost> Costs { get; set; } = [];
