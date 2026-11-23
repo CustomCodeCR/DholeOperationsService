@@ -14,6 +14,7 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
     public DbSet<OperationsCase> Cases => Set<OperationsCase>();
     public DbSet<OperationsOpeningAutosaveDraft> OpeningAutosaveDrafts => Set<OperationsOpeningAutosaveDraft>();
     public DbSet<OperationsCaseCommercialSnapshot> CommercialSnapshots => Set<OperationsCaseCommercialSnapshot>();
+    public DbSet<OperationsOriginMeasurement> OriginMeasurements => Set<OperationsOriginMeasurement>();
     public DbSet<OperationsCaseSequence> CaseSequences => Set<OperationsCaseSequence>();
     public DbSet<OperationsCaseStage> CaseStages => Set<OperationsCaseStage>();
     public DbSet<OperationsTeam> Teams => Set<OperationsTeam>();
@@ -48,6 +49,12 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
         m.Entity<InboxMessage>().Property<string>("PayloadJson")
             .HasColumnName("payload_json").HasColumnType("text").IsRequired();
 
+        m.Entity<OperationsOriginMeasurement>(e =>
+        {
+            e.ToTable("operations_origin_measurements");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CaseId).IsUnique();
+        });
         m.Entity<OperationsCaseCommercialSnapshot>(e =>
         {
             e.ToTable("operations_case_commercial_snapshots");
