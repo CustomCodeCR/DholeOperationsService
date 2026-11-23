@@ -23,6 +23,12 @@
       "candidateBranch": "feature/DH-20261123-OPS-APERTURES-P1-416"
     },
     {
+      "repository": "CustomCodeCR/DholeWeb",
+      "previousVersion": "1.119.1",
+      "version": "1.120.0",
+      "candidateBranch": "feature/DH-20261123-OPS-APERTURES-P1-416"
+    },
+    {
       "repository": "CustomCodeCR/DholeSystem",
       "previousVersion": "1.119.1",
       "version": "1.120.0"
@@ -31,7 +37,8 @@
   "changes": [
     "IDTRA historical reconciliation and non-padded presentation",
     "Protected field completeness/read-only draft projection",
-    "Conditional FCA/WHS/pickup/equipment field validation"
+    "Conditional FCA/WHS/pickup/equipment field validation",
+    "DholeWeb FCA warehouse requirement parity"
   ],
   "deferred": [
     "Pricing accepted QUO A/B durable event",
