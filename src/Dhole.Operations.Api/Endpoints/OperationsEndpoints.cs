@@ -144,7 +144,7 @@ public static class OperationsEndpoints
                     x.Id, x.Idtra, x.CompanyId, x.AccountId, x.ExecutiveUserId,
                     x.ModalityCode, x.OriginCountryCode, x.DestinationCountryCode,
                     x.ApertureType, x.SourceQuoteId, x.SourceQuoteOptionId,
-                    x.Status, x.Priority, x.ComplexityPoints, x.CreatedAtUtc,
+                    x.Status, x.Priority, x.ComplexityPoints, x.CreatedBy, x.CreatedAtUtc,
                     x.UpdatedAtUtc, x.Version, x.OpeningDataJson,
                     Stages = x.Stages.Select(s => new { s.Id, s.DepartmentCode, s.Status, s.TeamId, s.Version })
                 }).SingleAsync(ct);
