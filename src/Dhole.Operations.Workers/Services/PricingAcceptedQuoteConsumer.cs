@@ -120,6 +120,11 @@ public sealed class PricingAcceptedQuoteConsumer(
             ? actor : Guid.Empty;
         var accountId = Guid.TryParse(GetString(data, "accountId"), out var account)
             ? account : Guid.Empty;
+        var executiveId = Guid.TryParse(GetString(data, "executiveUserId"), out var executive)
+            ? executive : Guid.Empty;
+        // Do not invent or substitute commercial/CRM identities.
+        if (accountId == Guid.Empty || executiveId == Guid.Empty)
+            throw new InvalidOperationException("Pricing acceptance awaits verified CRM account and executive.");
         var modality = (GetString(data, "modalityCode") ?? "FCL").Trim().ToUpperInvariant();
         if (modality is not ("FCL" or "LCL" or "AIR" or "FTL" or "LTL" or "MULTIMODAL"))
             throw new InvalidDataException("Unknown shipment modality from Pricing.");
@@ -157,7 +162,7 @@ public sealed class PricingAcceptedQuoteConsumer(
             Id = caseId,
             CompanyId = companyId,
             AccountId = accountId,
-            ExecutiveUserId = actorId,
+            ExecutiveUserId = executiveId,
             CreatedBy = actorId,
             ApertureType = "AUTOMATIC",
             SourceQuoteId = quoteId,
