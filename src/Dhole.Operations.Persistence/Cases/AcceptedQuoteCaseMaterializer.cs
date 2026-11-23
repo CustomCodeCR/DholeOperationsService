@@ -44,9 +44,9 @@ public sealed class AcceptedQuoteCaseMaterializer(OperationsDbContext db)
             !item.CommercialSnapshot.TryGetProperty("Details", out var details) ||
             details.ValueKind != JsonValueKind.Array)
             throw new InvalidOperationException("Unrecognized or incomplete accepted QUO snapshot.");
-        if (item.ClientAccountId is null or { } id && id == Guid.Empty ||
-            item.ExecutiveUserId is null or { } executive && executive == Guid.Empty ||
-            item.AcceptedBy is null or { } actor && actor == Guid.Empty)
+        if (!item.ClientAccountId.HasValue || item.ClientAccountId.Value == Guid.Empty ||
+            !item.ExecutiveUserId.HasValue || item.ExecutiveUserId.Value == Guid.Empty ||
+            !item.AcceptedBy.HasValue || item.AcceptedBy.Value == Guid.Empty)
             throw new InvalidOperationException("CRM account, commercial executive and acceptance actor must be resolved.");
         if (item.QuoteGroupId.HasValue &&
             (item.QuoteGroupId == Guid.Empty || item.SelectedOptionId != item.QuoteId))
