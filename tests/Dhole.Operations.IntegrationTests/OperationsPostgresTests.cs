@@ -132,7 +132,7 @@ public sealed class OperationsPostgresTests
             var restored = await db.OpeningAutosaveDrafts.AsNoTracking()
                 .SingleAsync(x => x.Id == id && x.OwnerUserId == actor);
             Assert.IsNull(restored.CompanyId);
-            Assert.IsTrue(restored.PayloadJson.Contains("\"form\""));
+            Assert.Contains("\"form\"", restored.PayloadJson);
             Assert.IsFalse(await db.Cases.AnyAsync(x => x.Id == id));
             db.OpeningAutosaveDrafts.Remove(await db.OpeningAutosaveDrafts.SingleAsync(x => x.Id == id));
             await db.SaveChangesAsync();
