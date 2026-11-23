@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "ecosystem": "Dhole",
+  "releaseId": "DH-20261123-OPS-APERTURES-P1-416",
+  "releaseType": "MINOR",
+  "ecosystemVersion": "1.120.0",
+  "targetBranches": [
+    "develop"
+  ],
+  "productionDeploymentAuthorized": false,
+  "checks": {
+    "build": "pending",
+    "ci": "pending",
+    "postgresIntegration": "pending",
+    "staging": "pending",
+    "production": "not-authorized"
+  },
+  "components": [
+    {
+      "repository": "CustomCodeCR/DholeOperationsService",
+      "previousVersion": "0.17.0",
+      "version": "0.18.0",
+      "candidateBranch": "feature/DH-20261123-OPS-APERTURES-P1-416"
+    },
+    {
+      "repository": "CustomCodeCR/DholeSystem",
+      "previousVersion": "1.119.1",
+      "version": "1.120.0"
+    }
+  ],
+  "changes": [
+    "IDTRA historical reconciliation and non-padded presentation",
+    "Protected field completeness/read-only draft projection",
+    "Conditional FCA/WHS/pickup/equipment field validation"
+  ],
+  "deferred": [
+    "Pricing accepted QUO A/B durable event",
+    "automatic operations case consumer",
+    "new-case server-side autosave",
+    "commercial snapshot/services review",
+    "origin transfer integration",
+    "full frontend P1"
+  ]
+}
