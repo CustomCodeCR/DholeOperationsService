@@ -1,3 +1,10 @@
+## [0.17.0] - 2026-11-22 · DH-20261122-OPS-CASE-OVERVIEW-414
+
+- MINOR: GET /api/operations/cases incorpora departamento/estado, equipo, responsable y estado de Origen; detalle incluye usuario creador y workspace devuelve ambos validadores de Aperturas.
+- GET /cases/{id}/tabs permite consulta READ_ONLY de departamentos no iniciados a SuperUsuario/ SuperUser sin inventar permisos de modificación o etapas operativas.
+- Verificación de roles JWT normalizados para SuperUsuario/SuperUser/SuperAdmin; las comprobaciones de escritura, validación, scopes, concurrencia y equipo permanecen en backend.
+- Nuevas pruebas de acceso; sin migraciones ni cambios de nombres de tablas. PostgreSQL, Outbox/Inbox, REST, Redis Streams y SignalR preservados.
+
 ## [0.16.0] - 2026-11-22 · DH-20261122-OPERATIONS-ASSIGNMENT-SUMMARY-408
 
 - MINOR: endpoint de lectura company-scoped `GET /api/operations/apertures/assignment-teams` muestra únicamente equipos de Aperturas activos y capacidad agregada para dos validadores, sin exponer usuarios.
