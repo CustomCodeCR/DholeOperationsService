@@ -32,7 +32,7 @@ public sealed class OperationsPostgresTests
         Assert.AreEqual(12, results.Select(x => x.Idtra).Distinct().Count());
         // Series are global across companies; tests must not assume the first issued value is 1.
         var assignedNumbers = results.Select(x => {
-            Assert.IsTrue(System.Text.RegularExpressions.Regex.IsMatch(x.Idtra, @"^IDTRA\d{5,}$"));
+            Assert.IsTrue(System.Text.RegularExpressions.Regex.IsMatch(x.Idtra, @"^IDTRA[1-9]\d*$"));
             return long.Parse(x.Idtra["IDTRA".Length..]);
         })
             .Order().ToArray();
