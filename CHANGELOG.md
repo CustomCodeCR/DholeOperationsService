@@ -1,5 +1,10 @@
 ## [0.19.0] - 2026-11-23
 
+- Inbox Pricing duradero, creación idempotente de IDTRA, snapshot comercial inmutable y detalle de costos.
+- Borradores independientes en PostgreSQL sin equipo ni consumo prematuro de consecutivo.
+
+## [0.19.0] - 2026-11-23
+
 - Inbox Pricing con recuperación, creación idempotente de IDTRA, snapshot comercial inmutable, costos y borradores PostgreSQL con control de concurrencia.
 
 ## [0.18.0] - 2026-11-23 · DH-20261123-OPS-APERTURES-P1-416
