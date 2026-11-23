@@ -108,6 +108,38 @@ public sealed class OperationsPostgresTests
             x => x.CaseStageId == caseResult.InitialStageId && x.ReleasedAtUtc == null));
     }
 
+    [TestMethod]
+    public async Task IncompleteOpeningDraftPersistsInPostgresWithoutAccountOrTeam()
+    {
+        if (string.IsNullOrWhiteSpace(Connection))
+            Assert.Inconclusive("DHOLE_TEST_POSTGRES is required.");
+
+        var company = Guid.NewGuid();
+        var user = Guid.NewGuid();
+        var draftId = Guid.NewGuid();
+        await using (var write = NewDb())
+        {
+            await write.Database.MigrateAsync();
+            write.OpeningDrafts.Add(new OperationsOpeningDraft
+            {
+                Id = draftId,
+                CompanyId = company,
+                UserId = user,
+                PayloadJson = "{\"version\":2,\"form\":{},\"step\":1}"
+            });
+            await write.SaveChangesAsync();
+        }
+
+        await using var read = NewDb();
+        var saved = await read.OpeningDrafts.AsNoTracking().SingleAsync(x => x.Id == draftId);
+        Assert.AreEqual(company, saved.CompanyId);
+        Assert.AreEqual(user, saved.UserId);
+        Assert.IsTrue(saved.PayloadJson.Contains("\"form\"", StringComparison.Ordinal));
+
+        read.OpeningDrafts.Remove(await read.OpeningDrafts.SingleAsync(x => x.Id == draftId));
+        await read.SaveChangesAsync();
+    }
+
     private static OperationsDbContext NewDb()
     {
         var opts = new DbContextOptionsBuilder<OperationsDbContext>().UseNpgsql(Connection!).Options;
