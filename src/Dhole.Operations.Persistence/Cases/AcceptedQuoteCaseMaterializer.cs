@@ -21,6 +21,7 @@ public sealed record AcceptedQuoteIntegrationEvent(
     Guid? AcceptedBy,
     DateTime? AcceptedAtUtc,
     string? AcceptanceObservations,
+    Guid? OperationsCompanyId,
     JsonElement CommercialSnapshot);
 
 /// <summary>
@@ -78,16 +79,31 @@ public sealed class AcceptedQuoteCaseMaterializer(OperationsDbContext db)
             return existing.Idtra;
         }
 
-        // Pricing does not own an Operations company. Only a uniquely existing
-        // Operations tenant is safe; ambiguous/missing tenant remains pending.
-        var known = await db.Teams.AsNoTracking()
-            .Select(x => x.CompanyId).Distinct().Take(2).ToListAsync(ct);
-        var fromCases = await db.Cases.AsNoTracking()
-            .Select(x => x.CompanyId).Distinct().Take(2).ToListAsync(ct);
-        var companies = known.Concat(fromCases)
-            .Where(x => x != Guid.Empty).Distinct().Take(2).ToArray();
-        if (companies.Length != 1)
-            throw new InvalidOperationException("Operations tenant cannot be resolved uniquely; event remains pending.");
+        // Prefer a verified explicit Operations company. When Pricing cannot
+        // supply it, only a single known tenant permits safe bootstrap.
+        Guid company;
+        if (item.OperationsCompanyId is Guid explicitId && explicitId != Guid.Empty)
+        {
+            var exists = await db.Teams.AsNoTracking()
+                .AnyAsync(x => x.CompanyId == explicitId, ct) ||
+                await db.Cases.AsNoTracking()
+                    .AnyAsync(x => x.CompanyId == explicitId, ct);
+            if (!exists)
+                throw new InvalidOperationException(
+                    "Explicit Operations tenant not known; no cross-tenant opening allowed.");
+            company = explicitId;
+        }
+        else
+        {
+            var known = await db.Teams.AsNoTracking()
+                .Select(x => x.CompanyId)
+                .Union(db.Cases.AsNoTracking().Select(x => x.CompanyId))
+                .Where(x => x != Guid.Empty).Distinct().Take(2).ToArrayAsync(ct);
+            if (known.Length != 1)
+                throw new InvalidOperationException(
+                    "Operations tenant cannot be resolved uniquely; event remains pending.");
+            company = known[0];
+        }
 
         var snapshot = item.CommercialSnapshot;
         var modality = Shipment(Get(snapshot, "ShipmentMode"));
@@ -149,7 +165,6 @@ public sealed class AcceptedQuoteCaseMaterializer(OperationsDbContext db)
             acceptanceObservations = item.AcceptanceObservations
         });
 
-        var company = companies[0];
         var openingTeamIds = await db.Teams.AsNoTracking()
             .Where(t => t.CompanyId == company && t.IsActive && t.DepartmentCode == "APERTURAS")
             .Select(t => t.Id).Take(2).ToArrayAsync(ct);
