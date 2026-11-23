@@ -139,7 +139,7 @@ public sealed class PricingAcceptedQuoteConsumer(
                 Status = "PENDING_VALIDATION",
                 ModalityCode = accepted.ModalityCode!.Trim().ToUpperInvariant(),
                 CreatedBy = accepted.AcceptedBy!.Value,
-                OpeningDataJson = OpeningData(accepted, json)
+                OpeningDataJson = OpeningData(accepted)
             };
             var stage = new OperationsCaseStage
                 { CaseId = operation.Id, DepartmentCode = "APERTURAS", Status = "PENDING" };
@@ -154,6 +154,7 @@ public sealed class PricingAcceptedQuoteConsumer(
                 QuoteNumber = baseQuote,
                 IsPrimary = true,
                 Status = "ACCEPTED",
+                CommercialSnapshotJson = json,
                 SnapshotVersion = accepted.SchemaVersion,
                 LinkedBy = accepted.AcceptedBy.Value
             };
@@ -216,7 +217,7 @@ public sealed class PricingAcceptedQuoteConsumer(
         return Convert.ToInt64(await command.ExecuteScalarAsync(ct));
     }
 
-    private static string OpeningData(AcceptedQuote source, string immutableQuoteJson)
+    private static string OpeningData(AcceptedQuote source)
     {
         // The opening may be reviewed without altering the accepted commercial snapshot.
         // Quoted weight is displayed as reference only; ACTUAL weight is entered in Origin.
@@ -230,8 +231,7 @@ public sealed class PricingAcceptedQuoteConsumer(
             ["pickupAddress"] = source.PickupAddress,
             ["cargoDescription"] = source.CargoLinesJson,
             ["quotedWeightKg"] = source.QuotedWeightKg,
-            ["quotedVolumeCbm"] = source.QuotedVolumeCbm,
-            ["acceptedCommercialSnapshot"] = JsonNode.Parse(immutableQuoteJson)
+            ["quotedVolumeCbm"] = source.QuotedVolumeCbm
         };
         var equipment = new JsonArray();
         foreach (var item in source.Equipment ?? [])
