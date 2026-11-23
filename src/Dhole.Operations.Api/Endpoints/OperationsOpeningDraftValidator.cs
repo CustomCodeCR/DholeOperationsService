@@ -64,6 +64,7 @@ public static class OperationsOpeningDraftValidator
                     equipment.EnumerateArray().All(x =>
                         x.ValueKind == JsonValueKind.Object &&
                         x.TryGetProperty("quantity", out var count) &&
+                        count.ValueKind == JsonValueKind.Number &&
                         count.TryGetInt32(out var quantity) && quantity > 0 &&
                         x.TryGetProperty("equipmentType", out var type) &&
                         type.ValueKind == JsonValueKind.String &&
