@@ -67,7 +67,9 @@ public static class OperationsCaseWorkspaceEndpoints
                     ? "READ_ONLY" : "LOCKED";
                 if (stage is not null)
                 {
-                    level = stage.Status == "SKIPPED" ? "NOT_APPLICABLE" : "READ_ONLY";
+                    level = stage.Status == "SKIPPED" &&
+                        !OperationsCaseAccess.IsSystemAdministrator(http.User)
+                        ? "NOT_APPLICABLE" : "READ_ONLY";
                     if (code == "COORDINACION_ORIGEN" &&
                         stage.Status is "READY" or "IN_PROGRESS" &&
                         OperationsCaseAccess.HasScope(http.User, "operations.origin.update") &&
