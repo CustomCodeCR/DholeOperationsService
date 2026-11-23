@@ -227,7 +227,10 @@ public static class OperationsEndpoints
                         .ThenByDescending(s => s.StartedAtUtc)
                         .Select(s => db.StageAssignments.Where(a =>
                             a.CaseStageId == s.Id && a.ReleasedAtUtc == null)
-                            .Select(a => (Guid?)a.UserId).FirstOrDefault()).FirstOrDefault(),
+                            .Select(a => (Guid?)a.UserId).FirstOrDefault()).FirstOrDefault() ??
+                        db.ApertureValidations.Where(v =>
+                            v.CaseStage.CaseId == c.Id && v.Status == "PENDING")
+                            .OrderBy(v => v.Slot).Select(v => (Guid?)v.UserId).FirstOrDefault(),
                     OriginStatusCode = db.OriginProgress.Where(p =>
                             p.CaseStage.CaseId == c.Id &&
                             p.CaseStage.DepartmentCode == "COORDINACION_ORIGEN")
