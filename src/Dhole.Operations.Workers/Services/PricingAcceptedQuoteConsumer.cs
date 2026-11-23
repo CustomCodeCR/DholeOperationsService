@@ -169,7 +169,7 @@ public sealed class PricingAcceptedQuoteConsumer(
                     CostCode = Limit(item.CostCode ?? "UNCLASSIFIED", 60),
                     Description = Limit(item.Description ?? "Sin descripcion", 500),
                     SupplierName = Limit(item.SupplierName, 200),
-                    CurrencyCode = IsoCurrency(item.CurrencyCode),
+                    CurrencyCode = IsoCurrency(item.CurrencyCode, item.CurrencyName),
                     CostAmount = item.CostAmount,
                     SaleAmount = item.SaleAmount
                 });
@@ -292,9 +292,18 @@ public sealed class PricingAcceptedQuoteConsumer(
     private static string Limit(string? value, int max) =>
         string.IsNullOrWhiteSpace(value) ? string.Empty :
         value.Length <= max ? value : value[..max];
-    private static string IsoCurrency(string? code) =>
-        code?.Trim().ToUpperInvariant() is { Length: 3 } iso &&
-        iso.All(x => x is >= 'A' and <= 'Z') ? iso : "USD";
+    private static string IsoCurrency(string? code, string? name)
+    {
+        var normalized = code?.Trim().ToUpperInvariant();
+        var label = name?.Trim().ToUpperInvariant() ?? "";
+        if (normalized is "CRC" or "USD") return normalized;
+        if (label.Contains("CRC", StringComparison.Ordinal) ||
+            label.Contains("COLON", StringComparison.Ordinal) ||
+            label.Contains("COLÓN", StringComparison.Ordinal))
+            return "CRC";
+        // Follow Pricing's financial fallback for internal custom currency IDs.
+        return "USD";
+    }
 
     public sealed record AcceptedQuote(
         int SchemaVersion, Guid QuoteId, Guid SelectedQuoteOptionId, string? QuoteNumber,
@@ -307,5 +316,5 @@ public sealed class PricingAcceptedQuoteConsumer(
     public sealed record AcceptedEquipment(string? ContainerTypeName, int Quantity);
     public sealed record AcceptedCost(Guid SourceCostId, string? CostCode,
         string? Description, string? SupplierName, string? CurrencyCode,
-        decimal CostAmount, decimal SaleAmount);
+        string? CurrencyName, decimal CostAmount, decimal SaleAmount);
 }
