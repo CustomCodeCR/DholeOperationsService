@@ -40,6 +40,17 @@ public sealed class OperationsOutboxPublisher(
                                     new("header:message_id", entry.EventId.ToString("D"))
                                 });
                         }
+                        else if (entry.EventName == "operations.pricing.review.requested.v1")
+                        {
+                            await redis.GetDatabase().StreamAddAsync(
+                                config["Redis:Streams:PricingReviewStream"] ?? "dhole.pricing.operations.reviews",
+                                new NameValueEntry[] {
+                                    new("message_type", entry.EventName),
+                                    new("payload_json", entry.PayloadJson),
+                                    new("header:source_service", "DholeOperationsService"),
+                                    new("header:event_id", entry.EventId.ToString("D"))
+                                });
+                        }
                         else
                         {
                             await redis.GetDatabase().StreamAddAsync(stream, new NameValueEntry[]
