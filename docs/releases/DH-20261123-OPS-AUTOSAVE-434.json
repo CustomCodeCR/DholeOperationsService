@@ -37,8 +37,9 @@
     {
       "repository": "CustomCodeCR/DholePricingService",
       "previousVersion": "1.27.1",
-      "version": "1.27.1",
-      "changed": false
+      "version": "1.28.0",
+      "candidateBranch": "feature/DH-20261123-OPS-AUTOSAVE-434",
+      "changed": true
     },
     {
       "repository": "CustomCodeCR/DholeCRMService",
@@ -77,7 +78,8 @@
     "Version-safe PUT with serialized transaction and metadata-only Outbox",
     "Offline local fallback, on-screen saved/error status and cleanup after creation",
     "Regression tests for isolated persistence and web API binding",
-    "After dual Aperturas approval assign Origin immediately through weighted pool, with durable reconciliation worker and idempotent Origin progress"
+    "After dual Aperturas approval assign Origin immediately through weighted pool, with durable reconciliation worker and idempotent Origin progress",
+    "Pricing transactionally publishes pricing.quote.accepted.v1 commercial snapshot; Operations consumer remains pending"
   ],
   "remaining": "Acceptance from Pricing, snapshots, validation state expansion, added services, pricing reviews, origin transfer, CRM/Auth/Storage/Notifications/Audit integration pending coordinated release"
 }
