@@ -142,6 +142,7 @@ public static class OperationsCommercialReviewEndpoints
                     reviewRequestId = reviewRequest.Id,
                     serviceId = service.Id, service.ServiceCode,
                     reviewRequest.Reason, requestedBy = actor.Value,
+                    requestedAtUtc = reviewRequest.RequestedAtUtc,
                     quoteId = operation.SourceQuoteId,
                     acceptedOptionId = operation.SourceQuoteOptionId
                 })));
