@@ -1,3 +1,11 @@
+## [0.19.0] - 2026-11-23 · DH-20261123-OPS-AUTOSAVE-434
+
+- MINOR candidato: aperturas manuales incompletas se autoguardan de forma duradera en PostgreSQL, aisladas por usuario y empresa, sin requerir cuenta CRM, equipo ni generar IDTRA hasta la creación definitiva.
+- GET/PUT/DELETE /api/operations/apertures/drafts/current: control de versión optimista, escritura serializada mediante bloqueo transaccional y Outbox de metadatos sin publicar datos privados.
+- Migración no destructiva operations_manual_opening_drafts; pruebas de persistencia y aislamiento por usuario/empresa.
+- Cambios únicamente en rama intermedia; CI, PostgreSQL de integración y staging por verificar. master/producción intactos.
+- DholeOperationsService 0.18.0 → 0.19.0; candidato global 1.122.0; otros servicios sin cambios de código en este lote parcial.
+
 ## [0.18.0] - 2026-11-23 · DH-20261123-OPS-APERTURES-P1-416
 
 - MINOR candidate para Aperturas P1: previsualización protegida de completitud por campo con CONFIRMADO, PENDIENTE_PERMITIDO, PENDIENTE_BLOQUEANTE y NO_APLICA; consulta del borrador existente en PostgreSQL.
