@@ -21,6 +21,7 @@ builder.Services.AddHttpClient("crm-operations-contacts", client =>
     client.Timeout = TimeSpan.FromSeconds(10));
 builder.Services.AddHttpClient("auth-operations-users", client => client.Timeout = TimeSpan.FromSeconds(8));
 builder.Services.AddScoped<Dhole.Operations.Api.Integrations.OperationsAuthUserVerifier>();
+builder.Services.AddScoped<OperationsAssignedUserLabels>();
 builder.Services.AddSignalR();
 builder.Services.AddScoped<OperationsCrmAccountResolver>();
 builder.Services.AddAuthorization(options =>

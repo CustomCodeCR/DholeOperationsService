@@ -22,6 +22,7 @@ public static class OperationsCommercialSnapshotReader
         try { using var doc = JsonDocument.Parse(json); return doc.RootElement.Clone(); }
         catch (JsonException) { return default; }
     }
+    public static string? ClientName(string? json) => Text(Read(json), "clientName");
     public static object? Summary(string? json)
     {
         var e = Read(json);

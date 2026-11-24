@@ -232,4 +232,60 @@ public sealed class OperationsAcceptedPricingQuotePostgresTests
         CollectionAssert.AreEqual(new[] { first + 2, first + 1 }, pageOne);
         CollectionAssert.AreEqual(new[] { first }, pageTwo);
     }
+
+    [TestMethod]
+    public async Task AutomaticPoolRecoversHistoricalAndNewCasesWithoutDuplicateValidators()
+    {
+        var ct = CancellationToken.None;
+        var company = Guid.NewGuid(); var actor = Guid.NewGuid();
+        var account = Guid.NewGuid(); var executive = Guid.NewGuid();
+        var first = Guid.NewGuid(); var second = Guid.NewGuid(); var third = Guid.NewGuid();
+        Guid case1; Guid case2;
+        await using (var db = Db())
+        {
+            await db.Database.MigrateAsync(ct);
+            var team = new Dhole.Operations.Domain.Models.OperationsTeam {
+                CompanyId = company, DepartmentCode = "APERTURAS", Name = "Aperturas test"
+            };
+            foreach (var user in new[] { first, second, third })
+                team.Members.Add(new Dhole.Operations.Domain.Models.OperationsTeamMember {
+                    TeamId = team.Id, UserId = user, CapacityPoints = 10m, IsAvailable = true
+                });
+            db.Teams.Add(team);
+            db.AssignmentRules.Add(new Dhole.Operations.Domain.Models.OperationsAssignmentRule {
+                TeamId = team.Id, DepartmentCode = "APERTURAS", Priority = 100
+            });
+            await db.SaveChangesAsync(ct);
+            var store = new OperationsCaseStore(db);
+            case1 = (await store.CreateAcceptedQuoteAsync(Quote(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
+                account, actor, company, executive, []), ct)).Id;
+            case2 = (await store.CreateAcceptedQuoteAsync(Quote(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
+                account, actor, company, executive, []), ct)).Id;
+        }
+        await using (var db = Db())
+        {
+            Assert.IsFalse(await OperationsAutomaticAperturePool.TryAssignAsync(db, case1,
+                (id, _) => Task.FromResult(id == first), ct));
+            Assert.AreEqual(0, await db.ApertureValidations.CountAsync(v => v.CaseStage.CaseId == case1, ct));
+        }
+        async Task<bool> Assign(Guid id)
+        {
+            await using var db = Db();
+            return await OperationsAutomaticAperturePool.TryAssignAsync(db, id,
+                (_, _) => Task.FromResult(true), ct);
+        }
+        var concurrent = await Task.WhenAll(Assign(case1), Assign(case1));
+        Assert.AreEqual(1, concurrent.Count(x => x));
+        Assert.IsTrue(await Assign(case2));
+        await using (var db = Db())
+        {
+            var rows = await db.ApertureValidations.Where(v => v.CaseStage.CaseId == case1 || v.CaseStage.CaseId == case2)
+                .Select(v => new { v.UserId, v.TeamId, v.Status, v.CaseStage.CaseId }).ToArrayAsync(ct);
+            Assert.HasCount(4, rows);
+            Assert.AreEqual(3, rows.Select(v => v.UserId).Distinct().Count());
+            Assert.AreEqual(1, rows.Select(v => v.TeamId).Distinct().Count());
+            Assert.IsTrue(rows.All(v => v.Status == "PENDING"));
+            Assert.AreEqual(2, rows.Where(v => v.CaseId == case1).Select(v => v.UserId).Distinct().Count());
+        }
+    }
 }

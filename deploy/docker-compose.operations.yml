@@ -12,6 +12,8 @@ services:
       Redis__ConnectionString: ${REDIS_CONNECTION_STRING:-redis:6379}
       Crm__ApiBaseUrl: ${CRM_HTTP_URL:-http://crm-api:8080}
       Auth__ApiBaseUrl: ${AUTH_HTTP_URL:-http://auth-api:8080}
+      Auth__OperationsPool__BaseAddress: ${AUTH_HTTP_URL:-http://auth-api:8080}
+      Auth__OperationsPool__InternalServiceKey: ${INTERNAL_SERVICE_KEY}
       Auth__Jwt__Issuer: ${JWT_ISSUER:-DholeAuthService}
       Auth__Jwt__Audience: ${JWT_AUDIENCE:-DholeEcosystem}
       Auth__Jwt__SecretKey: ${JWT_SECRET}
@@ -31,6 +33,8 @@ services:
       # does not configure the background worker's internal CRM HTTP client.
       Crm__OperationsAcceptance__BaseAddress: ${CRM_HTTP_URL:-http://crm-api:8080}
       Crm__OperationsAcceptance__InternalServiceKey: ${INTERNAL_SERVICE_KEY}
+      Auth__OperationsPool__BaseAddress: ${AUTH_HTTP_URL:-http://auth-api:8080}
+      Auth__OperationsPool__InternalServiceKey: ${INTERNAL_SERVICE_KEY}
       PricingAcceptance__CompanyId: ${OPERATIONS_ACCEPTANCE_COMPANY_ID:-}
     networks: [dhole-runtime]
 networks:

@@ -84,7 +84,7 @@ public static class OperationsCaseWorkspaceEndpoints
         // Existing persisted operations data only: no placeholder costs or dummy notes.
         api.MapGet("/cases/{id:guid}/workspace", async (
             Guid id, HttpContext http, OperationsCaseAccess access,
-            OperationsDbContext db, CancellationToken ct) =>
+            OperationsDbContext db, Dhole.Operations.Api.Integrations.OperationsAssignedUserLabels labels, CancellationToken ct) =>
         {
             if (!await access.CanReadAsync(id, http.User, ct)) return Results.Forbid();
             var stages = await db.CaseStages.AsNoTracking()
@@ -95,7 +95,9 @@ public static class OperationsCaseWorkspaceEndpoints
                         .Select(t => t.Name).FirstOrDefault(),
                     AssignedUserId = db.StageAssignments.Where(a =>
                         a.CaseStageId == s.Id && a.ReleasedAtUtc == null)
-                        .Select(a => (Guid?)a.UserId).FirstOrDefault(),
+                        .Select(a => (Guid?)a.UserId).FirstOrDefault() ??
+                        db.ApertureValidations.Where(v => v.CaseStageId == s.Id && v.Status == "PENDING")
+                            .OrderBy(v => v.Slot).Select(v => (Guid?)v.UserId).FirstOrDefault(),
                     AssignedAtUtc = db.StageAssignments.Where(a =>
                         a.CaseStageId == s.Id && a.ReleasedAtUtc == null)
                         .Select(a => (DateTimeOffset?)a.AssignedAtUtc).FirstOrDefault(),
@@ -129,7 +131,10 @@ public static class OperationsCaseWorkspaceEndpoints
             var snapshotJson = await db.AcceptedQuoteSnapshots.AsNoTracking().Where(x => x.CaseId == id)
                 .OrderByDescending(x => x.CommercialRevision).Select(x => x.SnapshotJson).FirstOrDefaultAsync(ct);
             var commercialData = OperationsCommercialSnapshotReader.Summary(snapshotJson);
-            return Results.Ok(new { caseId = id, stages, validators, quotes, milestones, tasks, commercialData });
+            var people = await labels.ReadAsync(validators.Select(v => v.UserId)
+                .Concat(stages.Where(s => s.AssignedUserId.HasValue).Select(s => s.AssignedUserId!.Value))
+                .Concat(stages.SelectMany(s => s.SupervisorUserIds)), ct);
+            return Results.Ok(new { caseId = id, stages, validators, quotes, milestones, tasks, commercialData, people });
         });
 
         api.MapGet("/cases/{id:guid}/commercial/costs", async (
