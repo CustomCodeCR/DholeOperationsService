@@ -27,6 +27,11 @@ services:
       DOTNET_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
       ConnectionStrings__Postgres: "Host=${POSTGRES_HOST:-postgres};Port=${POSTGRES_PORT:-5432};Database=${OPERATIONS_DB:-dhole_operations};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
       Redis__ConnectionString: ${REDIS_CONNECTION_STRING:-redis:6379}
+      # Dedicated Pricing -> Operations Inbox contract; API-only Crm__ApiBaseUrl
+      # does not configure the background worker's internal CRM HTTP client.
+      Crm__OperationsAcceptance__BaseAddress: ${CRM_HTTP_URL:-http://crm-api:8080}
+      Crm__OperationsAcceptance__InternalServiceKey: ${INTERNAL_SERVICE_KEY}
+      PricingAcceptance__CompanyId: ${OPERATIONS_ACCEPTANCE_COMPANY_ID:-}
     networks: [dhole-runtime]
 networks:
   dhole-runtime:
