@@ -22,6 +22,9 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
     public DbSet<OperationsDocument> Documents => Set<OperationsDocument>();
     public DbSet<OperationsDocumentVersion> DocumentVersions => Set<OperationsDocumentVersion>();
     public DbSet<OperationsDocumentExtractionJob> ExtractionJobs => Set<OperationsDocumentExtractionJob>();
+    public DbSet<OperationsAcceptedQuoteSnapshot> AcceptedQuoteSnapshots => Set<OperationsAcceptedQuoteSnapshot>();
+    public DbSet<OperationsCaseServiceLine> CaseServiceLines => Set<OperationsCaseServiceLine>();
+    public DbSet<OperationsCaseEquipmentLine> CaseEquipmentLines => Set<OperationsCaseEquipmentLine>();
     public DbSet<OperationsCaseQuoteLink> CaseQuoteLinks => Set<OperationsCaseQuoteLink>();
     public DbSet<OperationsCaseQuoteCost> CaseQuoteCosts => Set<OperationsCaseQuoteCost>();
     public DbSet<OperationsCaseMilestone> CaseMilestones => Set<OperationsCaseMilestone>();
@@ -165,6 +168,43 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
             e.HasIndex(x => new { x.Status, x.RequestedAtUtc });
         });
 
+
+        m.Entity<OperationsAcceptedQuoteSnapshot>(e =>
+        {
+            e.ToTable("operations_accepted_quote_snapshots");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Case).WithMany().HasForeignKey(x => x.CaseId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.Property(x => x.SnapshotJson).HasColumnName("snapshot_json")
+                .HasColumnType("jsonb").IsRequired();
+            e.HasIndex(x => x.CaseId).IsUnique();
+            e.HasIndex(x => x.EventId).IsUnique();
+            e.HasIndex(x => new { x.QuoteId, x.AcceptedOptionId, x.CommercialRevision }).IsUnique();
+        });
+        m.Entity<OperationsCaseServiceLine>(e =>
+        {
+            e.ToTable("operations_case_service_lines");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Case).WithMany().HasForeignKey(x => x.CaseId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.Property(x => x.ServiceCode).HasMaxLength(60).IsRequired();
+            e.Property(x => x.ServiceName).HasMaxLength(200).IsRequired();
+            e.Property(x => x.Source).HasMaxLength(30).IsRequired();
+            e.Property(x => x.ReviewStatus).HasMaxLength(40).IsRequired();
+            e.HasIndex(x => x.CaseId);
+        });
+        m.Entity<OperationsCaseEquipmentLine>(e =>
+        {
+            e.ToTable("operations_case_equipment_lines");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Case).WithMany().HasForeignKey(x => x.CaseId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.Property(x => x.EquipmentCode).HasMaxLength(50).IsRequired();
+            e.Property(x => x.EquipmentName).HasMaxLength(200).IsRequired();
+            e.Property(x => x.UnitWeightsKgJson).HasColumnName("unit_weights_kg_json")
+                .HasColumnType("jsonb").IsRequired();
+            e.HasIndex(x => x.CaseId);
+        });
 
         m.Entity<OperationsCaseQuoteLink>(e =>
         {
