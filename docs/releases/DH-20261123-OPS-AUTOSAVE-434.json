@@ -44,8 +44,9 @@
     {
       "repository": "CustomCodeCR/DholeCRMService",
       "previousVersion": "1.43.1",
-      "version": "1.43.1",
-      "changed": false
+      "version": "1.44.0",
+      "changed": true,
+      "candidateBranch": "feature/DH-20261123-OPS-AUTOSAVE-434"
     },
     {
       "repository": "CustomCodeCR/DholeNotificationsService",
@@ -79,7 +80,8 @@
     "Offline local fallback, on-screen saved/error status and cleanup after creation",
     "Regression tests for isolated persistence and web API binding",
     "After dual Aperturas approval assign Origin immediately through weighted pool, with durable reconciliation worker and idempotent Origin progress",
-    "Pricing transactionally publishes pricing.quote.accepted.v1 commercial snapshot; Operations consumer remains pending"
+    "Pricing transactionally publishes pricing.quote.accepted.v1 commercial snapshot; Operations consumer remains pending",
+    "CRM Auth-verified internal account/executive projection for Operations consumer"
   ],
   "remaining": "Acceptance from Pricing, snapshots, validation state expansion, added services, pricing reviews, origin transfer, CRM/Auth/Storage/Notifications/Audit integration pending coordinated release"
 }
