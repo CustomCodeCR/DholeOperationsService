@@ -126,7 +126,10 @@ public static class OperationsCaseWorkspaceEndpoints
                 .Select(t => new { t.Id, t.CaseStageId, t.Title, t.Details,
                     t.Status, t.Priority, t.AssignedUserId, t.DueAtUtc,
                     t.CompletedAtUtc }).ToArrayAsync(ct);
-            return Results.Ok(new { caseId = id, stages, validators, quotes, milestones, tasks });
+            var snapshotJson = await db.AcceptedQuoteSnapshots.AsNoTracking().Where(x => x.CaseId == id)
+                .OrderByDescending(x => x.CommercialRevision).Select(x => x.SnapshotJson).FirstOrDefaultAsync(ct);
+            var commercialData = OperationsCommercialSnapshotReader.Summary(snapshotJson);
+            return Results.Ok(new { caseId = id, stages, validators, quotes, milestones, tasks, commercialData });
         });
 
         api.MapGet("/cases/{id:guid}/commercial/costs", async (
@@ -143,7 +146,10 @@ public static class OperationsCaseWorkspaceEndpoints
                     c.SupplierName, c.CurrencyCode, c.CostAmount,
                     SaleAmount = canSeeSale ? (decimal?)c.SaleAmount : null,
                     c.CapturedAtUtc }).ToArrayAsync(ct);
-            return Results.Ok(new { caseId = id, items = costs });
+            var snapshotJson = await db.AcceptedQuoteSnapshots.AsNoTracking().Where(x => x.CaseId == id)
+                .OrderByDescending(x => x.CommercialRevision).Select(x => x.SnapshotJson).FirstOrDefaultAsync(ct);
+            var snapshotItems = OperationsCommercialSnapshotReader.Costs(snapshotJson, canSeeSale);
+            return Results.Ok(new { caseId = id, items = costs, snapshotItems });
         });
 
         // Editing is intentionally limited to mutable opening metadata. The accepted

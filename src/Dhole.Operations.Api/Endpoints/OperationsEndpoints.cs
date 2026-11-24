@@ -229,6 +229,8 @@ public static class OperationsEndpoints
                     c.Id, c.Idtra, c.AccountId, c.ExecutiveUserId, c.ModalityCode,
                     c.OriginCountryCode, c.DestinationCountryCode,
                     c.ApertureType, c.SourceQuoteId, c.SourceQuoteOptionId,
+                    QuoteNumber = db.CaseQuoteLinks.Where(q => q.CaseId == c.Id && q.IsPrimary)
+                        .OrderByDescending(q => q.SnapshotVersion).Select(q => q.QuoteNumber).FirstOrDefault(),
                     c.Status, c.Priority, c.CreatedAtUtc, c.UpdatedAtUtc,
                     DepartmentCode = c.Stages.OrderByDescending(s => s.Status == "IN_PROGRESS")
                         .ThenByDescending(s => s.Status == "READY")
