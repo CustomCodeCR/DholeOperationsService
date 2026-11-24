@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Dhole.Operations.Persistence.Messaging;
+using Dhole.Operations.Application.Cases;
 using System.Data;
 using Dhole.Operations.Persistence.Audit;
 using Dhole.Operations.Api.Integrations;
@@ -256,7 +257,8 @@ public static class OperationsTeamValidationEndpoints
 
         api.MapPost("/cases/{caseId:guid}/aperture-validations/{validationId:guid}/decision", async (
             Guid caseId, Guid validationId, ReviewDecisionRequest input, HttpContext http,
-            OperationsDbContext db, CancellationToken ct) =>
+            OperationsDbContext db, AssignStageHandler originAssigner,
+            ILogger<OperationsTeamValidationEndpoints> logger, CancellationToken ct) =>
         {
             var actor = OperationsCaseAccess.UserId(http.User);
             if (actor is null ||
@@ -293,6 +295,7 @@ public static class OperationsTeamValidationEndpoints
             var otherApproved = await db.ApertureValidations.AnyAsync(v =>
                 v.CaseStageId == stage.Id && v.Id != validation.Id && v.Status == "APPROVED", ct);
             var bothApproved = decision == "APPROVED" && otherApproved;
+            Guid? originStageId = null;
             if (decision == "REJECTED")
             {
                 stage.Status = "CHANGES_REQUIRED";
@@ -304,11 +307,20 @@ public static class OperationsTeamValidationEndpoints
                 stage.CompletedAtUtc = DateTimeOffset.UtcNow;
                 operation.Status = "APERTURA_VALIDADA";
                 // Origin starts only after BOTH reviewers approve the same opening.
-                if (!await db.CaseStages.AnyAsync(s =>
-                    s.CaseId == caseId && s.DepartmentCode == "COORDINACION_ORIGEN", ct))
-                    db.CaseStages.Add(new OperationsCaseStage {
+                var existingOrigin = await db.CaseStages.SingleOrDefaultAsync(s =>
+                    s.CaseId == caseId && s.DepartmentCode == "COORDINACION_ORIGEN", ct);
+                if (existingOrigin is null)
+                {
+                    existingOrigin = new OperationsCaseStage {
                         CaseId = caseId, DepartmentCode = "COORDINACION_ORIGEN", Status = "PENDING"
-                    });
+                    };
+                    db.CaseStages.Add(existingOrigin);
+                }
+                originStageId = existingOrigin.Id;
+                db.OutboxMessages.Add(OperationsOutboxFactory.Create(
+                    "operations.case.validated.v1",
+                    JsonSerializer.Serialize(new { caseId, stageId = stage.Id,
+                        originStageId, actorId = actor.Value, operation.CompanyId })));
             }
             stage.Version++;
             operation.Version++;
@@ -323,9 +335,27 @@ public static class OperationsTeamValidationEndpoints
                     version = operation.Version, status = operation.Status })));
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
+            StageAssignedResult? originAssignment = null;
+            if (bothApproved && originStageId.HasValue)
+            {
+                try
+                {
+                    // Atomic weighted-pool assignment reuses the existing handler.
+                    originAssignment = await originAssigner.HandleAsync(
+                        new AssignStageCommand(caseId, originStageId.Value, actor.Value), ct);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // The approval is committed; a worker retries the unassigned
+                    // stage after transient failures instead of claiming success.
+                    logger.LogError(ex,
+                        "Origin assignment pending for validated case {CaseId}", caseId);
+                }
+            }
             return Results.Ok(new { validation.Id, validation.Status,
                 stageStatus = stage.Status, operationStatus = operation.Status,
-                bothApproved, duplicate = false });
+                bothApproved, originStageId, originAssigned = originAssignment is not null,
+                originAssigneeId = originAssignment?.UserId, duplicate = false });
         });
 
         api.MapPatch("/teams/{teamId:guid}/active", async (
