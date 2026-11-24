@@ -1,3 +1,7 @@
+## [0.21.0] - 2026-11-24
+
+- MINOR: comparación de snapshot QUO aceptada contra datos operativos persistidos, normalización de peso/volumen, semáforo, solicitudes por huella de discrepancias con historial independiente y respuesta de Pricing por Inbox. No crea servicios ficticios ni modifica la cotización. Contactos operativos de CRM mediante contrato interno autorizado.
+
 ## [0.20.3] - 2026-11-24
 
 - PATCH: recuperar automáticamente aperturas pendientes nuevas e históricas; validar dos operativos disponibles y autorizados en Auth, conservar doble revisión, carga ponderada, bloqueo por empresa, auditoría y Outbox. No reasignar ni aprobar casos existentes. Mantener autorización de replay para validadores.

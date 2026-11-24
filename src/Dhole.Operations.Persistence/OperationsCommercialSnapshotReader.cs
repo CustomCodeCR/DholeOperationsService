@@ -40,7 +40,12 @@ public static class OperationsCommercialSnapshotReader
             carrierReference = Text(providers, "carrierName"), agentReference = Text(providers, "agentName"),
             weightValue = Number(cargo, "weightKg"), volumeValue = Number(cargo, "volumeCbm"),
             packageCount = Number(cargo, "packages"), validFrom = Text(e, "validFrom"), validTo = Text(e, "validTo"),
-            freeDays = Number(e, "freeDays")
+            freeDays = Number(e, "freeDays"),
+            weightUnit = "KG", volumeUnit = "CBM",
+            services = Get(e, "services").ValueKind == JsonValueKind.Array ? Get(e, "services").EnumerateArray()
+                .Select(x => Text(x, "serviceName")).Where(x => !string.IsNullOrWhiteSpace(x)).ToArray() : [],
+            equipment = Get(e, "equipment").ValueKind == JsonValueKind.Array ? Get(e, "equipment").EnumerateArray()
+                .Select(x => new { equipmentType = Text(x, "equipmentCode"), equipmentName = Text(x, "equipmentName"), quantity = Number(x, "quantity") }).ToArray() : []
         };
     }
     public static IReadOnlyList<SnapshotCost> Costs(string? json, bool canSeeSale)
