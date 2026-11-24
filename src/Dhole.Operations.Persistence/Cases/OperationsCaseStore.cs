@@ -181,7 +181,7 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
             carrierReference = StringProperty(providers, "carrierName"),
             agentName = StringProperty(providers, "agentName"),
             equipment = equipment.Select(item => new {
-                equipmentType = item.Code, item.Quantity, quantity = item.Quantity,
+                equipmentType = item.Code, quantity = item.Quantity,
                 equipmentId = item.Id, equipmentName = item.Name
             }).ToArray()
         };
