@@ -34,7 +34,7 @@ public static class OperationsCommercialSnapshotReader
             provenance = Text(e, "operationType"), shipmentType = Text(e, "shipmentMode"),
             pol = Text(route, "polName"), poe = Text(route, "poeName"), pod = Text(route, "podName"),
             pickupAddress = Text(e, "pickupAddress"), transitTime = Text(e, "transitTime"),
-            clientPoReference = Text(e, "otherReferences"),
+            quoteReferences = Text(e, "otherReferences"),
             executiveName = Text(e, "commercialExecutiveName"), clientName = Text(e, "clientName"),
             carrierReference = Text(providers, "carrierName"), agentReference = Text(providers, "agentName"),
             weightValue = Number(cargo, "weightKg"), volumeValue = Number(cargo, "volumeCbm"),

@@ -204,7 +204,7 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
             provenance = StringProperty(accepted, "operationType"),
             pickupAddress = StringProperty(accepted, "pickupAddress"),
             transitTime = StringProperty(accepted, "transitTime"),
-            clientPoReference = StringProperty(accepted, "otherReferences"),
+            quoteReferences = StringProperty(accepted, "otherReferences"),
             executiveName = StringProperty(accepted, "commercialExecutiveName"),
             pol = StringProperty(route, "polName"),
             pod = StringProperty(route, "podName"),
