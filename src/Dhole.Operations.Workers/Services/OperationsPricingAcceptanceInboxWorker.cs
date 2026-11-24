@@ -133,6 +133,8 @@ public sealed class OperationsPricingAcceptanceInboxWorker(
         var accountId = ReadGuid(root, "crmAccountId");
         var clientName = ReadString(root, "clientName");
         var actorId = ReadGuid(root, "acceptedByUserId");
+        if (actorId == Guid.Empty && !string.IsNullOrWhiteSpace(ReadString(root, "historicalIdtra")))
+            actorId = ReadGuid(root, "historicalSourceActorId");
         var version = ReadInt(root, "commercialRevision");
         var quoteNumber = ReadString(root, "quoteNumber");
         var mode = ReadString(root, "shipmentMode");

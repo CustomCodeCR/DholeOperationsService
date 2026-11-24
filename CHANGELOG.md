@@ -1,3 +1,9 @@
+## [0.20.0] - 2026-11-24 · DH-20261124-OPS-HISTORICAL-IDTRA
+
+- MINOR candidato: recuperación de IDTRA histórico numérico único desde snapshot Pricing, preserva identificador original y eleva contador global bajo bloqueo transaccional; conflictos quedan pendientes sin renumerar.
+- Configuración administrativa GET/PUT del próximo IDTRA con control de concurrencia, solo incrementos, motivo y auditoría Outbox. Se conserva REST y realtime existente.
+- CI y staging pendientes; producción no autorizada.
+
 ## [0.19.1] - 2026-11-24 · DH-20261124-OPS-QUOTE-ACCEPTANCE-440
 
 - PATCH: corrige la integración de Pricing aceptada con Operations: configura la URL/clave interna CRM, usa DholeSystem develop en staging y reintenta Inbox pendiente. Si la QUO histórica no tenía accountId, CRM resuelve solo una cuenta activa exacta; nunca inventa cliente ni empresa.
