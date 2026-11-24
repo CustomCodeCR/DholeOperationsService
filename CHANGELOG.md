@@ -1,3 +1,7 @@
+## [0.20.1] - 2026-11-24
+
+- PATCH: no bloquear apertura por rubros históricos incompatibles con el esquema financiero. Preservar snapshot completo, proyectar rubros compatibles (incluidos de cantidad cero) y crear tarea explícita de conciliación para excepciones.
+
 ## [0.20.0] - 2026-11-24 · DH-20261124-OPS-HISTORICAL-IDTRA
 
 - MINOR candidato: recuperación de IDTRA histórico numérico único desde snapshot Pricing, preserva identificador original y eleva contador global bajo bloqueo transaccional; conflictos quedan pendientes sin renumerar.

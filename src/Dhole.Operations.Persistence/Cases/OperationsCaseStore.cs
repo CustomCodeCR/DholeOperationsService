@@ -127,12 +127,17 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
             UnitCost = DecimalProperty(element, "unitCost"),
             UnitSale = DecimalProperty(element, "unitSale")
         }).ToArray();
-        if (costs.Any(x => x.RateDetailId == Guid.Empty ||
+        // Pricing is the authority for accepted historical commercial data. A
+        // malformed legacy row must not prevent materializing the operational case.
+        // Preserve every row verbatim in the immutable snapshot. Only rows that
+        // fit the local financial schema are projected; exceptions remain visible
+        // as a reconciliation task and cannot be treated as settled costs.
+        var rejectedCosts = costs.Where(x => x.RateDetailId == Guid.Empty ||
             x.Description.Length is < 1 or > 500 ||
             x.CurrencyCode.Length != 3 || !x.CurrencyCode.All(char.IsAsciiLetterUpper) ||
-            x.Quantity <= 0 || x.UnitCost < 0 || x.UnitSale < 0 ||
-            x.CostCode.Length is < 1 or > 60))
-            throw new InvalidOperationException("Accepted quotation cost lines are invalid.");
+            x.Quantity < 0 || x.UnitCost < 0 || x.UnitSale < 0 ||
+            x.CostCode.Length is < 1 or > 60).ToArray();
+        var projectableCosts = costs.Except(rejectedCosts).ToArray();
 
         // Serialize under a shared business key, not just EventId: two distinct
         // retries of the same accepted A/B quotation cannot generate two IDTRA.
@@ -191,6 +196,8 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
             quoteId = input.QuoteId,
             acceptedOptionId = input.AcceptedOptionId,
             commercialRevision = input.CommercialRevision,
+            commercialCostReconciliationRequired = rejectedCosts.Length > 0,
+            commercialCostReconciliationCount = rejectedCosts.Length,
             shipmentType = input.ModalityCode.ToUpperInvariant(),
             incoterm = StringProperty(accepted, "incoterm"),
             pol = StringProperty(route, "polName"),
@@ -266,7 +273,7 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
         // the unique catalog reference only once and all other details in the
         // immutable JSON snapshot. No Pricing row is mutated.
         var seenCostIds = new HashSet<Guid>();
-        foreach (var item in costs)
+        foreach (var item in projectableCosts)
         {
             var catalogCostId = item.SourceCostId != Guid.Empty &&
                 seenCostIds.Add(item.SourceCostId)
@@ -282,6 +289,15 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
             });
         }
         db.CaseQuoteLinks.Add(quoteLink);
+        if (rejectedCosts.Length > 0)
+        {
+            db.CaseTasks.Add(new OperationsCaseTask {
+                CaseId = operation.Id, CaseStageId = stage.Id,
+                Title = "Conciliar rubros comerciales históricos",
+                Details = $"{rejectedCosts.Length} rubros no cumplen el contrato local. Todos se conservan en el snapshot inmutable de Pricing. Revisar antes de conciliación financiera.",
+                Status = "PENDING", Priority = 1
+            });
+        }
 
         AddPricingInboxReceipt(input.SourceEventId);
         OperationsAuditWriter.Case(db, operation.Id, stage.Id, input.ActorUserId,
@@ -289,7 +305,8 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
             new { operation.Idtra, input.QuoteId, input.AcceptedOptionId,
                 input.CommercialRevision, input.SourceEventId,
                 services = services.Length, equipment = equipment.Sum(x => x.Quantity),
-                costs = costs.Length });
+                costs = costs.Length, projectedCosts = projectableCosts.Length,
+                costsPendingReconciliation = rejectedCosts.Length });
         Enqueue("operations.case.created.v1", new {
             caseId = operation.Id, operation.Idtra, operation.CompanyId,
             quoteId = input.QuoteId, quoteOptionId = input.AcceptedOptionId,
