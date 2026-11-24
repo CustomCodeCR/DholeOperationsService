@@ -1,3 +1,9 @@
+## [0.20.2] - 2026-11-24
+
+- PATCH: retornar número QUO en listado y proyectar datos comerciales y todos los rubros originales del snapshot, sin exponer JSON ni ventas a usuarios no autorizados. Los rubros proyectados siguen separados del original.
+
+- PATCH: ordenar Trámites por SequenceNumber descendente antes de paginar, incluyendo IDTRA históricos y nuevos; desempate estable, filtros y ACL conservados. Dashboard de aperturas recientes mantiene orden cronológico.
+
 ## [0.20.1] - 2026-11-24
 
 - PATCH: no bloquear apertura por rubros históricos incompatibles con el esquema financiero. Preservar snapshot completo, proyectar rubros compatibles (incluidos de cantidad cero) y crear tarea explícita de conciliación para excepciones.

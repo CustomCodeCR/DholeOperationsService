@@ -223,12 +223,14 @@ public static class OperationsEndpoints
             if (accountId.HasValue && accountId.Value != Guid.Empty)
                 query = query.Where(c => c.AccountId == accountId.Value);
             var total = await query.CountAsync(ct);
-            var items = await query.OrderByDescending(c => c.CreatedAtUtc).ThenBy(c => c.Id)
+            var items = await query.OrderByIdtraDescending()
                 .Skip((currentPage - 1) * size).Take(size).Select(c => new
                 {
                     c.Id, c.Idtra, c.AccountId, c.ExecutiveUserId, c.ModalityCode,
                     c.OriginCountryCode, c.DestinationCountryCode,
                     c.ApertureType, c.SourceQuoteId, c.SourceQuoteOptionId,
+                    QuoteNumber = db.CaseQuoteLinks.Where(q => q.CaseId == c.Id && q.IsPrimary)
+                        .OrderByDescending(q => q.SnapshotVersion).Select(q => q.QuoteNumber).FirstOrDefault(),
                     c.Status, c.Priority, c.CreatedAtUtc, c.UpdatedAtUtc,
                     DepartmentCode = c.Stages.OrderByDescending(s => s.Status == "IN_PROGRESS")
                         .ThenByDescending(s => s.Status == "READY")

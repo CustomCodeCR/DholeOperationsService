@@ -207,4 +207,29 @@ public sealed class OperationsAcceptedPricingQuotePostgresTests
         Assert.AreEqual(2, System.Text.Json.Nodes.JsonNode.Parse(snapshot.SnapshotJson)!["costLines"]!.AsArray().Count);
         Assert.AreEqual(1, await db.CaseTasks.CountAsync(x => x.CaseId == created.Id && x.Title == "Conciliar rubros comerciales históricos", ct));
     }
+
+    [TestMethod]
+    public async Task CaseListOrdersNumericIdtraAcrossPagesAndFilters()
+    {
+        await using var db = Db();
+        await db.Database.MigrateAsync();
+        var ct = CancellationToken.None;
+        var company = Guid.NewGuid(); var account = Guid.NewGuid();
+        var actor = Guid.NewGuid(); var executive = Guid.NewGuid();
+        var floor = await OperationsCaseStore.ReadNextIdtraAsync(db, ct);
+        var first = checked(floor + 20);
+        var store = new OperationsCaseStore(db);
+        foreach (var number in new[] { first + 2, first, first + 1 })
+        {
+            var input = Quote(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), account, actor, company, executive, []);
+            var payload = System.Text.Json.Nodes.JsonNode.Parse(input.CommercialSnapshotJson)!.AsObject();
+            payload["historicalIdtra"] = number == first + 2 ? $"IDTRA{number}" : $"IDTRA999.{number}";
+            await store.CreateAcceptedQuoteAsync(input with { CommercialSnapshotJson = payload.ToJsonString() }, ct);
+        }
+        var filtered = db.Cases.AsNoTracking().Where(c => c.AccountId == account && c.ApertureType == "AUTOMATIC");
+        var pageOne = await filtered.OrderByIdtraDescending().Take(2).Select(c => c.SequenceNumber).ToArrayAsync(ct);
+        var pageTwo = await filtered.OrderByIdtraDescending().Skip(2).Take(2).Select(c => c.SequenceNumber).ToArrayAsync(ct);
+        CollectionAssert.AreEqual(new[] { first + 2, first + 1 }, pageOne);
+        CollectionAssert.AreEqual(new[] { first }, pageTwo);
+    }
 }
