@@ -26,18 +26,19 @@ public sealed class OperationsOriginAssignmentWorker(
                 var candidates = await db.CaseStages.AsNoTracking()
                     .Where(stage => stage.DepartmentCode == "COORDINACION_ORIGEN"
                         && stage.Status == "PENDING"
-                        && stage.Case.Status == "APERTURA_VALIDADA")
+                        && (stage.Case.Status == "APERTURA_VALIDADA" ||
+                            (stage.Case.ApertureType == "MANUAL" && stage.Case.Status == "OPEN")))
                     .OrderBy(stage => stage.StartedAtUtc)
                     .ThenBy(stage => stage.Id)
                     .Take(30)
-                    .Select(stage => new { stage.Id, stage.CaseId })
+                    .Select(stage => new { stage.Id, stage.CaseId, stage.Case.ApertureType, stage.Case.CreatedBy })
                     .ToArrayAsync(stoppingToken);
 
                 foreach (var stage in candidates)
                 {
                     // The final validator is the actual author of the transition.
                     // Do not fabricate a shared Operations user for the worker.
-                    var actor = await db.ApertureValidations.AsNoTracking()
+                    var actor = stage.ApertureType == "MANUAL" ? stage.CreatedBy : await db.ApertureValidations.AsNoTracking()
                         .Where(validation =>
                             validation.CaseStage.CaseId == stage.CaseId
                             && validation.Status == "APPROVED")

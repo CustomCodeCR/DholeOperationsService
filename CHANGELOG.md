@@ -1,3 +1,9 @@
+# 0.20.4 — 2026-11-24
+
+- Restrict operational case reads and counters to active individual assignments and same-team supervisors; preserve system-administrator access.
+- Route complete manual openings directly to Origin and recover pending assignment using the durable worker. Automatic openings retain dual review.
+- Candidate: CI, realtime and staging validation pending.
+
 ## [0.20.3] - 2026-11-24
 
 - PATCH: recuperar automáticamente aperturas pendientes nuevas e históricas; validar dos operativos disponibles y autorizados en Auth, conservar doble revisión, carga ponderada, bloqueo por empresa, auditoría y Outbox. No reasignar ni aprobar casos existentes. Mantener autorización de replay para validadores.

@@ -81,7 +81,8 @@ public static class OperationsEndpoints
 
         api.MapPost("/cases", async (
             NewCaseRequest request, HttpContext http, CreateManualCaseHandler handler,
-            OperationsCaseAccess access, OperationsCrmAccountResolver crm, CancellationToken ct) =>
+            OperationsCaseAccess access, OperationsCrmAccountResolver crm, AssignStageHandler originAssigner,
+            ILoggerFactory loggerFactory, CancellationToken ct) =>
         {
             var actor = OperationsCaseAccess.UserId(http.User);
             var company = await access.ResolveCompanyIdAsync(http.User, ct);
@@ -95,12 +96,28 @@ public static class OperationsEndpoints
                 return Results.Json(new { code = crmAccount.ErrorCode }, statusCode: crmAccount.StatusCode);
             try
             {
+                var openingData = ValidateOpeningData(request.OpeningData);
+                var missing = OperationsOpeningDraftValidator.MissingFields(request.ModalityCode, openingData);
+                if (missing.Length > 0)
+                    return Results.Conflict(new { code = "APERTURE_MISSING_REQUIRED_FIELDS", missingFields = missing });
                 var result = await handler.HandleAsync(
                     new CreateManualCaseCommand(request.CompanyId,
                         request.AccountId, crmAccount.ExecutiveUserId!.Value, request.ModalityCode,
                         request.Priority, request.ComplexityPoints, actor.Value,
                         request.OriginCountryCode, request.DestinationCountryCode,
-                        ValidateOpeningData(request.OpeningData)), ct);
+                        openingData, SendDirectlyToOrigin: true), ct);
+                // The persisted pending Origin stage is recovered by the durable worker
+                // even if the immediate assignment fails. Never return failure after creation.
+                try
+                {
+                    await originAssigner.HandleAsync(new AssignStageCommand(
+                        result.Id, result.InitialStageId, actor.Value), ct);
+                }
+                catch (Exception ex)
+                {
+                    loggerFactory.CreateLogger("OperationsManualOrigin").LogWarning(ex,
+                        "Origin assignment pending for {CaseId}; worker will reconcile", result.Id);
+                }
                 return Results.Created($"/api/operations/cases/{result.Id}", result);
             }
             catch (ArgumentException e) { return Results.BadRequest(new { error = e.Message }); }
@@ -191,15 +208,7 @@ public static class OperationsEndpoints
 
             var size = Math.Clamp(pageSize ?? 25, 1, 100);
             var currentPage = Math.Max(1, page ?? 1);
-            var query = db.Cases.AsNoTracking();
-            if (!isAdmin) query = query.Where(c => c.CompanyId == company);
-            if (!OperationsCaseAccess.HasScope(http.User, "operations.case.read-all"))
-                query = query.Where(c => c.CreatedBy == actor.Value ||
-                    db.ApertureValidations.Any(v => v.CaseStage.CaseId == c.Id && v.UserId == actor.Value) ||
-                    c.Stages.Any(s => db.StageAssignments.Any(a =>
-                        a.CaseStageId == s.Id && a.UserId == actor.Value && a.ReleasedAtUtc == null)) ||
-                    c.Stages.Any(s => s.TeamId.HasValue &&
-                        db.TeamMembers.Any(m => m.TeamId == s.TeamId && m.UserId == actor.Value && m.IsAvailable)));
+            var query = access.FilterVisibleCases(db.Cases.AsNoTracking(), http.User, company);
             if (!string.IsNullOrWhiteSpace(q))
             {
                 var pattern = "%" + q.Trim().Replace("%", @"\%").Replace("_", @"\_") + "%";

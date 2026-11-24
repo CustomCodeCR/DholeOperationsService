@@ -6,7 +6,7 @@ public sealed record CreateManualCaseCommand(
     Guid CompanyId, Guid AccountId, Guid ExecutiveUserId,
     string ModalityCode, short Priority, decimal ComplexityPoints, Guid ActorUserId,
     string? OriginCountryCode = null, string? DestinationCountryCode = null,
-    string? OpeningDataJson = null);
+    string? OpeningDataJson = null, bool SendDirectlyToOrigin = false);
 
 /// <summary>Only called by the verified Pricing Stream + CRM internal account contract.</summary>
 public sealed record CreateAcceptedQuoteCaseCommand(

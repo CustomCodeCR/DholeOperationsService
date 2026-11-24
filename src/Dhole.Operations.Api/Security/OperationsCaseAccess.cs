@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Dhole.Operations.Persistence;
+using Dhole.Operations.Domain.Models;
 using Dhole.Operations.Domain.Services;
 using Microsoft.EntityFrameworkCore;
 
@@ -53,49 +54,48 @@ public sealed class OperationsCaseAccess(OperationsDbContext db)
         return OperationsCompanyBootstrapSelector.ResolveExisting(claimed, known);
     }
 
-    public async Task<bool> CanReadAsync(Guid caseId, ClaimsPrincipal user, CancellationToken ct)
+    // One SQL predicate for list, counts, direct REST reads and SignalR joins.
+    // An ordinary member needs BOTH the current team membership and a personal
+    // assignment. Only a supervisor of that same team can see its other cases.
+    public IQueryable<OperationsCase> FilterVisibleCases(IQueryable<OperationsCase> query,
+        ClaimsPrincipal user, Guid? company, Guid? teamId = null, string? department = null)
     {
         var actor = UserId(user);
         if (actor is null || !HasScope(user, "operations.case.read"))
-            return false;
-        var caseQuery = db.Cases.AsNoTracking().Where(x => x.Id == caseId);
-        if (!IsSystemAdministrator(user))
+            return query.Where(c => false);
+        var admin = IsSystemAdministrator(user);
+        if (!admin)
         {
-            var company = await ResolveCompanyIdAsync(user, ct);
-            if (company is null) return false;
-            caseQuery = caseQuery.Where(x => x.CompanyId == company.Value);
+            if (company is null) return query.Where(c => false);
+            query = query.Where(c => c.CompanyId == company.Value);
         }
-        if (HasScope(user, "operations.case.read-all"))
-            return await caseQuery.AnyAsync(ct);
-        return await caseQuery.AnyAsync(x =>
-            x.CreatedBy == actor.Value ||
-            db.ApertureValidations.Any(v => v.CaseStage.CaseId == x.Id && v.UserId == actor.Value) ||
-            x.Stages.Any(stage => db.StageAssignments.Any(assignment =>
-                assignment.CaseStageId == stage.Id &&
-                assignment.UserId == actor.Value && assignment.ReleasedAtUtc == null)) ||
-            x.Stages.Any(stage => stage.TeamId.HasValue &&
-                db.TeamMembers.Any(m => m.TeamId == stage.TeamId && m.UserId == actor.Value)), ct);
+        if (admin && teamId is null && department is null) return query;
+        return query.Where(c => c.Status != "CANCELLED" && c.Status != "COMPLETED" &&
+            c.Stages.Any(s => s.Status != "COMPLETED" && s.Status != "SKIPPED" &&
+                (!teamId.HasValue || s.TeamId == teamId) &&
+                (department == null || s.DepartmentCode == department) &&
+                (admin || (s.TeamId.HasValue &&
+                    db.TeamMembers.Any(m => m.TeamId == s.TeamId.Value &&
+                        m.UserId == actor.Value && m.Team.IsActive &&
+                        (m.IsSupervisor ||
+                         db.StageAssignments.Any(a => a.CaseStageId == s.Id &&
+                             a.TeamId == m.TeamId && a.UserId == actor.Value && a.ReleasedAtUtc == null) ||
+                         (s.DepartmentCode == "APERTURAS" && c.ApertureType == "AUTOMATIC" &&
+                          db.ApertureValidations.Any(v => v.CaseStageId == s.Id &&
+                             v.TeamId == m.TeamId && v.UserId == actor.Value))))))));
+    }
+
+    public async Task<bool> CanReadAsync(Guid caseId, ClaimsPrincipal user, CancellationToken ct)
+    {
+        var company = IsSystemAdministrator(user) ? null : await ResolveCompanyIdAsync(user, ct);
+        return await FilterVisibleCases(db.Cases.AsNoTracking().Where(c => c.Id == caseId),
+            user, company).AnyAsync(ct);
     }
 
     public async Task<Guid[]> AccessibleCaseIdsAsync(Guid[] caseIds, ClaimsPrincipal user, CancellationToken ct)
     {
-        var actor = UserId(user);
-        if (actor is null || !HasScope(user, "operations.case.read")) return [];
-        var query = db.Cases.AsNoTracking().Where(x => caseIds.Contains(x.Id));
-        if (!IsSystemAdministrator(user))
-        {
-            var company = await ResolveCompanyIdAsync(user, ct);
-            if (company is null) return [];
-            query = query.Where(x => x.CompanyId == company.Value);
-        }
-        if (!HasScope(user, "operations.case.read-all"))
-            query = query.Where(x => x.CreatedBy == actor.Value ||
-                db.ApertureValidations.Any(v => v.CaseStage.CaseId == x.Id && v.UserId == actor.Value) ||
-                x.Stages.Any(stage => db.StageAssignments.Any(assignment =>
-                    assignment.CaseStageId == stage.Id &&
-                    assignment.UserId == actor.Value && assignment.ReleasedAtUtc == null)) ||
-                x.Stages.Any(stage => stage.TeamId.HasValue &&
-                    db.TeamMembers.Any(m => m.TeamId == stage.TeamId && m.UserId == actor.Value)));
-        return await query.Select(x => x.Id).ToArrayAsync(ct);
+        var company = IsSystemAdministrator(user) ? null : await ResolveCompanyIdAsync(user, ct);
+        return await FilterVisibleCases(db.Cases.AsNoTracking().Where(c => caseIds.Contains(c.Id)),
+            user, company).Select(c => c.Id).ToArrayAsync(ct);
     }
 }

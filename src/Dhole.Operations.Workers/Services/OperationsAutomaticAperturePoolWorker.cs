@@ -25,7 +25,7 @@ public sealed class OperationsAutomaticAperturePoolWorker(IServiceScopeFactory s
                     ids = await db.CaseStages.AsNoTracking()
                         .Where(s => s.DepartmentCode == "APERTURAS" &&
                             (s.Status == "PENDING" || s.Status == "PENDING_VALIDATION") &&
-                            s.Case.Status == "PENDING_VALIDATION" &&
+                            s.Case.Status == "PENDING_VALIDATION" && s.Case.ApertureType == "AUTOMATIC" &&
                             !db.ApertureValidations.Any(v => v.CaseStageId == s.Id))
                         .OrderBy(s => s.Case.CreatedAtUtc).ThenBy(s => s.Id)
                         .Select(s => s.CaseId).ToArrayAsync(stoppingToken);
