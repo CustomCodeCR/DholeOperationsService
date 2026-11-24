@@ -25,7 +25,7 @@ public static class OperationsAutomaticAperturePool
         var operation = await db.Cases.SingleOrDefaultAsync(c => c.Id == caseId && c.CompanyId == company.Value, ct);
         if (operation is null || operation.Status != "PENDING_VALIDATION" || operation.CreatedBy == Guid.Empty)
             return false;
-        if (operation.ApertureType == "MANUAL" && OperationsOpeningDraftValidator.MissingFields(
+        if (operation.ApertureType == "MANUAL" && OperationsOpeningDraftPolicy.MissingFields(
                 operation.ModalityCode, operation.OpeningDataJson).Length > 0) return false;
         var stage = await db.CaseStages.SingleOrDefaultAsync(x => x.CaseId == caseId && x.DepartmentCode == "APERTURAS", ct);
         if (stage is null || stage.Status is not ("PENDING" or "PENDING_VALIDATION") ||
