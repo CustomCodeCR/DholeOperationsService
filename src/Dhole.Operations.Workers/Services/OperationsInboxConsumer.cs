@@ -33,6 +33,16 @@ public sealed class OperationsInboxConsumer(
                     var idText = entry.Values.FirstOrDefault(x => x.Name == "id").Value.ToString();
                     if (!Guid.TryParse(idText, out var eventId))
                     {
+                        // Framework-format events from Pricing are consumed by
+                        // their own durable review-result consumer group. This
+                        // legacy realtime group must not retain them forever.
+                        var externalType = entry.Values.FirstOrDefault(x =>
+                            x.Name == "message_type").Value.ToString();
+                        if (externalType == "pricing.operations-review.resolved.v1")
+                        {
+                            await database.StreamAcknowledgeAsync(stream, group, entry.Id);
+                            continue;
+                        }
                         logger.LogWarning("Skipping malformed Operations event in stream {Stream} at {EntryId}; retained pending", stream, entry.Id);
                         continue;
                     }
