@@ -71,7 +71,7 @@ public sealed class OperationsAcceptedPricingQuotePostgresTests
     {
         var company=Guid.NewGuid(); var quoteId=Guid.NewGuid();var option=Guid.NewGuid();
         var account=Guid.NewGuid();var actor=Guid.NewGuid();var executive=Guid.NewGuid();
-        var eventId=Guid.NewGuid();
+        var eventId=Guid.NewGuid(); var retryEventId=Guid.NewGuid();
         var input=Quote(eventId,quoteId,option,account,actor,company,executive,
             [Guid.NewGuid(),Guid.NewGuid()]);
         AcceptedQuoteCaseCreatedResult created;
@@ -93,7 +93,7 @@ public sealed class OperationsAcceptedPricingQuotePostgresTests
         await using(var db=Db())
         {
             var writer=new OperationsCaseStore(db);
-            var differentEvent=Quote(Guid.NewGuid(),quoteId,option,account,
+            var differentEvent=Quote(retryEventId,quoteId,option,account,
                 actor,company,executive,[Guid.NewGuid(),Guid.NewGuid()]);
             var retry=await writer.CreateAcceptedQuoteAsync(differentEvent,CancellationToken.None);
             Assert.AreEqual(created.Idtra,retry.Idtra);
@@ -113,7 +113,8 @@ public sealed class OperationsAcceptedPricingQuotePostgresTests
             Assert.AreEqual(3,lines.Sum(x=>x.Quantity));
             Assert.AreEqual(2,await db.CaseQuoteCosts.CountAsync(x=>x.QuoteLink.CaseId==created.Id));
             Assert.AreEqual(2,await db.InboxMessages.CountAsync(x=>
-                x.ConsumerService=="operations-pricing-quote" && x.EventName=="pricing.quote.accepted.v1"));
+                x.ConsumerService=="operations-pricing-quote" && x.EventName=="pricing.quote.accepted.v1" &&
+                (x.EventId==eventId || x.EventId==retryEventId)));
             Assert.AreEqual("PENDING_VALIDATION",await db.Cases.Where(x=>x.Id==created.Id)
                 .Select(x=>x.Status).SingleAsync());
         }
@@ -147,5 +148,43 @@ public sealed class OperationsAcceptedPricingQuotePostgresTests
             Guid.NewGuid(),Guid.NewGuid(),Guid.NewGuid(),[]);
         await Assert.ThrowsAsync<InvalidOperationException>(async ()=>
             await writer.CreateAcceptedQuoteAsync(invalid,CancellationToken.None));
+    }
+
+    [TestMethod]
+    public async Task HistoricalIdtraPreservesExactValueAndNextNumberIsConfigurable()
+    {
+        await using var db = Db();
+        await db.Database.MigrateAsync();
+        var ct = CancellationToken.None;
+        var originalNext = await OperationsCaseStore.ReadNextIdtraAsync(db, ct);
+        var historicNumber = checked(originalNext + 20);
+        var historicIdtra = $"IDTRA999.{historicNumber}";
+        var quoteId = Guid.NewGuid(); var optionId = Guid.NewGuid();
+        var actor = Guid.NewGuid(); var account = Guid.NewGuid();
+        var company = Guid.NewGuid(); var executive = Guid.NewGuid();
+        var input = Quote(Guid.NewGuid(), quoteId, optionId, account, actor, company, executive, []);
+        var payload = System.Text.Json.Nodes.JsonNode.Parse(input.CommercialSnapshotJson)!.AsObject();
+        payload["historicalIdtra"] = historicIdtra;
+        input = input with { CommercialSnapshotJson = payload.ToJsonString() };
+        var store = new OperationsCaseStore(db);
+        var historical = await store.CreateAcceptedQuoteAsync(input, ct);
+        Assert.AreEqual(historicIdtra, historical.Idtra);
+        var repeated = await store.CreateAcceptedQuoteAsync(input, ct);
+        Assert.AreEqual(historical.Id, repeated.Id);
+        Assert.IsTrue(repeated.Existing);
+        Assert.AreEqual(historicNumber + 1, await OperationsCaseStore.ReadNextIdtraAsync(db, ct));
+        var desired = historicNumber + 10;
+        Assert.AreEqual((long?)desired, await OperationsCaseStore.ConfigureNextIdtraAsync(
+            db, desired, historicNumber + 1, actor, "Migration cutoff", ct));
+        Assert.IsNull(await OperationsCaseStore.ConfigureNextIdtraAsync(
+            db, desired - 1, desired, actor, "Unsafe rollback", ct));
+        Assert.IsNull(await OperationsCaseStore.ConfigureNextIdtraAsync(
+            db, desired + 1, historicNumber + 1, actor, "Stale editor", ct));
+        var first = await store.CreateAcceptedQuoteAsync(Quote(Guid.NewGuid(), Guid.NewGuid(),
+            Guid.NewGuid(), account, actor, company, executive, []), ct);
+        var second = await store.CreateAcceptedQuoteAsync(Quote(Guid.NewGuid(), Guid.NewGuid(),
+            Guid.NewGuid(), account, actor, company, executive, []), ct);
+        Assert.AreEqual($"IDTRA{desired}", first.Idtra);
+        Assert.AreEqual($"IDTRA{desired + 1}", second.Idtra);
     }
 }
