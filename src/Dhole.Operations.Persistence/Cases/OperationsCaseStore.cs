@@ -49,6 +49,296 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
         return new CaseCreatedResult(operation.Id, idtra, operation.Status, openingStage.Id);
     }
 
+    /// <summary>
+    /// Atomically materialize exactly one Operations case for a definitively
+    /// accepted parent QUO. PostgreSQL is the final authority for event Inbox,
+    /// business idempotency, IDTRA sequence and historical Pricing snapshot.
+    /// CRM actor/company must be resolved by the ingestion worker first.
+    /// </summary>
+    public async Task<AcceptedQuoteCaseCreatedResult> CreateAcceptedQuoteAsync(
+        CreateAcceptedQuoteCaseCommand input, CancellationToken ct)
+    {
+        if (new[] { input.CompanyId, input.AccountId, input.ExecutiveUserId,
+                input.ActorUserId, input.QuoteId, input.AcceptedOptionId, input.SourceEventId }
+                .Any(x => x == Guid.Empty) ||
+            string.IsNullOrWhiteSpace(input.QuoteNumber) ||
+            input.QuoteNumber.Length > 60 ||
+            input.CommercialRevision <= 0 ||
+            string.IsNullOrWhiteSpace(input.ModalityCode) ||
+            input.ModalityCode.Length > 30 ||
+            input.AcceptedAtUtc.Year < 2000 ||
+            input.CommercialSnapshotJson.Length > 1_000_000)
+            throw new InvalidOperationException("Verified Pricing acceptance metadata is incomplete.");
+
+        using var snapshot = JsonDocument.Parse(input.CommercialSnapshotJson);
+        var accepted = snapshot.RootElement;
+        if (accepted.ValueKind != JsonValueKind.Object ||
+            !GuidProperty(accepted, "quoteId").Equals(input.QuoteId) ||
+            !GuidProperty(accepted, "acceptedOptionId").Equals(input.AcceptedOptionId) ||
+            !GuidProperty(accepted, "crmAccountId").Equals(input.AccountId) ||
+            !GuidProperty(accepted, "acceptedByUserId").Equals(input.ActorUserId) ||
+            IntProperty(accepted, "commercialRevision") != input.CommercialRevision ||
+            !StringProperty(accepted, "shipmentMode")
+                .Equals(input.ModalityCode, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Accepted QUO payload does not match the CRM-verified identity.");
+
+        var services = ArrayProperty(accepted, "services").Select(element => new
+        {
+            Id = GuidProperty(element, "serviceId"),
+            Code = StringProperty(element, "serviceCode"),
+            Name = StringProperty(element, "serviceName")
+        }).ToArray();
+        if (services.Any(x => x.Id == Guid.Empty || x.Code.Length is < 1 or > 60 ||
+            x.Name.Length is < 1 or > 200))
+            throw new InvalidOperationException("Accepted quotation has incomplete service lines.");
+
+        var equipment = ArrayProperty(accepted, "equipment").Select(element => new
+        {
+            Id = GuidProperty(element, "equipmentId"),
+            Code = StringProperty(element, "equipmentCode"),
+            Name = StringProperty(element, "equipmentName"),
+            Quantity = IntProperty(element, "quantity"),
+            WeightJson = element.TryGetProperty("unitWeightsKg", out var weights)
+                && weights.ValueKind == JsonValueKind.Array ? weights.GetRawText() : "[]"
+        }).ToArray();
+        if (equipment.Any(x => x.Id == Guid.Empty || x.Code.Length is < 1 or > 50 ||
+            x.Name.Length is < 1 or > 200 || x.Quantity <= 0))
+            throw new InvalidOperationException("Accepted quotation has an invalid equipment combination.");
+
+        var costs = ArrayProperty(accepted, "costLines").Select(element => new
+        {
+            RateDetailId = GuidProperty(element, "rateDetailId"),
+            SourceCostId = GuidProperty(element, "sourceCostId"),
+            Description = StringProperty(element, "description"),
+            CostCode = StringProperty(element, "costType"),
+            CurrencyCode = StringProperty(element, "currencyCode").ToUpperInvariant(),
+            Quantity = DecimalProperty(element, "quantity"),
+            UnitCost = DecimalProperty(element, "unitCost"),
+            UnitSale = DecimalProperty(element, "unitSale")
+        }).ToArray();
+        if (costs.Any(x => x.RateDetailId == Guid.Empty ||
+            x.Description.Length is < 1 or > 500 ||
+            x.CurrencyCode.Length != 3 || !x.CurrencyCode.All(char.IsAsciiLetterUpper) ||
+            x.Quantity <= 0 || x.UnitCost < 0 || x.UnitSale < 0 ||
+            x.CostCode.Length is < 1 or > 60))
+            throw new InvalidOperationException("Accepted quotation cost lines are invalid.");
+
+        // Serialize under a shared business key, not just EventId: two distinct
+        // retries of the same accepted A/B quotation cannot generate two IDTRA.
+        await using var transaction = await db.Database.BeginTransactionAsync(
+            IsolationLevel.ReadCommitted, ct);
+        var lockKey = "accepted-quote:" + input.QuoteId.ToString("N");
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock(hashtextextended({lockKey}, 0));", ct);
+
+        var processed = await db.InboxMessages.AsNoTracking().AnyAsync(x =>
+            x.ConsumerService == "operations-pricing-quote" &&
+            x.EventId == input.SourceEventId, ct);
+        var previous = await db.Cases.AsNoTracking()
+            .Where(x => x.ApertureType == "AUTOMATIC" &&
+                x.SourceQuoteId == input.QuoteId)
+            .Select(x => new { x.Id, x.Idtra, x.CompanyId, x.SourceQuoteOptionId })
+            .SingleOrDefaultAsync(ct);
+        if (previous is not null &&
+            (previous.SourceQuoteOptionId != input.AcceptedOptionId ||
+             previous.CompanyId != input.CompanyId))
+            throw new InvalidOperationException(
+                "A different commercial option or company already owns this parent QUO.");
+
+        if (processed || previous is not null)
+        {
+            if (previous is null)
+                throw new InvalidOperationException(
+                    "Inbox event exists without an accepted quote Operations case.");
+            if (!processed)
+            {
+                AddPricingInboxReceipt(input.SourceEventId);
+                await db.SaveChangesAsync(ct);
+            }
+            await transaction.CommitAsync(ct);
+            return new AcceptedQuoteCaseCreatedResult(previous.Id, previous.Idtra, true);
+        }
+
+        var next = await NextSequenceAsync("00000", ct);
+        var route = ObjectProperty(accepted, "route");
+        var cargo = ObjectProperty(accepted, "cargo");
+        var providers = ObjectProperty(accepted, "providers");
+        var description = CargoDescription(cargo);
+        var opening = new {
+            source = "PRICING",
+            quoteId = input.QuoteId,
+            acceptedOptionId = input.AcceptedOptionId,
+            commercialRevision = input.CommercialRevision,
+            shipmentType = input.ModalityCode.ToUpperInvariant(),
+            incoterm = StringProperty(accepted, "incoterm"),
+            pol = StringProperty(route, "polName"),
+            pod = StringProperty(route, "podName"),
+            poe = StringProperty(route, "poeName"),
+            cargoDescription = description,
+            volumeCbm = DecimalProperty(cargo, "volumeCbm"),
+            quotedWeightKg = DecimalProperty(cargo, "weightKg"),
+            packages = DecimalProperty(cargo, "packages"),
+            carrierReference = StringProperty(providers, "carrierName"),
+            agentName = StringProperty(providers, "agentName"),
+            equipment = equipment.Select(item => new {
+                equipmentType = item.Code, item.Quantity, quantity = item.Quantity,
+                equipmentId = item.Id, equipmentName = item.Name
+            }).ToArray()
+        };
+        var operation = new OperationsCase
+        {
+            CompanyId = input.CompanyId, SeriesCode = "00000",
+            SequenceNumber = next, Idtra = $"IDTRA{next}",
+            AccountId = input.AccountId, ExecutiveUserId = input.ExecutiveUserId,
+            SourceQuoteId = input.QuoteId, SourceQuoteOptionId = input.AcceptedOptionId,
+            ApertureType = "AUTOMATIC", ModalityCode = input.ModalityCode.Trim().ToUpperInvariant(),
+            Status = "PENDING_VALIDATION", Priority = 3, ComplexityPoints = 1m,
+            OpeningDataJson = JsonSerializer.Serialize(opening),
+            CreatedBy = input.ActorUserId
+        };
+        var stage = new OperationsCaseStage {
+            CaseId = operation.Id, DepartmentCode = "APERTURAS",
+            Status = "PENDING"
+        };
+        operation.Stages.Add(stage);
+        db.Cases.Add(operation);
+        db.AcceptedQuoteSnapshots.Add(new OperationsAcceptedQuoteSnapshot {
+            CaseId = operation.Id, EventId = input.SourceEventId,
+            QuoteId = input.QuoteId, AcceptedOptionId = input.AcceptedOptionId,
+            CommercialRevision = input.CommercialRevision,
+            SnapshotJson = input.CommercialSnapshotJson,
+            AcceptedAtUtc = input.AcceptedAtUtc
+        });
+        db.CaseServiceLines.AddRange(services.Select(item => new OperationsCaseServiceLine
+        {
+            CaseId = operation.Id, PricingServiceId = item.Id,
+            ServiceCode = item.Code, ServiceName = item.Name,
+            Source = "QUOTED", CreatedBy = input.ActorUserId
+        }));
+        db.CaseEquipmentLines.AddRange(equipment.Select(item => new OperationsCaseEquipmentLine
+        {
+            CaseId = operation.Id, EquipmentTypeId = item.Id,
+            EquipmentCode = item.Code, EquipmentName = item.Name,
+            Quantity = item.Quantity, UnitWeightsKgJson = item.WeightJson
+        }));
+        var quoteLink = new OperationsCaseQuoteLink
+        {
+            CaseId = operation.Id, QuoteId = input.QuoteId,
+            QuoteOptionId = input.AcceptedOptionId,
+            QuoteNumber = input.QuoteNumber,
+            IsPrimary = true, Status = "ACCEPTED",
+            SnapshotVersion = input.CommercialRevision, LinkedBy = input.ActorUserId
+        };
+        // Old source_cost_id index is unique per link. Preserve every repeated
+        // cost row; when several details refer to the same catalog cost, keep
+        // the unique catalog reference only once and all other details in the
+        // immutable JSON snapshot. No Pricing row is mutated.
+        var seenCostIds = new HashSet<Guid>();
+        foreach (var item in costs)
+        {
+            var catalogCostId = item.SourceCostId != Guid.Empty &&
+                seenCostIds.Add(item.SourceCostId)
+                    ? item.SourceCostId : (Guid?)null;
+            quoteLink.Costs.Add(new OperationsCaseQuoteCost
+            {
+                QuoteLinkId = quoteLink.Id,
+                SourceCostId = catalogCostId,
+                Description = item.Description,
+                CostCode = item.CostCode, CurrencyCode = item.CurrencyCode,
+                CostAmount = item.UnitCost * item.Quantity,
+                SaleAmount = item.UnitSale * item.Quantity
+            });
+        }
+        db.CaseQuoteLinks.Add(quoteLink);
+
+        AddPricingInboxReceipt(input.SourceEventId);
+        OperationsAuditWriter.Case(db, operation.Id, stage.Id, input.ActorUserId,
+            "operations.case.accepted-quote.created", null,
+            new { operation.Idtra, input.QuoteId, input.AcceptedOptionId,
+                input.CommercialRevision, input.SourceEventId,
+                services = services.Length, equipment = equipment.Sum(x => x.Quantity),
+                costs = costs.Length });
+        Enqueue("operations.case.created.v1", new {
+            caseId = operation.Id, operation.Idtra, operation.CompanyId,
+            quoteId = input.QuoteId, quoteOptionId = input.AcceptedOptionId,
+            status = operation.Status, version = operation.Version
+        });
+
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return new AcceptedQuoteCaseCreatedResult(operation.Id, operation.Idtra, false);
+    }
+
+    private void AddPricingInboxReceipt(Guid eventId)
+    {
+        var receipt = new CustomCodeFramework.Messaging.Inbox.InboxMessage
+        {
+            EventId = eventId,
+            EventType = "pricing.quote.accepted.v1",
+            EventName = "pricing.quote.accepted.v1",
+            SourceService = "DholePricingService",
+            ConsumerService = "operations-pricing-quote",
+            Status = CustomCodeFramework.Messaging.Inbox.InboxMessageStatus.Processed,
+            CreatedAtUtc = DateTime.UtcNow,
+            ProcessedAtUtc = DateTime.UtcNow
+        };
+        db.InboxMessages.Add(receipt);
+        db.Entry(receipt).Property("PayloadJson").CurrentValue = "{}";
+    }
+
+    private static JsonElement ObjectProperty(JsonElement item, string name) =>
+        item.ValueKind == JsonValueKind.Object &&
+        item.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Object
+            ? value : default;
+
+    private static JsonElement[] ArrayProperty(JsonElement item, string name) =>
+        item.ValueKind == JsonValueKind.Object &&
+        item.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Array
+            ? value.EnumerateArray().ToArray() : [];
+
+    private static Guid GuidProperty(JsonElement item, string name) =>
+        item.ValueKind == JsonValueKind.Object &&
+        item.TryGetProperty(name, out var value) &&
+        value.ValueKind == JsonValueKind.String &&
+        Guid.TryParse(value.GetString(), out var parsed)
+            ? parsed : Guid.Empty;
+
+    private static string StringProperty(JsonElement item, string name) =>
+        item.ValueKind == JsonValueKind.Object &&
+        item.TryGetProperty(name, out var value) &&
+        value.ValueKind == JsonValueKind.String
+            ? value.GetString()?.Trim() ?? "" : "";
+
+    private static int IntProperty(JsonElement item, string name) =>
+        item.ValueKind == JsonValueKind.Object &&
+        item.TryGetProperty(name, out var value) &&
+        value.ValueKind == JsonValueKind.Number &&
+        value.TryGetInt32(out var parsed)
+            ? parsed : 0;
+
+    private static decimal DecimalProperty(JsonElement item, string name) =>
+        item.ValueKind == JsonValueKind.Object &&
+        item.TryGetProperty(name, out var value) &&
+        value.ValueKind == JsonValueKind.Number &&
+        value.TryGetDecimal(out var parsed)
+            ? parsed : 0m;
+
+    private static string CargoDescription(JsonElement cargo)
+    {
+        var json = StringProperty(cargo, "cargoLinesJson");
+        if (string.IsNullOrWhiteSpace(json)) return "";
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind == JsonValueKind.Array)
+                return document.RootElement.EnumerateArray()
+                    .Select(line => StringProperty(line, "description"))
+                    .FirstOrDefault(line => !string.IsNullOrWhiteSpace(line)) ?? "";
+        }
+        catch (JsonException) { }
+        return "";
+    }
+
     public async Task<StageAssignedResult?> AssignStageAsync(AssignStageCommand input, CancellationToken ct)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
