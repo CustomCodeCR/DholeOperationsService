@@ -258,7 +258,7 @@ public static class OperationsTeamValidationEndpoints
         api.MapPost("/cases/{caseId:guid}/aperture-validations/{validationId:guid}/decision", async (
             Guid caseId, Guid validationId, ReviewDecisionRequest input, HttpContext http,
             OperationsDbContext db, AssignStageHandler originAssigner,
-            ILogger<OperationsTeamValidationEndpoints> logger, CancellationToken ct) =>
+            ILoggerFactory loggerFactory, CancellationToken ct) =>
         {
             var actor = OperationsCaseAccess.UserId(http.User);
             if (actor is null ||
@@ -348,8 +348,8 @@ public static class OperationsTeamValidationEndpoints
                 {
                     // The approval is committed; a worker retries the unassigned
                     // stage after transient failures instead of claiming success.
-                    logger.LogError(ex,
-                        "Origin assignment pending for validated case {CaseId}", caseId);
+                    loggerFactory.CreateLogger("Operations.Apertures.Validation")
+                        .LogError(ex, "Origin assignment pending for validated case {CaseId}", caseId);
                 }
             }
             return Results.Ok(new { validation.Id, validation.Status,
