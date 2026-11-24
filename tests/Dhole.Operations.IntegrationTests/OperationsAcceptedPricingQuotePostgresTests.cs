@@ -83,8 +83,8 @@ public sealed class OperationsAcceptedPricingQuotePostgresTests
             var writer=new OperationsCaseStore(db);
             created=await writer.CreateAcceptedQuoteAsync(input,CancellationToken.None);
             Assert.IsFalse(created.Existing);
-            Assert.IsTrue(created.Idtra.StartsWith("IDTRA"));
-            Assert.IsFalse(created.Idtra.Contains('-'));
+            Assert.StartsWith("IDTRA", created.Idtra);
+            Assert.DoesNotContain("-", created.Idtra);
             var retry=await writer.CreateAcceptedQuoteAsync(input,CancellationToken.None);
             Assert.AreEqual(created.Idtra,retry.Idtra);
             Assert.IsTrue(retry.Existing);
@@ -109,7 +109,7 @@ public sealed class OperationsAcceptedPricingQuotePostgresTests
                 x.Source=="QUOTED"));
             var lines=await db.CaseEquipmentLines.Where(x=>x.CaseId==created.Id)
                 .OrderBy(x=>x.EquipmentCode).ToArrayAsync();
-            Assert.AreEqual(2,lines.Length);
+            Assert.HasCount(2,lines);
             Assert.AreEqual(3,lines.Sum(x=>x.Quantity));
             Assert.AreEqual(2,await db.CaseQuoteCosts.CountAsync(x=>x.QuoteLink.CaseId==created.Id));
             Assert.AreEqual(2,await db.InboxMessages.CountAsync(x=>
