@@ -177,7 +177,7 @@ public static class OperationsEndpoints
         api.MapGet("/cases", async (
             int? page, int? pageSize, string? q, string? status, string? apertureType, Guid? accountId,
             HttpContext http, OperationsCaseAccess access,
-            OperationsDbContext db, CancellationToken ct) =>
+            OperationsDbContext db, OperationsAssignedUserLabels labels, CancellationToken ct) =>
         {
             var actor = OperationsCaseAccess.UserId(http.User);
             if (actor is null || !OperationsCaseAccess.HasScope(http.User, "operations.case.read"))
@@ -232,6 +232,9 @@ public static class OperationsEndpoints
                     QuoteNumber = db.CaseQuoteLinks.Where(q => q.CaseId == c.Id && q.IsPrimary)
                         .OrderByDescending(q => q.SnapshotVersion).Select(q => q.QuoteNumber).FirstOrDefault(),
                     c.Status, c.Priority, c.CreatedAtUtc, c.UpdatedAtUtc,
+                    PendingValidatorIds = db.ApertureValidations.Where(v => v.CaseStage.CaseId == c.Id &&
+                        v.Status == "PENDING" && v.CaseStage.Status == "PENDING_VALIDATION" &&
+                        c.Status == "PENDING_VALIDATION").OrderBy(v => v.Slot).Select(v => v.UserId).ToArray(),
                     DepartmentCode = c.Stages.OrderByDescending(s => s.Status == "IN_PROGRESS")
                         .ThenByDescending(s => s.Status == "READY")
                         .ThenByDescending(s => s.StartedAtUtc)
@@ -259,7 +262,17 @@ public static class OperationsEndpoints
                             p.CaseStage.DepartmentCode == "COORDINACION_ORIGEN")
                         .Select(p => p.StatusCode).FirstOrDefault()
                 }).ToArrayAsync(ct);
-            return Results.Ok(new { page = currentPage, pageSize = size, total, items });
+            // The page is already case-authorized. Return only customer labels, never raw commercial JSON.
+            var caseIds = items.Select(x => x.Id).ToArray();
+            var savedNames = await db.AcceptedQuoteSnapshots.AsNoTracking()
+                .Where(s => caseIds.Contains(s.CaseId))
+                .OrderByDescending(s => s.CommercialRevision)
+                .Select(s => new { s.CaseId, s.SnapshotJson }).ToArrayAsync(ct);
+            var clientNames = savedNames.GroupBy(x => x.CaseId).ToDictionary(gr => gr.Key,
+                gr => OperationsCommercialSnapshotReader.ClientName(gr.First().SnapshotJson));
+            var people = await labels.ReadAsync(items.SelectMany(x => x.PendingValidatorIds)
+                .Concat(items.Where(x => x.AssignedUserId.HasValue).Select(x => x.AssignedUserId!.Value)), ct);
+            return Results.Ok(new { page = currentPage, pageSize = size, total, items, clientNames, people });
         });
 
         api.MapPost("/cases/{id:guid}/stages/{stageId:guid}/assign", async (
