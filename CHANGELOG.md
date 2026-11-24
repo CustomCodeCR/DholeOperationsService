@@ -1,13 +1,11 @@
 ## [0.19.0] - 2026-11-23 · DH-20261123-OPS-AUTOSAVE-434
 
-- MINOR candidato: aperturas manuales incompletas se autoguardan de forma duradera en PostgreSQL, aisladas por usuario y empresa, sin requerir cuenta CRM, equipo ni generar IDTRA hasta la creación definitiva.
-- GET/PUT/DELETE /api/operations/apertures/drafts/current: control de versión optimista, escritura serializada mediante bloqueo transaccional y Outbox de metadatos sin publicar datos privados.
-- Migración no destructiva operations_manual_opening_drafts; pruebas de persistencia y aislamiento por usuario/empresa.
-- Transferencia Aperturas → Origen tras dos validaciones: evento durable operations.case.validated.v1, asignación inmediata por el pool existente y reconciliación de worker para fallos de proceso o pools inicialmente vacíos. Generación idempotente del progreso ORIGIN_COORDINATION.
-- Consumidor de eventos de QUO aceptada definitivamente desde Pricing: verificación de cuenta y ejecutivo activos en CRM vía contrato interno Auth, Inbox transaccional, IDTRA global único por QUO padre, snapshot JSON comercial inmutable, servicios QUOTED, múltiples equipos/cantidades, desglose de costos y evento Operations; requiere configuración interna segura y validación de integración antes de habilitar en staging.
-- Servicios agregados por Operations se distinguen de los QUOTED; cada uno genera alerta amarilla no bloqueante y solicitud de revisión comercial persistida, idempotente, auditada y publicada en el stream de Pricing. No cambia la QUO ni aprueba ventas/costos automáticamente.
-- Cambios únicamente en rama intermedia; CI, PostgreSQL de integración y staging por verificar. master/producción intactos.
-- DholeOperationsService 0.18.0 → 0.19.0; DholePricingService 1.27.1 → 1.28.0; DholeWeb/DholeSystem 1.120.11 → 1.122.0; restantes componentes sin cambios de código en este lote parcial.
+- MINOR candidato: borradores manuales PostgreSQL recuperables sin equipo/IDTRA; API segura de versión optimista, reconciliación de Orig en workers.
+- Pricing→Operations: aceptación definitiva A/B vía Outbox/Inbox, un IDTRA por QUO padre, snapshot comercial inmutable, servicios, costos/proveedores y múltiples equipos; falla cerrado si CRM/Auth o empresa no se verifican.
+- Servicios adicionales generan semáforo amarillo, revisión Pricing, auditoría, avisos realtime y resolución idempotente sin editar la QUO original. Dos validaciones de Aperturas asignan Origen y permiten recuperación.
+- Migraciones no destructivas 434/435/436 y pruebas de PostgreSQL agregadas. CI build/test y versionamiento Operations aprobados; Redis cruzado y staging sin verificar.
+- Operations 0.18.0 → 0.19.0; Web/System 1.120.11 → 1.122.0; Pricing 1.27.1 → 1.28.0; CRM 1.43.1 → 1.44.0; otros 12 componentes sin cambios.
+- Integración bloqueada por CI snapshot EF de Pricing; únicamente rama intermedia, master intacto.
 
 ## [0.18.0] - 2026-11-23 · DH-20261123-OPS-APERTURES-P1-416
 
