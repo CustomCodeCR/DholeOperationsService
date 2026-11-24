@@ -8,6 +8,15 @@ public sealed record CreateManualCaseCommand(
     string? OriginCountryCode = null, string? DestinationCountryCode = null,
     string? OpeningDataJson = null);
 
+/// <summary>Only called by the verified Pricing Stream + CRM internal account contract.</summary>
+public sealed record CreateAcceptedQuoteCaseCommand(
+    Guid CompanyId, Guid AccountId, Guid ExecutiveUserId, Guid ActorUserId,
+    Guid QuoteId, Guid AcceptedOptionId, string QuoteNumber, int CommercialRevision,
+    DateTimeOffset AcceptedAtUtc, Guid SourceEventId, string CommercialSnapshotJson,
+    string ModalityCode);
+
+public sealed record AcceptedQuoteCaseCreatedResult(Guid Id, string Idtra, bool Existing);
+
 public sealed record AssignStageCommand(
     Guid CaseId, Guid StageId, Guid ActorUserId);
 
@@ -25,6 +34,7 @@ public sealed record DocumentExtractionQueuedResult(Guid JobId, string Status);
 public interface IOperationsCaseStore
 {
     Task<CaseCreatedResult> CreateManualAsync(CreateManualCaseCommand command, CancellationToken ct);
+    Task<AcceptedQuoteCaseCreatedResult> CreateAcceptedQuoteAsync(CreateAcceptedQuoteCaseCommand command, CancellationToken ct);
     Task<StageAssignedResult?> AssignStageAsync(AssignStageCommand command, CancellationToken ct);
     Task<DocumentRegisteredResult> RegisterDocumentAsync(RegisterDocumentCommand command, CancellationToken ct);
     Task<DocumentExtractionQueuedResult> QueueDocumentExtractionAsync(QueueDocumentExtractionCommand command, CancellationToken ct);
