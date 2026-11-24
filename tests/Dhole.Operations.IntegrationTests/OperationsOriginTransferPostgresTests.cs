@@ -66,9 +66,16 @@ public sealed class OperationsOriginTransferPostgresTests
         Assert.AreEqual("ORIGIN_COORDINATION", progress.StatusCode);
         Assert.AreEqual("READY", await verify.CaseStages.Where(x => x.Id == origin.Id)
             .Select(x => x.Status).SingleAsync());
-        Assert.AreEqual(1, await verify.OutboxMessages.CountAsync(x =>
-            x.EventName == "operations.origin.assigned.v1" &&
-            x.PayloadJson.Contains(created.Id.ToString("D"))));
+        // payload_json is PostgreSQL jsonb. A string.Contains inside the
+        // EF SQL predicate becomes LIKE(jsonb), which PostgreSQL rejects.
+        var events = await verify.OutboxMessages
+            .Where(x => x.EventName == "operations.origin.assigned.v1")
+            .Select(x => x.PayloadJson).ToArrayAsync();
+        Assert.AreEqual(1, events.Count(json =>
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            return doc.RootElement.GetProperty("caseId").GetGuid() == created.Id;
+        }));
     }
 
     [TestMethod]
