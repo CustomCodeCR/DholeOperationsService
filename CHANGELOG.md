@@ -3,6 +3,7 @@
 - MINOR candidato: aperturas manuales incompletas se autoguardan de forma duradera en PostgreSQL, aisladas por usuario y empresa, sin requerir cuenta CRM, equipo ni generar IDTRA hasta la creación definitiva.
 - GET/PUT/DELETE /api/operations/apertures/drafts/current: control de versión optimista, escritura serializada mediante bloqueo transaccional y Outbox de metadatos sin publicar datos privados.
 - Migración no destructiva operations_manual_opening_drafts; pruebas de persistencia y aislamiento por usuario/empresa.
+- Transferencia Aperturas → Origen tras dos validaciones: evento durable operations.case.validated.v1, asignación inmediata por el pool existente y reconciliación de worker para fallos de proceso o pools inicialmente vacíos. Generación idempotente del progreso ORIGIN_COORDINATION.
 - Cambios únicamente en rama intermedia; CI, PostgreSQL de integración y staging por verificar. master/producción intactos.
 - DholeOperationsService 0.18.0 → 0.19.0; candidato global 1.122.0; otros servicios sin cambios de código en este lote parcial.
 
