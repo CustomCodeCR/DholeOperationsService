@@ -176,10 +176,20 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
             poe = StringProperty(route, "poeName"),
             cargoDescription = description,
             volumeCbm = DecimalProperty(cargo, "volumeCbm"),
+            volumeValue = DecimalProperty(cargo, "volumeCbm"),
+            volumeUnit = "CBM",
             quotedWeightKg = DecimalProperty(cargo, "weightKg"),
+            weightValue = DecimalProperty(cargo, "weightKg"),
+            weightUnit = "KG",
+            packageCount = DecimalProperty(cargo, "packages"),
             packages = DecimalProperty(cargo, "packages"),
             carrierReference = StringProperty(providers, "carrierName"),
+            agentReference = StringProperty(providers, "agentName"),
             agentName = StringProperty(providers, "agentName"),
+            services = services.Select(item => new {
+                serviceId = item.Id, serviceCode = item.Code,
+                name = item.Name, source = "QUOTED"
+            }).ToArray(),
             equipment = equipment.Select(item => new {
                 equipmentType = item.Code, quantity = item.Quantity,
                 equipmentId = item.Id, equipmentName = item.Name
@@ -332,7 +342,11 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
             using var document = JsonDocument.Parse(json);
             if (document.RootElement.ValueKind == JsonValueKind.Array)
                 return document.RootElement.EnumerateArray()
-                    .Select(line => StringProperty(line, "description"))
+                    .Select(line => {
+                        var lower = StringProperty(line, "description");
+                        return !string.IsNullOrWhiteSpace(lower)
+                            ? lower : StringProperty(line, "Description");
+                    })
                     .FirstOrDefault(line => !string.IsNullOrWhiteSpace(line)) ?? "";
         }
         catch (JsonException) { }
