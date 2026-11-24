@@ -1,3 +1,9 @@
+## [0.19.1] - 2026-11-24 · DH-20261124-OPS-QUOTE-ACCEPTANCE-440
+
+- PATCH: corrige la integración de Pricing aceptada con Operations: configura la URL/clave interna CRM, usa DholeSystem develop en staging y reintenta Inbox pendiente. Si la QUO histórica no tenía accountId, CRM resuelve solo una cuenta activa exacta; nunca inventa cliente ni empresa.
+- Versiones coordinadas: Operations 0.19.0 → 0.19.1, CRM 1.44.0 → 1.44.1, Web/System 1.122.2 → 1.122.3. Pricing 1.28.0 y otros 12 componentes permanecen sin modificación.
+- CI, staging y aceptación end-to-end pendientes. No se fusiona a master ni se despliega producción.
+
 ## [0.19.0] - 2026-11-23 · DH-20261123-OPS-AUTOSAVE-434
 
 - MINOR candidato: borradores manuales PostgreSQL recuperables sin equipo/IDTRA; API segura de versión optimista, reconciliación de Orig en workers.
