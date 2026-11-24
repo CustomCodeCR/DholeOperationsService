@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "ecosystem": "Dhole",
   "component": "DholeOperationsService",
-  "version": "0.20.1",
-  "ecosystemVersion": "1.123.1",
-  "releaseId": "DH-20261124-HISTORICAL-IDTRA-RETRY",
+  "version": "0.20.2",
+  "ecosystemVersion": "1.123.2",
+  "releaseId": "DH-20261124-IDTRA-DESC",
   "releaseStatus": "candidate-develop-ci-pending",
-  "businessReleaseId": "DH-20261124-HISTORICAL-IDTRA-RETRY"
+  "businessReleaseId": "DH-20261124-IDTRA-DESC"
 }
