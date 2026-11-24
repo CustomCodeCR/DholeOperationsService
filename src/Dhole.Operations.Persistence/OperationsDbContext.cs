@@ -12,6 +12,7 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<InboxMessage> InboxMessages => Set<InboxMessage>();
     public DbSet<OperationsCase> Cases => Set<OperationsCase>();
+    public DbSet<OperationsManualOpeningDraft> ManualOpeningDrafts => Set<OperationsManualOpeningDraft>();
     public DbSet<OperationsCaseSequence> CaseSequences => Set<OperationsCaseSequence>();
     public DbSet<OperationsCaseStage> CaseStages => Set<OperationsCaseStage>();
     public DbSet<OperationsTeam> Teams => Set<OperationsTeam>();
@@ -21,6 +22,11 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
     public DbSet<OperationsDocument> Documents => Set<OperationsDocument>();
     public DbSet<OperationsDocumentVersion> DocumentVersions => Set<OperationsDocumentVersion>();
     public DbSet<OperationsDocumentExtractionJob> ExtractionJobs => Set<OperationsDocumentExtractionJob>();
+    public DbSet<OperationsAcceptedQuoteSnapshot> AcceptedQuoteSnapshots => Set<OperationsAcceptedQuoteSnapshot>();
+    public DbSet<OperationsCaseServiceLine> CaseServiceLines => Set<OperationsCaseServiceLine>();
+    public DbSet<OperationsCommercialAlert> CommercialAlerts => Set<OperationsCommercialAlert>();
+    public DbSet<OperationsPricingReviewRequest> PricingReviewRequests => Set<OperationsPricingReviewRequest>();
+    public DbSet<OperationsCaseEquipmentLine> CaseEquipmentLines => Set<OperationsCaseEquipmentLine>();
     public DbSet<OperationsCaseQuoteLink> CaseQuoteLinks => Set<OperationsCaseQuoteLink>();
     public DbSet<OperationsCaseQuoteCost> CaseQuoteCosts => Set<OperationsCaseQuoteCost>();
     public DbSet<OperationsCaseMilestone> CaseMilestones => Set<OperationsCaseMilestone>();
@@ -46,6 +52,15 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
         m.Entity<InboxMessage>().Property<string>("PayloadJson")
             .HasColumnName("payload_json").HasColumnType("text").IsRequired();
 
+        m.Entity<OperationsManualOpeningDraft>(e =>
+        {
+            e.ToTable("operations_manual_opening_drafts");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.PayloadJson).HasColumnName("payload_json")
+                .HasColumnType("jsonb").IsRequired();
+            e.Property(x => x.Version).IsConcurrencyToken();
+            e.HasIndex(x => new { x.CompanyId, x.CreatedBy }).IsUnique();
+        });
         m.Entity<OperationsCase>(e =>
         {
             e.ToTable("operations_cases", t => t.HasCheckConstraint("ck_operations_case_points", "complexity_points > 0 AND priority BETWEEN 1 AND 5"));
@@ -155,6 +170,73 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
             e.HasIndex(x => new { x.Status, x.RequestedAtUtc });
         });
 
+
+        m.Entity<OperationsAcceptedQuoteSnapshot>(e =>
+        {
+            e.ToTable("operations_accepted_quote_snapshots");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Case).WithMany().HasForeignKey(x => x.CaseId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.Property(x => x.SnapshotJson).HasColumnName("snapshot_json")
+                .HasColumnType("jsonb").IsRequired();
+            e.HasIndex(x => x.CaseId).IsUnique();
+            e.HasIndex(x => x.EventId).IsUnique();
+            e.HasIndex(x => new { x.QuoteId, x.AcceptedOptionId, x.CommercialRevision }).IsUnique();
+        });
+        m.Entity<OperationsCaseServiceLine>(e =>
+        {
+            e.ToTable("operations_case_service_lines");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Case).WithMany().HasForeignKey(x => x.CaseId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.Property(x => x.ServiceCode).HasMaxLength(60).IsRequired();
+            e.Property(x => x.ServiceName).HasMaxLength(200).IsRequired();
+            e.Property(x => x.Source).HasMaxLength(30).IsRequired();
+            e.Property(x => x.ReviewStatus).HasMaxLength(40).IsRequired();
+            e.HasIndex(x => x.CaseId);
+            e.HasIndex(x => new { x.CaseId, x.IdempotencyKey }).IsUnique()
+                .HasFilter("source = 'OPERATIONS_ADDED' AND idempotency_key IS NOT NULL");
+        });
+        m.Entity<OperationsCaseEquipmentLine>(e =>
+        {
+            e.ToTable("operations_case_equipment_lines");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Case).WithMany().HasForeignKey(x => x.CaseId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.Property(x => x.EquipmentCode).HasMaxLength(50).IsRequired();
+            e.Property(x => x.EquipmentName).HasMaxLength(200).IsRequired();
+            e.Property(x => x.UnitWeightsKgJson).HasColumnName("unit_weights_kg_json")
+                .HasColumnType("jsonb").IsRequired();
+            e.HasIndex(x => x.CaseId);
+        });
+
+        m.Entity<OperationsCommercialAlert>(e =>
+        {
+            e.ToTable("operations_commercial_alerts");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Code).HasMaxLength(50);
+            e.Property(x => x.Severity).HasMaxLength(20);
+            e.Property(x => x.Status).HasMaxLength(40);
+            e.HasOne<OperationsCaseServiceLine>().WithMany()
+                .HasForeignKey(x => x.ServiceLineId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<OperationsCase>().WithMany()
+                .HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.ServiceLineId).IsUnique();
+            e.HasIndex(x => new { x.CaseId, x.Status });
+        });
+        m.Entity<OperationsPricingReviewRequest>(e =>
+        {
+            e.ToTable("operations_pricing_review_requests");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Reason).HasColumnType("text").IsRequired();
+            e.Property(x => x.Status).HasMaxLength(40);
+            e.HasOne<OperationsCaseServiceLine>().WithMany()
+                .HasForeignKey(x => x.ServiceLineId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<OperationsCase>().WithMany()
+                .HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.ServiceLineId).IsUnique();
+            e.HasIndex(x => new { x.CaseId, x.Status });
+        });
 
         m.Entity<OperationsCaseQuoteLink>(e =>
         {

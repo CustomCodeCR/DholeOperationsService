@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "ecosystem": "Dhole",
+  "releaseId": "DH-20261123-OPS-AUTOSAVE-434",
+  "releaseType": "MINOR",
+  "ecosystemVersion": "1.122.0",
+  "targetBranches": [
+    "develop"
+  ],
+  "status": "candidate-feature-branch-ci-pending",
+  "productionDeploymentAuthorized": false,
+  "checks": {
+    "unit": "pending",
+    "typecheck": "pending",
+    "build": "pending",
+    "postgresIntegration": "pending",
+    "ci": "pending",
+    "staging": "pending",
+    "production": "not-authorized",
+    "originIntegration": "pending"
+  },
+  "components": [
+    {
+      "repository": "CustomCodeCR/DholeWeb",
+      "previousVersion": "1.120.11",
+      "version": "1.122.0",
+      "candidateBranch": "feat/operations-apertures-p1-20261123",
+      "changed": true
+    },
+    {
+      "repository": "CustomCodeCR/DholeOperationsService",
+      "previousVersion": "0.18.0",
+      "version": "0.19.0",
+      "candidateBranch": "feat/operations-apertures-p1-20261123",
+      "changed": true
+    },
+    {
+      "repository": "CustomCodeCR/DholePricingService",
+      "previousVersion": "1.27.1",
+      "version": "1.28.0",
+      "candidateBranch": "feature/DH-20261123-OPS-AUTOSAVE-434",
+      "changed": true
+    },
+    {
+      "repository": "CustomCodeCR/DholeCRMService",
+      "previousVersion": "1.43.1",
+      "version": "1.44.0",
+      "changed": true,
+      "candidateBranch": "feature/DH-20261123-OPS-AUTOSAVE-434"
+    },
+    {
+      "repository": "CustomCodeCR/DholeNotificationsService",
+      "previousVersion": "1.9.1",
+      "version": "1.9.1",
+      "changed": false
+    },
+    {
+      "repository": "CustomCodeCR/DholeStorageService",
+      "previousVersion": "1.5.0",
+      "version": "1.5.0",
+      "changed": false
+    },
+    {
+      "repository": "CustomCodeCR/DholeAuditLogsService",
+      "previousVersion": "1.6.0",
+      "version": "1.6.0",
+      "changed": false
+    },
+    {
+      "repository": "CustomCodeCR/DholeAuthService",
+      "previousVersion": "1.17.1",
+      "version": "1.17.1",
+      "changed": false
+    }
+  ],
+  "scope": "P1 sub-entrega 1: borradores manuales duraderos sin IDTRA, sin validación/asignación, sin requerir datos completos.; auto transfer to Origin with durable retry",
+  "changes": [
+    "Store and recover manual opening drafts in PostgreSQL per tenant and user",
+    "Version-safe PUT with serialized transaction and metadata-only Outbox",
+    "Offline local fallback, on-screen saved/error status and cleanup after creation",
+    "Regression tests for isolated persistence and web API binding",
+    "After dual Aperturas approval assign Origin immediately through weighted pool, with durable reconciliation worker and idempotent Origin progress",
+    "Pricing transactionally publishes pricing.quote.accepted.v1 commercial snapshot; Operations consumer remains pending",
+    "CRM Auth-verified internal account/executive projection for Operations consumer"
+  ],
+  "remaining": "Acceptance from Pricing, snapshots, validation state expansion, added services, pricing reviews, origin transfer, CRM/Auth/Storage/Notifications/Audit integration pending coordinated release"
+}

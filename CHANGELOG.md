@@ -1,3 +1,12 @@
+## [0.19.0] - 2026-11-23 · DH-20261123-OPS-AUTOSAVE-434
+
+- MINOR candidato: borradores manuales PostgreSQL recuperables sin equipo/IDTRA; API segura de versión optimista, reconciliación de Orig en workers.
+- Pricing→Operations: aceptación definitiva A/B vía Outbox/Inbox, un IDTRA por QUO padre, snapshot comercial inmutable, servicios, costos/proveedores y múltiples equipos; falla cerrado si CRM/Auth o empresa no se verifican.
+- Servicios adicionales generan semáforo amarillo, revisión Pricing, auditoría, avisos realtime y resolución idempotente sin editar la QUO original. Dos validaciones de Aperturas asignan Origen y permiten recuperación.
+- Migraciones no destructivas 434/435/436 y pruebas de PostgreSQL agregadas. CI build/test y versionamiento Operations aprobados; Redis cruzado y staging sin verificar.
+- Operations 0.18.0 → 0.19.0; Web/System 1.120.11 → 1.122.0; Pricing 1.27.1 → 1.28.0; CRM 1.43.1 → 1.44.0; otros 12 componentes sin cambios.
+- Integración bloqueada por CI snapshot EF de Pricing; únicamente rama intermedia, master intacto.
+
 ## [0.18.0] - 2026-11-23 · DH-20261123-OPS-APERTURES-P1-416
 
 - MINOR candidate para Aperturas P1: previsualización protegida de completitud por campo con CONFIRMADO, PENDIENTE_PERMITIDO, PENDIENTE_BLOQUEANTE y NO_APLICA; consulta del borrador existente en PostgreSQL.
