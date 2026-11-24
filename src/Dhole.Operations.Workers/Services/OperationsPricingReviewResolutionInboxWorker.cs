@@ -139,13 +139,35 @@ public sealed class OperationsPricingReviewResolutionInboxWorker(
             x.ServiceLineId == decision.ServiceId, ct);
         var operation = await db.Cases.SingleOrDefaultAsync(x =>
             x.Id == decision.CaseId && x.CompanyId == decision.CompanyId, ct);
-        if (request is null || operation is null ||
-            request.QuoteId != decision.QuoteId ||
-            request.AcceptedOptionId != decision.AcceptedOptionId)
-            throw new InvalidOperationException(
-                "Pricing resolution cannot match a persisted Operations case/review.");
-
-        if (decision.Version > request.LatestPricingVersion)
+        if (operation is null) throw new InvalidOperationException("Pricing resolution cannot match Operations case.");
+        if (request is null)
+        {
+            var discrepancy = await db.QuoteDiscrepancyReviews.SingleOrDefaultAsync(x =>
+                x.Id == decision.OperationsRequestId && x.Id == decision.ServiceId &&
+                x.CaseId == decision.CaseId, ct);
+            if (discrepancy is null || discrepancy.QuoteId != decision.QuoteId ||
+                discrepancy.AcceptedOptionId != decision.AcceptedOptionId)
+                throw new InvalidOperationException("Pricing resolution cannot match a persisted discrepancy.");
+            if (decision.Version > discrepancy.LatestPricingVersion)
+            {
+                discrepancy.LatestPricingVersion = decision.Version;
+                discrepancy.PricingRequestId = decision.PricingReviewId;
+                discrepancy.Status = decision.Status == "NO_PRICE_CHANGE_REQUIRED" ? "RESOLVED_NO_PRICE_CHANGE" :
+                    decision.Status == "REVISION_REQUIRED" ? "REVIEWING" : "REJECTED";
+                discrepancy.ResolvedAtUtc = decision.Status == "REVISION_REQUIRED" ? null : decision.DecidedAtUtc;
+                discrepancy.DecisionReason = decision.DecisionReason;
+                operation.Version++;
+                operation.UpdatedAtUtc = DateTimeOffset.UtcNow;
+                OperationsAuditWriter.Case(db, operation.Id, null, decision.DecidedBy.Value,
+                    "operations.pricing-review.resolved", null, new { reviewId = discrepancy.Id, decision.Status, decision.Version });
+                db.OutboxMessages.Add(OperationsOutboxFactory.Create("operations.pricing-review.resolved.v1",
+                    JsonSerializer.Serialize(new { caseId = operation.Id, reviewId = discrepancy.Id,
+                        discrepancy.Status, version = operation.Version })));
+            }
+        }
+        else if (request.QuoteId != decision.QuoteId || request.AcceptedOptionId != decision.AcceptedOptionId)
+            throw new InvalidOperationException("Pricing resolution cannot match a persisted service review.");
+        else if (decision.Version > request.LatestPricingVersion)
         {
             var service = await db.CaseServiceLines.SingleAsync(x =>
                 x.Id == decision.ServiceId && x.CaseId == decision.CaseId, ct);

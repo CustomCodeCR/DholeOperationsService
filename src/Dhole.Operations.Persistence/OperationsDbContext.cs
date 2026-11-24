@@ -26,6 +26,7 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
     public DbSet<OperationsCaseServiceLine> CaseServiceLines => Set<OperationsCaseServiceLine>();
     public DbSet<OperationsCommercialAlert> CommercialAlerts => Set<OperationsCommercialAlert>();
     public DbSet<OperationsPricingReviewRequest> PricingReviewRequests => Set<OperationsPricingReviewRequest>();
+    public DbSet<OperationsQuoteDiscrepancyReview> QuoteDiscrepancyReviews => Set<OperationsQuoteDiscrepancyReview>();
     public DbSet<OperationsCaseEquipmentLine> CaseEquipmentLines => Set<OperationsCaseEquipmentLine>();
     public DbSet<OperationsCaseQuoteLink> CaseQuoteLinks => Set<OperationsCaseQuoteLink>();
     public DbSet<OperationsCaseQuoteCost> CaseQuoteCosts => Set<OperationsCaseQuoteCost>();
@@ -235,6 +236,19 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
             e.HasOne<OperationsCase>().WithMany()
                 .HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => x.ServiceLineId).IsUnique();
+            e.HasIndex(x => new { x.CaseId, x.Status });
+        });
+
+        m.Entity<OperationsQuoteDiscrepancyReview>(e =>
+        {
+            e.ToTable("operations_quote_discrepancy_reviews");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Fingerprint).HasMaxLength(64).IsRequired();
+            e.Property(x => x.DifferencesJson).HasColumnType("jsonb").IsRequired();
+            e.Property(x => x.Reason).HasColumnType("text").IsRequired();
+            e.Property(x => x.Status).HasMaxLength(40);
+            e.HasOne<OperationsCase>().WithMany().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.CaseId, x.Fingerprint }).IsUnique();
             e.HasIndex(x => new { x.CaseId, x.Status });
         });
 
