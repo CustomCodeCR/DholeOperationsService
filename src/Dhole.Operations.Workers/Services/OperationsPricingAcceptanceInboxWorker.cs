@@ -63,6 +63,15 @@ public sealed class OperationsPricingAcceptanceInboxWorker(
                         continue;
                     }
 
+                    if (Field(entry, "header:source_service") != "DholePricingService")
+                    {
+                        logger.LogError(
+                            "Unexpected source for Pricing acceptance at {RedisEntry}",
+                            entry.Id);
+                        // Do not acknowledge a forged or malformed commercial
+                        // acceptance. Verified Pricing must re-publish it.
+                        continue;
+                    }
                     var eventIdText = Field(entry, "header:event_id");
                     if (string.IsNullOrWhiteSpace(eventIdText))
                         eventIdText = Field(entry, "header:message_id");
