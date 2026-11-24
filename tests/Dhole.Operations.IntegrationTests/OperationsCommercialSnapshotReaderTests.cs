@@ -14,7 +14,7 @@ public sealed class OperationsCommercialSnapshotReaderTests
         """;
         var summary = JsonSerializer.Serialize(OperationsCommercialSnapshotReader.Summary(json));
         StringAssert.Contains(summary, "FOB");
-        Assert.IsFalse(summary.Contains("unitCost"));
+        Assert.DoesNotContain("unitCost", summary);
         var costs = OperationsCommercialSnapshotReader.Costs(json, false);
         Assert.HasCount(2, costs);
         Assert.AreEqual((decimal?)20m, costs[0].CostAmount);
