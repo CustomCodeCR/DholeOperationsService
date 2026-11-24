@@ -13,4 +13,5 @@ builder.Services.AddHostedService<OperationsOutboxPublisher>();
 builder.Services.AddHostedService<OperationsInboxConsumer>();
 builder.Services.AddHostedService<OperationsOriginAssignmentWorker>();
 builder.Services.AddHostedService<OperationsPricingAcceptanceInboxWorker>();
+builder.Services.AddHostedService<OperationsPricingReviewResolutionInboxWorker>();
 await builder.Build().RunAsync();
