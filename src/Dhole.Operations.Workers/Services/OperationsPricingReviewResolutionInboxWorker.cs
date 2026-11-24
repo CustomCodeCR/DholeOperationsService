@@ -23,7 +23,7 @@ public sealed class OperationsPricingReviewResolutionInboxWorker(
 {
     private const string EventType = "pricing.operations-review.resolved.v1";
     private sealed record Decision(
-        Guid OperationsRequestId, Guid CaseId, Guid CompanyId,
+        Guid PricingReviewId, Guid OperationsRequestId, Guid CaseId, Guid CompanyId,
         Guid ServiceId, Guid? QuoteId, Guid? AcceptedOptionId,
         string Status, Guid? DecidedBy, DateTimeOffset? DecidedAtUtc,
         string? DecisionReason, long Version);
@@ -109,7 +109,8 @@ public sealed class OperationsPricingReviewResolutionInboxWorker(
             new JsonSerializerOptions(JsonSerializerDefaults.Web) {
                 PropertyNameCaseInsensitive = true
             }) ?? throw new InvalidOperationException("Empty Pricing review decision.");
-        if (decision.OperationsRequestId == Guid.Empty ||
+        if (decision.PricingReviewId == Guid.Empty ||
+            decision.OperationsRequestId == Guid.Empty ||
             decision.CaseId == Guid.Empty || decision.CompanyId == Guid.Empty ||
             decision.ServiceId == Guid.Empty || decision.DecidedBy is null ||
             decision.DecidedBy == Guid.Empty || decision.Version < 2 ||
@@ -151,7 +152,7 @@ public sealed class OperationsPricingReviewResolutionInboxWorker(
             var alert = await db.CommercialAlerts.SingleAsync(x =>
                 x.ServiceLineId == service.Id, ct);
             request.LatestPricingVersion = decision.Version;
-            request.PricingRequestId ??= decision.OperationsRequestId;
+            request.PricingRequestId = decision.PricingReviewId;
             request.Status = decision.Status == "NO_PRICE_CHANGE_REQUIRED"
                 ? "RESOLVED_NO_PRICE_CHANGE"
                 : decision.Status == "REVISION_REQUIRED" ? "REVIEWING" : "REJECTED";
