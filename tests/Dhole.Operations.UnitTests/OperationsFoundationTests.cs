@@ -37,6 +37,8 @@ public sealed class OperationsFoundationTests
     {
         public Task<CaseCreatedResult> CreateManualAsync(CreateManualCaseCommand c, CancellationToken ct) =>
             throw new InvalidOperationException("Store should not be reached on invalid command.");
+        public Task<AcceptedQuoteCaseCreatedResult> CreateAcceptedQuoteAsync(CreateAcceptedQuoteCaseCommand c, CancellationToken ct) =>
+            throw new InvalidOperationException("Store should not be reached on invalid command.");
         public Task<StageAssignedResult?> AssignStageAsync(AssignStageCommand c, CancellationToken ct) =>
             throw new NotImplementedException();
         public Task<DocumentRegisteredResult> RegisterDocumentAsync(RegisterDocumentCommand c, CancellationToken ct) =>
