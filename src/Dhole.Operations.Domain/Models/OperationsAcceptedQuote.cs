@@ -69,5 +69,6 @@ public sealed class OperationsPricingReviewRequest
     public Guid RequestedBy { get; set; }
     public DateTimeOffset RequestedAtUtc { get; set; } = DateTimeOffset.UtcNow;
     public Guid? PricingRequestId { get; set; }
+    public long LatestPricingVersion { get; set; }
     public DateTimeOffset? ResolvedAtUtc { get; set; }
 }
