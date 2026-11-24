@@ -131,13 +131,15 @@ public sealed class OperationsPricingAcceptanceInboxWorker(
         var quoteId = ReadGuid(root, "quoteId");
         var optionId = ReadGuid(root, "acceptedOptionId");
         var accountId = ReadGuid(root, "crmAccountId");
+        var clientName = ReadString(root, "clientName");
         var actorId = ReadGuid(root, "acceptedByUserId");
         var version = ReadInt(root, "commercialRevision");
         var quoteNumber = ReadString(root, "quoteNumber");
         var mode = ReadString(root, "shipmentMode");
         var acceptedAt = ReadString(root, "acceptedAtUtc");
         if (quoteId == Guid.Empty || optionId == Guid.Empty ||
-            ReadGuid(root, "rateId") != optionId || accountId == Guid.Empty ||
+            ReadGuid(root, "rateId") != optionId ||
+            (accountId == Guid.Empty && string.IsNullOrWhiteSpace(clientName)) ||
             actorId == Guid.Empty || version <= 0 ||
             string.IsNullOrWhiteSpace(quoteNumber) || string.IsNullOrWhiteSpace(mode) ||
             !DateTimeOffset.TryParse(acceptedAt,
@@ -145,11 +147,17 @@ public sealed class OperationsPricingAcceptanceInboxWorker(
                 System.Globalization.DateTimeStyles.AssumeUniversal,
                 out var acceptedAtUtc))
             throw new InvalidOperationException(
-                "Definitive quote acceptance is missing CRM, option, actor or revision.");
+                "Definitive quote acceptance is missing client identity, option, actor or revision.");
 
-        var account = await ResolveCrmAccountAsync(accountId, ct);
-        if (account.AccountId != accountId || account.ExecutiveUserId == Guid.Empty)
+        // Prefer the immutable CRM account GUID from Pricing. For historical
+        // name-only quotes, ask CRM for a unique exact active account instead
+        // of fabricating IDs or silently dropping the accepted quote.
+        var account = await ResolveCrmAccountAsync(accountId, clientName, actorId, ct);
+        if (account.AccountId == Guid.Empty ||
+            (accountId != Guid.Empty && account.AccountId != accountId) ||
+            account.ExecutiveUserId == Guid.Empty)
             throw new InvalidOperationException("CRM account identity mismatch.");
+        accountId = account.AccountId;
 
         using var scope = scopes.CreateScope();
         var operations = scope.ServiceProvider.GetRequiredService<OperationsDbContext>();
@@ -180,7 +188,8 @@ public sealed class OperationsPricingAcceptanceInboxWorker(
             quoteId, result.Idtra, result.Existing);
     }
 
-    private async Task<CrmAcceptedAccount> ResolveCrmAccountAsync(Guid accountId, CancellationToken ct)
+    private async Task<CrmAcceptedAccount> ResolveCrmAccountAsync(
+        Guid accountId, string clientName, Guid acceptedBy, CancellationToken ct)
     {
         var baseAddress = config["Crm:OperationsAcceptance:BaseAddress"];
         var serviceKey = config["Crm:OperationsAcceptance:InternalServiceKey"];
@@ -191,20 +200,26 @@ public sealed class OperationsPricingAcceptanceInboxWorker(
             throw new InvalidOperationException(
                 "CRM Operations acceptance contract is not configured; no IDTRA created.");
 
+        var resource = accountId != Guid.Empty
+            ? $"api/internal/crm/operations/accounts/{accountId:D}"
+            : "api/internal/crm/operations/accounts/by-name?name=" +
+                Uri.EscapeDataString(clientName.Trim());
         using var request = new HttpRequestMessage(HttpMethod.Get,
-            new Uri(new Uri(baseUri.ToString().TrimEnd('/') + "/"),
-                $"api/internal/crm/operations/accounts/{accountId:D}"));
+            new Uri(new Uri(baseUri.ToString().TrimEnd('/') + "/"), resource));
         request.Headers.TryAddWithoutValidation("X-Dhole-Service-Key", serviceKey);
+        request.Headers.TryAddWithoutValidation("X-Dhole-Accepted-By", acceptedBy.ToString("D"));
         using var response = await clients.CreateClient("crm-pricing-acceptance")
             .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
         if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Conflict)
-            throw new InvalidOperationException("CRM account or executive needs correction.");
+            throw new InvalidOperationException("CRM account or executive needs correction; " +
+                "name-only quotes require a unique active CRM account.");
         if (!response.IsSuccessStatusCode)
             throw new InvalidOperationException("CRM acceptance identity could not be verified.");
 
         var account = await response.Content.ReadFromJsonAsync<CrmAcceptedAccount>(
             cancellationToken: ct);
-        return account is not null && account.AccountId == accountId
+        return account is not null && account.AccountId != Guid.Empty &&
+               (accountId == Guid.Empty || account.AccountId == accountId)
             ? account : throw new InvalidOperationException("CRM returned an invalid account.");
     }
 
