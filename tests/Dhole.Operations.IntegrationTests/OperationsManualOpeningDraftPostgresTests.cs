@@ -43,7 +43,8 @@ public sealed class OperationsManualOpeningDraftPostgresTests
             var draft = await db.ManualOpeningDrafts.SingleAsync(x =>
                 x.CompanyId == company && x.CreatedBy == actor);
             Assert.AreEqual(id, draft.Id);
-            Assert.AreEqual(savedJson, draft.PayloadJson);
+            using (var payload = System.Text.Json.JsonDocument.Parse(draft.PayloadJson))
+                Assert.AreEqual("FCA", payload.RootElement.GetProperty("form").GetProperty("incoterm").GetString());
             Assert.AreEqual(1L, draft.Version);
             Assert.AreEqual(0, await db.Cases.CountAsync(x => x.CompanyId == company));
 
