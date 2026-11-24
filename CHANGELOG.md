@@ -5,6 +5,7 @@
 - Migración no destructiva operations_manual_opening_drafts; pruebas de persistencia y aislamiento por usuario/empresa.
 - Transferencia Aperturas → Origen tras dos validaciones: evento durable operations.case.validated.v1, asignación inmediata por el pool existente y reconciliación de worker para fallos de proceso o pools inicialmente vacíos. Generación idempotente del progreso ORIGIN_COORDINATION.
 - Consumidor de eventos de QUO aceptada definitivamente desde Pricing: verificación de cuenta y ejecutivo activos en CRM vía contrato interno Auth, Inbox transaccional, IDTRA global único por QUO padre, snapshot JSON comercial inmutable, servicios QUOTED, múltiples equipos/cantidades, desglose de costos y evento Operations; requiere configuración interna segura y validación de integración antes de habilitar en staging.
+- Servicios agregados por Operations se distinguen de los QUOTED; cada uno genera alerta amarilla no bloqueante y solicitud de revisión comercial persistida, idempotente, auditada y publicada en el stream de Pricing. No cambia la QUO ni aprueba ventas/costos automáticamente.
 - Cambios únicamente en rama intermedia; CI, PostgreSQL de integración y staging por verificar. master/producción intactos.
 - DholeOperationsService 0.18.0 → 0.19.0; DholePricingService 1.27.1 → 1.28.0; DholeWeb/DholeSystem 1.120.11 → 1.122.0; restantes componentes sin cambios de código en este lote parcial.
 
