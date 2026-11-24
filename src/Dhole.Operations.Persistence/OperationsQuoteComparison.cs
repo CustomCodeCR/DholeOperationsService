@@ -62,8 +62,24 @@ public static class OperationsQuoteComparison
             .OrderBy(x => x.Key, StringComparer.Ordinal).Select(x => x.Sum(v => v.Count)
                 .ToString("0.####", CultureInfo.InvariantCulture) + " × " + x.Key));
     }
+    private static string? IncotermCode(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var match = System.Text.RegularExpressions.Regex.Match(raw.ToUpperInvariant(),
+            @"\b(EXW|FCA|FAS|FOB|CFR|CIF|CPT|CIP|DAP|DPU|DDP)\b");
+        return match.Success ? match.Value : null;
+    }
     private static string? Term(JsonElement e) =>
+        IncotermCode(Text(e, "incoterm")) ?? IncotermCode(Text(e, "incotermName")) ??
         Label(Text(e, "incotermName")) ?? Label(Text(e, "incoterm"));
+
+    public static string? CargoDescription(JsonElement cargo)
+    {
+        var lines = Parse(Text(cargo, "cargoLinesJson"));
+        if (lines.ValueKind != JsonValueKind.Array) return null;
+        return lines.EnumerateArray().Select(line => Label(Text(line, "description")) ??
+            Label(Text(line, "Description"))).FirstOrDefault(name => name is not null);
+    }
     public static Result Compare(OperationsCase operation, OperationsAcceptedQuoteSnapshot? snapshot)
     {
         if (snapshot is null) return new(false, "", []);
@@ -89,6 +105,7 @@ public static class OperationsQuoteComparison
         Add("pol", "POL · Origen", Text(route, "polName"), Text(current, "pol"));
         Add("poe", "POE · Entrada", Text(route, "poeName"), Text(current, "poe"));
         Add("pod", "POD · Destino", Text(route, "podName"), Text(current, "pod"));
+        Add("cargoDescription", "Descripción de mercancía", CargoDescription(cargo), Text(current, "cargoDescription"));
         Add("packageCount", "Bultos", Quantity(Number(cargo, "packages"), "bultos"),
             Quantity(Number(current, "packageCount") ?? Number(current, "packages"), "bultos"));
         Add("weightValue", "Peso (kg)", Quantity(Number(cargo, "weightKg"), "kg"),
@@ -102,7 +119,7 @@ public static class OperationsQuoteComparison
         Add("pickupAddress", "Dirección de recolecta", Text(quote, "pickupAddress"), Text(current, "pickupAddress"));
         // Optional fields absent in both records are not a discrepancy.
         rows.RemoveAll(x => x.Quoted is null && x.Current is null && x.Status != "MATCH" &&
-            x.Field is "pickupAddress" or "carrierReference" or "agentReference" or "equipment");
+            x.Field is "pickupAddress" or "carrierReference" or "agentReference" or "equipment" or "cargoDescription");
         var changes = rows.Where(x => x.Status == "CHANGED").ToArray();
         var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
             JsonSerializer.Serialize(new { snapshot.QuoteId, snapshot.AcceptedOptionId,
@@ -113,7 +130,7 @@ public static class OperationsQuoteComparison
     public static string Severity(Result comparison, string? reviewStatus) =>
         !comparison.HasSnapshot ? "UNKNOWN" :
         comparison.Differences.Any() ? reviewStatus switch {
-            "RESOLVED_NO_PRICE_CHANGE" => "GREEN",
+            "RESOLVED_NO_PRICE_CHANGE" => comparison.Rows.Any(x => x.Status == "UNCONFIRMED") ? "YELLOW" : "GREEN",
             "PENDING_PRICING" => "YELLOW",
             _ => "RED"
         } : comparison.Rows.Any(x => x.Status == "UNCONFIRMED") ? "YELLOW" : "GREEN";

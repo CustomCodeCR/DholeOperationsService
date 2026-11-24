@@ -27,6 +27,21 @@ public sealed class OperationsQuoteComparisonTests
     }
 
     [TestMethod]
+    public void ExplicitChangedIncotermOverridesInheritedCatalogLabel()
+    {
+        var snapshot = new OperationsAcceptedQuoteSnapshot {
+            SnapshotJson = """{"shipmentMode":"Fcl","incoterm":"INC-2026-004","incotermName":"FOB"}"""
+        };
+        var operation = new OperationsCase {
+            ModalityCode = "FCL", OpeningDataJson = """{"incoterm":"CIF","incotermName":"FOB"}"""
+        };
+        var row = OperationsQuoteComparison.Compare(operation, snapshot).Rows.Single(x => x.Field == "incoterm");
+        Assert.AreEqual("FOB", row.Quoted);
+        Assert.AreEqual("CIF", row.Current);
+        Assert.AreEqual("CHANGED", row.Status);
+    }
+
+    [TestMethod]
     public void MissingSnapshotDoesNotBecomeGreen()
     {
         var result = OperationsQuoteComparison.Compare(new OperationsCase(), null);

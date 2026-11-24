@@ -38,6 +38,7 @@ public static class OperationsCommercialSnapshotReader
             quoteReferences = Text(e, "otherReferences"),
             executiveName = Text(e, "commercialExecutiveName"), clientName = Text(e, "clientName"),
             carrierReference = Text(providers, "carrierName"), agentReference = Text(providers, "agentName"),
+            cargoDescription = OperationsQuoteComparison.CargoDescription(cargo),
             weightValue = Number(cargo, "weightKg"), volumeValue = Number(cargo, "volumeCbm"),
             packageCount = Number(cargo, "packages"), validFrom = Text(e, "validFrom"), validTo = Text(e, "validTo"),
             freeDays = Number(e, "freeDays"),
