@@ -16,7 +16,8 @@
     "postgresIntegration": "pending",
     "ci": "pending",
     "staging": "pending",
-    "production": "not-authorized"
+    "production": "not-authorized",
+    "originIntegration": "pending"
   },
   "components": [
     {
@@ -70,12 +71,13 @@
       "changed": false
     }
   ],
-  "scope": "P1 sub-entrega 1: borradores manuales duraderos sin IDTRA, sin validación/asignación, sin requerir datos completos.",
+  "scope": "P1 sub-entrega 1: borradores manuales duraderos sin IDTRA, sin validación/asignación, sin requerir datos completos.; auto transfer to Origin with durable retry",
   "changes": [
     "Store and recover manual opening drafts in PostgreSQL per tenant and user",
     "Version-safe PUT with serialized transaction and metadata-only Outbox",
     "Offline local fallback, on-screen saved/error status and cleanup after creation",
-    "Regression tests for isolated persistence and web API binding"
+    "Regression tests for isolated persistence and web API binding",
+    "After dual Aperturas approval assign Origin immediately through weighted pool, with durable reconciliation worker and idempotent Origin progress"
   ],
   "remaining": "Acceptance from Pricing, snapshots, validation state expansion, added services, pricing reviews, origin transfer, CRM/Auth/Storage/Notifications/Audit integration pending coordinated release"
 }
