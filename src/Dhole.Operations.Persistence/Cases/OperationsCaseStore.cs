@@ -107,6 +107,18 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
         operation.UpdatedAtUtc = DateTimeOffset.UtcNow;
         operation.Version++;
         db.StageAssignments.Add(assignment);
+        if (stage.DepartmentCode == "COORDINACION_ORIGEN")
+        {
+            if (!await db.OriginProgress.AnyAsync(x => x.CaseStageId == stage.Id, ct))
+                db.OriginProgress.Add(new OperationsOriginProgress {
+                    CaseStageId = stage.Id, StatusCode = "ORIGIN_COORDINATION"
+                });
+            Enqueue("operations.origin.assigned.v1", new {
+                caseId = operation.Id, stageId = stage.Id,
+                version = operation.Version, teamId = assignment.TeamId,
+                assignedUserId = assignment.UserId
+            });
+        }
         OperationsAuditWriter.Case(db, operation.Id, stage.Id, input.ActorUserId,
             "operations.stage.assigned", null, new {
                 assignment.TeamId, assignment.UserId, stage.DepartmentCode
