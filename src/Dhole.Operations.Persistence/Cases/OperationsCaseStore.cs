@@ -75,12 +75,23 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
         if (accepted.ValueKind != JsonValueKind.Object ||
             !GuidProperty(accepted, "quoteId").Equals(input.QuoteId) ||
             !GuidProperty(accepted, "acceptedOptionId").Equals(input.AcceptedOptionId) ||
-            !GuidProperty(accepted, "crmAccountId").Equals(input.AccountId) ||
-            !GuidProperty(accepted, "acceptedByUserId").Equals(input.ActorUserId) ||
+            (GuidProperty(accepted, "crmAccountId") != Guid.Empty && !GuidProperty(accepted, "crmAccountId").Equals(input.AccountId)) ||
+            !(GuidProperty(accepted, "acceptedByUserId") == input.ActorUserId ||
+                (!string.IsNullOrWhiteSpace(StringProperty(accepted, "historicalIdtra")) &&
+                 GuidProperty(accepted, "historicalSourceActorId") == input.ActorUserId)) ||
             IntProperty(accepted, "commercialRevision") != input.CommercialRevision ||
             !StringProperty(accepted, "shipmentMode")
                 .Equals(input.ModalityCode, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Accepted QUO payload does not match the CRM-verified identity.");
+
+        var historicalIdtra = StringProperty(accepted, "historicalIdtra");
+        long? historicalNumber = null;
+        if (!string.IsNullOrEmpty(historicalIdtra))
+        {
+            if (!TryHistoricalNumber(historicalIdtra, out var number))
+                throw new InvalidOperationException("Historical IDTRA requires an unambiguous numeric identifier.");
+            historicalNumber = number;
+        }
 
         var services = ArrayProperty(accepted, "services").Select(element => new
         {
@@ -141,7 +152,8 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
             .SingleOrDefaultAsync(ct);
         if (previous is not null &&
             (previous.SourceQuoteOptionId != input.AcceptedOptionId ||
-             previous.CompanyId != input.CompanyId))
+             previous.CompanyId != input.CompanyId ||
+             (historicalNumber.HasValue && previous.Idtra != historicalIdtra)))
             throw new InvalidOperationException(
                 "A different commercial option or company already owns this parent QUO.");
 
@@ -159,13 +171,23 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
             return new AcceptedQuoteCaseCreatedResult(previous.Id, previous.Idtra, true);
         }
 
-        var next = await NextSequenceAsync("00000", ct);
+        long next;
+        if (historicalNumber.HasValue)
+        {
+            await LockSequenceAsync(db, ct);
+            next = historicalNumber.Value;
+            if (await db.Cases.AsNoTracking().AnyAsync(c => c.Idtra == historicalIdtra || c.SequenceNumber == next, ct))
+                throw new InvalidOperationException("Historical IDTRA is already assigned to another case; reconciliation required.");
+            await RaiseSequenceFloorAsync(db, next, ct);
+        }
+        else next = await NextSequenceAsync("00000", ct);
         var route = ObjectProperty(accepted, "route");
         var cargo = ObjectProperty(accepted, "cargo");
         var providers = ObjectProperty(accepted, "providers");
         var description = CargoDescription(cargo);
         var opening = new {
-            source = "PRICING",
+            source = historicalNumber.HasValue ? "PRICING_HISTORICAL" : "PRICING",
+            historicalIdtra = historicalNumber.HasValue ? historicalIdtra : null,
             quoteId = input.QuoteId,
             acceptedOptionId = input.AcceptedOptionId,
             commercialRevision = input.CommercialRevision,
@@ -198,7 +220,7 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
         var operation = new OperationsCase
         {
             CompanyId = input.CompanyId, SeriesCode = "00000",
-            SequenceNumber = next, Idtra = $"IDTRA{next}",
+            SequenceNumber = next, Idtra = historicalNumber.HasValue ? historicalIdtra : $"IDTRA{next}",
             AccountId = input.AccountId, ExecutiveUserId = input.ExecutiveUserId,
             SourceQuoteId = input.QuoteId, SourceQuoteOptionId = input.AcceptedOptionId,
             ApertureType = "AUTOMATIC", ModalityCode = input.ModalityCode.Trim().ToUpperInvariant(),
@@ -491,8 +513,60 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
         return new DocumentExtractionQueuedResult(job.Id, job.Status);
     }
 
+    public const long MaximumIdtra = 999999999999L;
+    public static bool TryHistoricalNumber(string value, out long number)
+    {
+        number = 0;
+        if (value.Length > 32) return false;
+        var match = System.Text.RegularExpressions.Regex.Match(value, @"^IDTRA(?:999\.)?([0-9]+)$",
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        return match.Success && long.TryParse(match.Groups[1].Value, out number)
+            && number > 0 && number <= MaximumIdtra;
+    }
+
+    private static Task LockSequenceAsync(OperationsDbContext db, CancellationToken ct) =>
+        db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(hashtextextended('operations-idtra-global', 0));", ct);
+
+    private static Task RaiseSequenceFloorAsync(OperationsDbContext db, long number, CancellationToken ct) =>
+        db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO operations.operations_case_sequences (id, series_code, last_number, updated_at_utc)
+            VALUES ({Guid.NewGuid()}, '00000', {number}, now())
+            ON CONFLICT (series_code) DO UPDATE SET
+              last_number = GREATEST(operations_case_sequences.last_number, EXCLUDED.last_number), updated_at_utc = now();
+            """, ct);
+
+    public static async Task<long> ReadNextIdtraAsync(OperationsDbContext db, CancellationToken ct)
+    {
+        var last = await db.CaseSequences.AsNoTracking().Where(x => x.SeriesCode == "00000")
+            .Select(x => (long?)x.LastNumber).SingleOrDefaultAsync(ct) ?? 0;
+        var used = await db.Cases.AsNoTracking().Select(x => (long?)x.SequenceNumber).MaxAsync(ct) ?? 0;
+        return checked(Math.Max(last, used) + 1);
+    }
+
+    public static async Task<long?> ConfigureNextIdtraAsync(OperationsDbContext db, long next, long expectedNext,
+        Guid actor, string reason, CancellationToken ct)
+    {
+        if (next < 1 || next > MaximumIdtra || reason.Trim().Length is < 3 or > 500)
+            throw new ArgumentException("Invalid next IDTRA or reason.");
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
+        await LockSequenceAsync(db, ct);
+        var current = await ReadNextIdtraAsync(db, ct);
+        if (current != expectedNext || next < current) return null;
+        await RaiseSequenceFloorAsync(db, next - 1, ct);
+        var sequence = await db.CaseSequences.AsNoTracking().SingleAsync(x => x.SeriesCode == "00000", ct);
+        OperationsAuditWriter.Entity(db, "OperationsIdtraSequence", sequence.Id, actor,
+            "operations.idtra.sequence.configured", new { nextNumber = current }, new { nextNumber = next, reason = reason.Trim() });
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return next;
+    }
+
     private async Task<long> NextSequenceAsync(string seriesCode, CancellationToken ct)
     {
+        await LockSequenceAsync(db, ct);
+        var currentNext = await ReadNextIdtraAsync(db, ct);
+        if (currentNext > MaximumIdtra) throw new InvalidOperationException("IDTRA sequence exhausted.");
+        await RaiseSequenceFloorAsync(db, currentNext - 1, ct);
         var connection = (NpgsqlConnection)db.Database.GetDbConnection();
         await using var cmd = new NpgsqlCommand("""
             INSERT INTO operations.operations_case_sequences (id, series_code, last_number, updated_at_utc)

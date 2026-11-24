@@ -19,6 +19,7 @@ public static class OperationsEndpoints
         string? OriginCountryCode = null, string? DestinationCountryCode = null,
         System.Text.Json.JsonElement? OpeningData = null);
 
+    public sealed record IdtraSequenceRequest(long NextNumber, long ExpectedNextNumber, string Reason);
     public sealed record NewTeamRequest(Guid CompanyId, string DepartmentCode, string Name);
     public sealed record NewMemberRequest(Guid UserId, decimal CapacityPoints, bool IsSupervisor, bool IsAvailable = true);
     public sealed record NewMembersBatchRequest(Guid[] UserIds, decimal CapacityPoints,
@@ -46,6 +47,26 @@ public static class OperationsEndpoints
     public static IEndpointRouteBuilder MapOperationsEndpoints(this IEndpointRouteBuilder app)
     {
         var api = app.MapGroup("/api/operations").RequireAuthorization();
+
+        api.MapGet("/idtra-sequence", async (HttpContext http, OperationsDbContext db, CancellationToken ct) =>
+        {
+            if (!OperationsCaseAccess.IsSystemAdministrator(http.User)) return Results.Forbid();
+            return Results.Ok(new { nextNumber = await Dhole.Operations.Persistence.Cases.OperationsCaseStore.ReadNextIdtraAsync(db, ct) });
+        });
+        api.MapPut("/idtra-sequence", async (IdtraSequenceRequest request, HttpContext http, OperationsDbContext db, CancellationToken ct) =>
+        {
+            var actor = OperationsCaseAccess.UserId(http.User);
+            if (actor is null || !OperationsCaseAccess.IsSystemAdministrator(http.User)) return Results.Forbid();
+            if (string.IsNullOrWhiteSpace(request.Reason)) return Results.BadRequest(new { code = "IDTRA_REASON_REQUIRED" });
+            try
+            {
+                var next = await Dhole.Operations.Persistence.Cases.OperationsCaseStore.ConfigureNextIdtraAsync(
+                    db, request.NextNumber, request.ExpectedNextNumber, actor.Value, request.Reason, ct);
+                return next.HasValue ? Results.Ok(new { nextNumber = next.Value })
+                    : Results.Conflict(new { code = "IDTRA_SEQUENCE_CHANGED_OR_CANNOT_DECREASE" });
+            }
+            catch (ArgumentException) { return Results.BadRequest(new { code = "IDTRA_SEQUENCE_INVALID" }); }
+        });
 
         // Resolves the current tenant on the server. The client never infers a
         // company from a user, a selected CRM account, or a hard-coded GUID.
