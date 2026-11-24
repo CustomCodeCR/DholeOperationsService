@@ -95,7 +95,9 @@ public static class OperationsCaseWorkspaceEndpoints
                         .Select(t => t.Name).FirstOrDefault(),
                     AssignedUserId = db.StageAssignments.Where(a =>
                         a.CaseStageId == s.Id && a.ReleasedAtUtc == null)
-                        .Select(a => (Guid?)a.UserId).FirstOrDefault(),
+                        .Select(a => (Guid?)a.UserId).FirstOrDefault() ??
+                        db.ApertureValidations.Where(v => v.CaseStageId == s.Id && v.Status == "PENDING")
+                            .OrderBy(v => v.Slot).Select(v => (Guid?)v.UserId).FirstOrDefault(),
                     AssignedAtUtc = db.StageAssignments.Where(a =>
                         a.CaseStageId == s.Id && a.ReleasedAtUtc == null)
                         .Select(a => (DateTimeOffset?)a.AssignedAtUtc).FirstOrDefault(),

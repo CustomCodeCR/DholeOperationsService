@@ -31,6 +31,8 @@ services:
       # does not configure the background worker's internal CRM HTTP client.
       Crm__OperationsAcceptance__BaseAddress: ${CRM_HTTP_URL:-http://crm-api:8080}
       Crm__OperationsAcceptance__InternalServiceKey: ${INTERNAL_SERVICE_KEY}
+      Auth__OperationsPool__BaseAddress: ${AUTH_HTTP_URL:-http://auth-api:8080}
+      Auth__OperationsPool__InternalServiceKey: ${INTERNAL_SERVICE_KEY}
       PricingAcceptance__CompanyId: ${OPERATIONS_ACCEPTANCE_COMPANY_ID:-}
     networks: [dhole-runtime]
 networks:

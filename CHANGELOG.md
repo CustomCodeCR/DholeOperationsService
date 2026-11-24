@@ -1,3 +1,7 @@
+## [0.20.3] - 2026-11-24
+
+- PATCH: recuperar automáticamente aperturas pendientes nuevas e históricas; validar dos operativos disponibles y autorizados en Auth, conservar doble revisión, carga ponderada, bloqueo por empresa, auditoría y Outbox. No reasignar ni aprobar casos existentes. Mantener autorización de replay para validadores.
+
 ## [0.20.2] - 2026-11-24
 
 - PATCH: retornar número QUO en listado y proyectar datos comerciales y todos los rubros originales del snapshot, sin exponer JSON ni ventas a usuarios no autorizados. Los rubros proyectados siguen separados del original.
