@@ -187,4 +187,24 @@ public sealed class OperationsAcceptedPricingQuotePostgresTests
         Assert.AreEqual($"IDTRA{desired}", first.Idtra);
         Assert.AreEqual($"IDTRA{desired + 1}", second.Idtra);
     }
+
+    [TestMethod]
+    public async Task AcceptedQuoteWithLegacyCostDoesNotLoseSnapshotOrBlockOpening()
+    {
+        await using var db = Db();
+        await db.Database.MigrateAsync();
+        var ct = CancellationToken.None;
+        var input = Quote(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), []);
+        var payload = System.Text.Json.Nodes.JsonNode.Parse(input.CommercialSnapshotJson)!.AsObject();
+        var lines = payload["costLines"]!.AsArray();
+        lines[0]!["quantity"] = 0;
+        lines[1]!["currencyCode"] = "LEGACY";
+        input = input with { CommercialSnapshotJson = payload.ToJsonString() };
+        var created = await new OperationsCaseStore(db).CreateAcceptedQuoteAsync(input, ct);
+        Assert.AreEqual(1, await db.CaseQuoteCosts.CountAsync(x => x.QuoteLink.CaseId == created.Id, ct));
+        var snapshot = await db.AcceptedQuoteSnapshots.SingleAsync(x => x.CaseId == created.Id, ct);
+        Assert.AreEqual(2, System.Text.Json.Nodes.JsonNode.Parse(snapshot.SnapshotJson)!["costLines"]!.AsArray().Count);
+        Assert.AreEqual(1, await db.CaseTasks.CountAsync(x => x.CaseId == created.Id && x.Title == "Conciliar rubros comerciales históricos", ct));
+    }
 }
