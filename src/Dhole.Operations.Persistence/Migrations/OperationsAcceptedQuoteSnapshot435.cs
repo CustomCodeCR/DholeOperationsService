@@ -12,6 +12,10 @@ public sealed class OperationsAcceptedQuoteSnapshot435 : Migration
     protected override void Up(MigrationBuilder migrationBuilder)
     {
         migrationBuilder.Sql("""
+            ALTER TABLE operations.operations_cases
+                ADD COLUMN IF NOT EXISTS aperture_type varchar(20) NOT NULL DEFAULT 'MANUAL';
+            ALTER TABLE operations.operations_cases
+                ADD COLUMN IF NOT EXISTS source_quote_id uuid;
             CREATE UNIQUE INDEX IF NOT EXISTS ux_operations_cases_auto_quote
             ON operations.operations_cases(source_quote_id)
             WHERE aperture_type = 'AUTOMATIC' AND source_quote_id IS NOT NULL;
