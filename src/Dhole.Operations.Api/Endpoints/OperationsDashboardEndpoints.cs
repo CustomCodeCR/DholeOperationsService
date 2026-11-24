@@ -21,14 +21,14 @@ public static class OperationsDashboardEndpoints
                 return Results.Forbid();
 
             var isAdmin = OperationsCaseAccess.IsSystemAdministrator(http.User);
-            var readAll = OperationsCaseAccess.HasScope(http.User, "operations.case.read-all");
+            var readAll = isAdmin;
             var company = await access.ResolveCompanyIdAsync(http.User, ct);
             if (!isAdmin && company is null) return Results.Forbid();
 
             var teamQuery = db.Teams.AsNoTracking();
             if (!isAdmin) teamQuery = teamQuery.Where(t => t.CompanyId == company);
             if (!readAll)
-                teamQuery = teamQuery.Where(t => t.Members.Any(m => m.UserId == actor.Value));
+                teamQuery = teamQuery.Where(t => t.IsActive && t.Members.Any(m => m.UserId == actor.Value));
 
             var teams = await teamQuery.OrderBy(t => t.DepartmentCode).ThenBy(t => t.Name)
                 .Select(t => new
@@ -41,32 +41,17 @@ public static class OperationsDashboardEndpoints
             if (teamId.HasValue && !teams.Any(t => t.Id == teamId.Value))
                 return Results.Forbid();
 
-            var query = db.Cases.AsNoTracking()
-                .Where(c => c.Stages.Any(s => s.DepartmentCode == "APERTURAS"));
-            if (!isAdmin) query = query.Where(c => c.CompanyId == company);
-            if (!readAll)
-                query = query.Where(c =>
-                    c.CreatedBy == actor.Value ||
-                    db.ApertureValidations.Any(v => v.CaseStage.CaseId == c.Id && v.UserId == actor.Value) ||
-                    c.Stages.Any(s => s.TeamId.HasValue && db.TeamMembers.Any(m =>
-                        m.TeamId == s.TeamId && m.UserId == actor.Value)) ||
-                    c.Stages.Any(s => db.StageAssignments.Any(a =>
-                        a.CaseStageId == s.Id && a.UserId == actor.Value && a.ReleasedAtUtc == null)));
-
-            if (teamId.HasValue)
-                query = query.Where(c =>
-                    c.Stages.Any(s => s.DepartmentCode == "APERTURAS" && s.TeamId == teamId.Value) ||
-                    db.ApertureValidations.Any(v =>
-                        v.CaseStage.CaseId == c.Id && v.TeamId == teamId.Value));
+            var query = access.FilterVisibleCases(db.Cases.AsNoTracking(), http.User, company, teamId);
 
             var total = await query.CountAsync(ct);
             var manual = await query.CountAsync(c => c.ApertureType == "MANUAL", ct);
             var automatic = await query.CountAsync(c => c.ApertureType == "AUTOMATIC", ct);
             var awaitingAssignment = await query.CountAsync(c =>
-                !db.ApertureValidations.Any(v => v.CaseStage.CaseId == c.Id), ct);
+                c.Stages.Any(s => s.Status == "PENDING" && s.TeamId == null), ct);
             var inReview = await query.CountAsync(c =>
                 db.ApertureValidations.Any(v =>
-                    v.CaseStage.CaseId == c.Id && v.Status == "PENDING"), ct);
+                    v.CaseStage.CaseId == c.Id && v.Status == "PENDING" &&
+                    v.CaseStage.Status == "PENDING_VALIDATION"), ct);
             var approved = await query.CountAsync(c =>
                 db.ApertureValidations.Count(v =>
                     v.CaseStage.CaseId == c.Id && v.Status == "APPROVED") >= 2, ct);
@@ -79,8 +64,17 @@ public static class OperationsDashboardEndpoints
                     c.Id, c.Idtra, c.ModalityCode, c.Status, c.Priority,
                     c.ApertureType, c.SourceQuoteId,
                     c.CreatedAtUtc,
-                    TeamId = c.Stages.Where(s => s.DepartmentCode == "APERTURAS")
+                    TeamId = c.Stages.Where(s => s.Status != "COMPLETED" && s.Status != "SKIPPED")
+                        .OrderByDescending(s => s.Status == "IN_PROGRESS")
+                        .ThenByDescending(s => s.Status == "READY")
                         .Select(s => s.TeamId).FirstOrDefault(),
+                    DepartmentCode = c.Stages.Where(s => s.Status != "COMPLETED" && s.Status != "SKIPPED")
+                        .OrderByDescending(s => s.Status == "IN_PROGRESS")
+                        .ThenByDescending(s => s.Status == "READY")
+                        .Select(s => s.DepartmentCode).FirstOrDefault(),
+                    CanReview = c.ApertureType == "AUTOMATIC" && db.ApertureValidations.Any(v =>
+                        v.CaseStage.CaseId == c.Id && v.UserId == actor.Value &&
+                        v.Status == "PENDING" && v.CaseStage.Status == "PENDING_VALIDATION"),
                     ApprovedReviews = db.ApertureValidations.Count(v =>
                         v.CaseStage.CaseId == c.Id && v.Status == "APPROVED"),
                     PendingReviews = db.ApertureValidations.Count(v =>

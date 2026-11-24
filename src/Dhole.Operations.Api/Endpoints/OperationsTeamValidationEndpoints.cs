@@ -30,18 +30,11 @@ public static class OperationsTeamValidationEndpoints
             if (actor is null || !OperationsCaseAccess.HasScope(http.User, "operations.case.read"))
                 return Results.Forbid();
             var company = await access.ResolveCompanyIdAsync(http.User, ct);
-            var readAll = OperationsCaseAccess.HasScope(http.User, "operations.case.read-all");
             if (!OperationsCaseAccess.IsSystemAdministrator(http.User) && company is null) return Results.Forbid();
-            var query = db.Cases.AsNoTracking()
-                .Where(c => c.Stages.Any(s => s.DepartmentCode == "APERTURAS"));
-            if (!OperationsCaseAccess.IsSystemAdministrator(http.User))
-                query = query.Where(c => c.CompanyId == company);
-            if (!readAll)
-                query = query.Where(c => c.CreatedBy == actor.Value ||
-                    c.Stages.Any(s => db.ApertureValidations.Any(v =>
-                        v.CaseStageId == s.Id && v.UserId == actor.Value)) ||
-                    c.Stages.Any(s => s.TeamId.HasValue && db.TeamMembers.Any(m =>
-                        m.TeamId == s.TeamId && m.UserId == actor.Value)));
+            var query = access.FilterVisibleCases(db.Cases.AsNoTracking(), http.User, company,
+                    department: "APERTURAS")
+                .Where(c => c.ApertureType == "AUTOMATIC" && c.Stages.Any(s =>
+                    s.DepartmentCode == "APERTURAS" && s.Status != "COMPLETED" && s.Status != "SKIPPED"));
             if (q is { Length: > 120 } || status is { Length: > 40 } ||
                 (apertureType is not null && apertureType is not ("" or "MANUAL" or "AUTOMATIC")))
                 return Results.BadRequest(new { code = "OPERATIONS_APERTURE_FILTER_INVALID" });
@@ -278,6 +271,8 @@ public static class OperationsTeamValidationEndpoints
                 v.Id == validationId && v.CaseStage.CaseId == caseId, ct);
             if (validation is null) return Results.NotFound();
             if (validation.UserId != actor.Value) return Results.Forbid();
+            if (!await db.TeamMembers.AnyAsync(m => m.TeamId == validation.TeamId &&
+                m.UserId == actor.Value && m.Team.IsActive, ct)) return Results.Forbid();
             if (validation.Status == decision)
                 return Results.Ok(new { validation.Id, validation.Status, duplicate = true });
             if (validation.Status != "PENDING")

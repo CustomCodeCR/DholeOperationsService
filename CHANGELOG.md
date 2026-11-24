@@ -1,3 +1,7 @@
+## [0.21.1] - 2026-11-24
+
+- Restrict operational case visibility by current team and personal assignment; route manual openings directly to origin and retain dual validation for automatic openings.
+
 ## [0.21.0] - 2026-11-24
 
 - MINOR: comparación de snapshot QUO aceptada contra datos operativos persistidos, normalización de peso/volumen, semáforo, solicitudes por huella de discrepancias con historial independiente y respuesta de Pricing por Inbox. No crea servicios ficticios ni modifica la cotización. Contactos operativos de CRM mediante contrato interno autorizado.

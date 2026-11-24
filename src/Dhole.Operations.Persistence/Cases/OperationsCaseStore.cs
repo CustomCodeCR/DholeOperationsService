@@ -33,20 +33,42 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
             DestinationCountryCode = input.DestinationCountryCode?.ToUpperInvariant(),
             Priority = input.Priority,
             ComplexityPoints = input.ComplexityPoints,
-            Status = "DRAFT",
+            Status = input.SendDirectlyToOrigin ? "OPEN" : "DRAFT",
             CreatedBy = input.ActorUserId
         };
         var openingStage = new OperationsCaseStage { CaseId = operation.Id, DepartmentCode = "APERTURAS" };
+        if (input.SendDirectlyToOrigin)
+        {
+            openingStage.Status = "SKIPPED";
+            openingStage.CompletedAtUtc = DateTimeOffset.UtcNow;
+        }
         operation.Stages.Add(openingStage);
+        var initialStage = openingStage;
+        if (input.SendDirectlyToOrigin)
+        {
+            initialStage = new OperationsCaseStage {
+                CaseId = operation.Id, DepartmentCode = "COORDINACION_ORIGEN", Status = "PENDING"
+            };
+            operation.Stages.Add(initialStage);
+        }
         db.Cases.Add(operation);
         OperationsAuditWriter.Case(db, operation.Id, openingStage.Id, input.ActorUserId,
             "operations.case.created", null, new {
                 operation.Idtra, operation.CompanyId, operation.AccountId, operation.ModalityCode
             });
         Enqueue("operations.case.created.v1", new { caseId = operation.Id, idtra, actorId = input.ActorUserId, version = operation.Version });
+        if (input.SendDirectlyToOrigin)
+        {
+            OperationsAuditWriter.Case(db, operation.Id, initialStage.Id, input.ActorUserId,
+                "operations.manual.origin.queued", null, new { initialStage.DepartmentCode });
+            Enqueue("operations.manual.origin.queued.v1", new {
+                caseId = operation.Id, stageId = initialStage.Id, actorId = input.ActorUserId,
+                operation.CompanyId, version = operation.Version
+            });
+        }
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
-        return new CaseCreatedResult(operation.Id, idtra, operation.Status, openingStage.Id);
+        return new CaseCreatedResult(operation.Id, idtra, operation.Status, initialStage.Id);
     }
 
     /// <summary>
