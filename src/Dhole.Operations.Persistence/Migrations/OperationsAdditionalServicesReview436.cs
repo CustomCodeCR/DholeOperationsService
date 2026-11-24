@@ -47,6 +47,7 @@ public sealed class OperationsAdditionalServicesReview436 : Migration
                 requested_by uuid NOT NULL,
                 requested_at_utc timestamptz NOT NULL DEFAULT now(),
                 pricing_request_id uuid NULL,
+                latest_pricing_version bigint NOT NULL DEFAULT 0,
                 resolved_at_utc timestamptz NULL,
                 CONSTRAINT ck_operations_review_reason CHECK (length(reason) >= 10)
             );
