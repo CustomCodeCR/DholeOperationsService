@@ -25,7 +25,7 @@ jobs:
           set -euo pipefail
           rm -rf .dhole-system
           for attempt in 1 2 3 4 5; do
-            if git clone --depth 1 --branch master https://github.com/CustomCodeCR/DholeSystem.git .dhole-system; then break; fi
+            if git clone --depth 1 --branch develop https://github.com/CustomCodeCR/DholeSystem.git .dhole-system; then break; fi
             if [ "$attempt" -eq 5 ]; then exit 1; fi
             sleep $((attempt * 5))
           done
@@ -64,6 +64,19 @@ jobs:
           done
           docker logs --tail 200 "$CONTAINER_ID" || true
           exit 1
+      - name: Verify Operations worker acceptance configuration
+        run: |
+          set -euo pipefail
+          WORKER_ID="$(docker compose --env-file "$DHOLE_ENV_FILE" -f "$COMPOSE_BASE" -f "$COMPOSE_OPERATIONS" -p "$COMPOSE_PROJECT" ps -q operations-workers)"
+          test -n "$WORKER_ID"
+          test "$(docker inspect -f '{{.State.Running}}' "$WORKER_ID")" = "true"
+          if ! docker exec "$WORKER_ID" sh -c 'test -n "$Crm__OperationsAcceptance__BaseAddress" && test -n "$Crm__OperationsAcceptance__InternalServiceKey"'; then
+            echo "::error::Operations worker lacks internal CRM acceptance connection/key"
+            exit 1
+          fi
+          echo "Operations Pricing acceptance CRM endpoint and service key configured (values hidden)."
+          # Keep failures observable without echoing credentials or the env file.
+          docker logs --since 3m "$WORKER_ID" 2>&1 | grep -E 'Pricing acceptance|Accepted quotation|Definitive quote acceptance|CRM account|Inbox poll failed|CRM acceptance' | tail -n 20 || true
       - name: Verify Operations SQL tables and migration history
         run: bash scripts/verify_operations_schema.sh
       - name: Cleanup old images
