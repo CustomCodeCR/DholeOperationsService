@@ -24,6 +24,8 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
     public DbSet<OperationsDocumentExtractionJob> ExtractionJobs => Set<OperationsDocumentExtractionJob>();
     public DbSet<OperationsAcceptedQuoteSnapshot> AcceptedQuoteSnapshots => Set<OperationsAcceptedQuoteSnapshot>();
     public DbSet<OperationsCaseServiceLine> CaseServiceLines => Set<OperationsCaseServiceLine>();
+    public DbSet<OperationsCommercialAlert> CommercialAlerts => Set<OperationsCommercialAlert>();
+    public DbSet<OperationsPricingReviewRequest> PricingReviewRequests => Set<OperationsPricingReviewRequest>();
     public DbSet<OperationsCaseEquipmentLine> CaseEquipmentLines => Set<OperationsCaseEquipmentLine>();
     public DbSet<OperationsCaseQuoteLink> CaseQuoteLinks => Set<OperationsCaseQuoteLink>();
     public DbSet<OperationsCaseQuoteCost> CaseQuoteCosts => Set<OperationsCaseQuoteCost>();
@@ -192,6 +194,8 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
             e.Property(x => x.Source).HasMaxLength(30).IsRequired();
             e.Property(x => x.ReviewStatus).HasMaxLength(40).IsRequired();
             e.HasIndex(x => x.CaseId);
+            e.HasIndex(x => new { x.CaseId, x.IdempotencyKey }).IsUnique()
+                .HasFilter("source = 'OPERATIONS_ADDED' AND idempotency_key IS NOT NULL");
         });
         m.Entity<OperationsCaseEquipmentLine>(e =>
         {
@@ -204,6 +208,34 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
             e.Property(x => x.UnitWeightsKgJson).HasColumnName("unit_weights_kg_json")
                 .HasColumnType("jsonb").IsRequired();
             e.HasIndex(x => x.CaseId);
+        });
+
+        m.Entity<OperationsCommercialAlert>(e =>
+        {
+            e.ToTable("operations_commercial_alerts");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Code).HasMaxLength(50);
+            e.Property(x => x.Severity).HasMaxLength(20);
+            e.Property(x => x.Status).HasMaxLength(40);
+            e.HasOne<OperationsCaseServiceLine>().WithMany()
+                .HasForeignKey(x => x.ServiceLineId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<OperationsCase>().WithMany()
+                .HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.ServiceLineId).IsUnique();
+            e.HasIndex(x => new { x.CaseId, x.Status });
+        });
+        m.Entity<OperationsPricingReviewRequest>(e =>
+        {
+            e.ToTable("operations_pricing_review_requests");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Reason).HasColumnType("text").IsRequired();
+            e.Property(x => x.Status).HasMaxLength(40);
+            e.HasOne<OperationsCaseServiceLine>().WithMany()
+                .HasForeignKey(x => x.ServiceLineId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<OperationsCase>().WithMany()
+                .HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.ServiceLineId).IsUnique();
+            e.HasIndex(x => new { x.CaseId, x.Status });
         });
 
         m.Entity<OperationsCaseQuoteLink>(e =>
