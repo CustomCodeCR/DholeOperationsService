@@ -5,7 +5,7 @@
 - Migración no destructiva operations_manual_opening_drafts; pruebas de persistencia y aislamiento por usuario/empresa.
 - Transferencia Aperturas → Origen tras dos validaciones: evento durable operations.case.validated.v1, asignación inmediata por el pool existente y reconciliación de worker para fallos de proceso o pools inicialmente vacíos. Generación idempotente del progreso ORIGIN_COORDINATION.
 - Cambios únicamente en rama intermedia; CI, PostgreSQL de integración y staging por verificar. master/producción intactos.
-- DholeOperationsService 0.18.0 → 0.19.0; candidato global 1.122.0; otros servicios sin cambios de código en este lote parcial.
+- DholeOperationsService 0.18.0 → 0.19.0; DholePricingService 1.27.1 → 1.28.0; DholeWeb/DholeSystem 1.120.11 → 1.122.0; restantes componentes sin cambios de código en este lote parcial.
 
 ## [0.18.0] - 2026-11-23 · DH-20261123-OPS-APERTURES-P1-416
 
