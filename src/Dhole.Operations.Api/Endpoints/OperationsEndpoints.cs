@@ -142,15 +142,16 @@ public static class OperationsEndpoints
                 !string.IsNullOrWhiteSpace(baseUrl.UserInfo))
                 return Results.Problem(statusCode: 503, title: "CRM reference service is not configured");
 
-            if (!AuthenticationHeaderValue.TryParse(http.Request.Headers.Authorization.ToString(),
-                    out var authorization) ||
-                !string.Equals(authorization.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase))
-                return Results.Unauthorized();
-
+            var actor = OperationsCaseAccess.UserId(http.User);
+            var serviceKey = configuration["Crm:OperationsAcceptance:InternalServiceKey"];
+            if (actor is null) return Results.Unauthorized();
+            if (string.IsNullOrWhiteSpace(serviceKey))
+                return Results.Problem(statusCode: 503, title: "Internal CRM contacts key not configured");
             var url = new Uri(new Uri(baseUrl.ToString().TrimEnd('/') + "/"),
-                $"api/crm/accounts/{accountId.Value:D}/operations-contacts");
+                $"api/internal/crm/operations/accounts/{accountId.Value:D}/contacts");
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
-            request.Headers.Authorization = authorization;
+            request.Headers.TryAddWithoutValidation("X-Dhole-Service-Key", serviceKey);
+            request.Headers.TryAddWithoutValidation("X-Dhole-Operations-Actor", actor.Value.ToString("D"));
             try
             {
                 using var response = await factory.CreateClient("crm-operations-contacts")

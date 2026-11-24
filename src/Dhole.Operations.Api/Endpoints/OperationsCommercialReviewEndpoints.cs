@@ -18,10 +18,92 @@ public static class OperationsCommercialReviewEndpoints
     public sealed record AddServiceRequest(
         Guid IdempotencyKey, string ServiceCode, string ServiceName, string Reason);
 
+    public sealed record RequestDiscrepancyReview(long ExpectedVersion, string Fingerprint, string? Comment);
+
     public static IEndpointRouteBuilder MapOperationsCommercialReviewEndpoints(
         this IEndpointRouteBuilder app)
     {
         var api = app.MapGroup("/api/operations").RequireAuthorization();
+
+        api.MapGet("/cases/{caseId:guid}/commercial/comparison", async (
+            Guid caseId, HttpContext http, OperationsCaseAccess access, OperationsDbContext db, CancellationToken ct) =>
+        {
+            if (!await access.CanReadAsync(caseId, http.User, ct)) return Results.Forbid();
+            var operation = await db.Cases.AsNoTracking().SingleOrDefaultAsync(x => x.Id == caseId, ct);
+            if (operation is null) return Results.NotFound();
+            var snapshot = await db.AcceptedQuoteSnapshots.AsNoTracking().Where(x => x.CaseId == caseId)
+                .OrderByDescending(x => x.CommercialRevision).FirstOrDefaultAsync(ct);
+            var comparison = OperationsQuoteComparison.Compare(operation, snapshot);
+            var history = await db.QuoteDiscrepancyReviews.AsNoTracking().Where(x => x.CaseId == caseId)
+                .OrderByDescending(x => x.RequestedAtUtc).Take(50)
+                .Select(x => new { x.Id, x.Fingerprint, x.Status, x.Reason, x.RequestedAtUtc, x.ResolvedAtUtc,
+                    x.DecisionReason, x.CommercialRevision, x.DifferencesJson }).ToArrayAsync(ct);
+            var current = history.FirstOrDefault(x => x.Fingerprint == comparison.Fingerprint);
+            var canRequest = await CanRequestDiscrepancyAsync(operation, http, db, ct);
+            return Results.Ok(new {
+                comparison.HasSnapshot, comparison.Fingerprint, comparison.Rows, operation.Version,
+                severity = OperationsQuoteComparison.Severity(comparison, current?.Status),
+                currentReview = current, history, canRequest
+            });
+        });
+
+        api.MapPost("/cases/{caseId:guid}/commercial/comparison/review", async (
+            Guid caseId, RequestDiscrepancyReview input, HttpContext http, OperationsCaseAccess access,
+            OperationsDbContext db, CancellationToken ct) =>
+        {
+            var actor = OperationsCaseAccess.UserId(http.User);
+            if (actor is null || !await access.CanReadAsync(caseId, http.User, ct)) return Results.Forbid();
+            if (string.IsNullOrWhiteSpace(input.Fingerprint) || input.Fingerprint.Length != 64 ||
+                input.Comment?.Length > 300) return Results.BadRequest(new { code = "OPERATIONS_DISCREPANCY_INVALID" });
+            await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
+            var key = "operations-quote-discrepancy:" + caseId.ToString("N");
+            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({key}, 0));", ct);
+            var operation = await db.Cases.SingleOrDefaultAsync(x => x.Id == caseId, ct);
+            if (operation is null) return Results.NotFound();
+            if (!await CanRequestDiscrepancyAsync(operation, http, db, ct)) return Results.Forbid();
+            var snapshot = await db.AcceptedQuoteSnapshots.AsNoTracking().Where(x => x.CaseId == caseId)
+                .OrderByDescending(x => x.CommercialRevision).FirstOrDefaultAsync(ct);
+            var comparison = OperationsQuoteComparison.Compare(operation, snapshot);
+            if (snapshot is null || !comparison.Differences.Any() || input.Fingerprint != comparison.Fingerprint)
+                return Results.Conflict(new { code = "OPERATIONS_DISCREPANCY_CHANGED" });
+            var existing = await db.QuoteDiscrepancyReviews.AsNoTracking().FirstOrDefaultAsync(x =>
+                x.CaseId == caseId && x.Fingerprint == comparison.Fingerprint, ct);
+            if (existing is not null)
+                return Results.Ok(new { reviewId = existing.Id, existing.Status, duplicate = true });
+            if (operation.Version != input.ExpectedVersion)
+                return Results.Conflict(new { code = "OPERATIONS_CASE_VERSION_CONFLICT" });
+            var changes = comparison.Differences.ToArray();
+            var reason = "Diferencias entre QUO aceptada y trámite: " + string.Join("; ",
+                changes.Select(x => x.Label + ": " + x.Quoted + " → " + x.Current)) +
+                (string.IsNullOrWhiteSpace(input.Comment) ? "" : ". Observación: " + input.Comment.Trim());
+            // The existing Pricing contract allows 2000 characters. Never silently truncate evidence.
+            if (reason.Length > 2000) return Results.BadRequest(new { code = "OPERATIONS_DISCREPANCY_REASON_TOO_LONG" });
+            var review = new OperationsQuoteDiscrepancyReview {
+                CaseId = caseId, QuoteId = snapshot.QuoteId, AcceptedOptionId = snapshot.AcceptedOptionId,
+                CommercialRevision = snapshot.CommercialRevision, Fingerprint = comparison.Fingerprint,
+                DifferencesJson = JsonSerializer.Serialize(changes), Reason = reason, RequestedBy = actor.Value
+            };
+            db.QuoteDiscrepancyReviews.Add(review);
+            operation.Version++;
+            operation.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            OperationsAuditWriter.Case(db, caseId, null, actor.Value, "operations.pricing-review.requested", null,
+                new { reviewId = review.Id, review.CommercialRevision, changes });
+            // ServiceId is a legacy transport correlation field in Pricing's v1 contract.
+            // For QUOTE_DISCREPANCY use the review ID, never create a fictional service.
+            db.OutboxMessages.Add(OperationsOutboxFactory.Create("operations.pricing-review.requested.v1",
+                JsonSerializer.Serialize(new {
+                    caseId, operation.Idtra, operation.CompanyId, reviewRequestId = review.Id,
+                    serviceId = review.Id, serviceCode = "QUOTE_DISCREPANCY", review.Reason,
+                    requestedBy = actor.Value, requestedAtUtc = review.RequestedAtUtc,
+                    quoteId = review.QuoteId, acceptedOptionId = review.AcceptedOptionId
+                })));
+            db.OutboxMessages.Add(OperationsOutboxFactory.Create("operations.discrepancy.detected.v1",
+                JsonSerializer.Serialize(new { caseId, reviewRequestId = review.Id, severity = "YELLOW", version = operation.Version })));
+            try { await db.SaveChangesAsync(ct); }
+            catch (DbUpdateConcurrencyException) { return Results.Conflict(new { code = "OPERATIONS_CASE_VERSION_CONFLICT" }); }
+            await tx.CommitAsync(ct);
+            return Results.Ok(new { reviewId = review.Id, review.Status, duplicate = false });
+        });
 
         api.MapGet("/cases/{caseId:guid}/services-and-reviews", async (
             Guid caseId, HttpContext http, OperationsCaseAccess access,
@@ -161,5 +243,21 @@ public static class OperationsCommercialReviewEndpoints
         });
 
         return app;
+    }
+
+    private static async Task<bool> CanRequestDiscrepancyAsync(OperationsCase operation, HttpContext http,
+        OperationsDbContext db, CancellationToken ct)
+    {
+        if (operation.Status is "CANCELLED" or "COMPLETED" || operation.SourceQuoteId is null) return false;
+        var actor = OperationsCaseAccess.UserId(http.User);
+        if (actor is null || !(OperationsCaseAccess.HasScope(http.User, "operations.case.update") ||
+            OperationsCaseAccess.HasScope(http.User, "operations.origin.update") ||
+            OperationsCaseAccess.HasScope(http.User, "operations.aperture.update"))) return false;
+        if (OperationsCaseAccess.IsSystemAdministrator(http.User)) return true;
+        return await db.CaseStages.AsNoTracking().AnyAsync(s => s.CaseId == operation.Id &&
+            s.Status != "COMPLETED" && s.Status != "SKIPPED" &&
+            (db.StageAssignments.Any(a => a.CaseStageId == s.Id && a.UserId == actor.Value && a.ReleasedAtUtc == null) ||
+             db.ApertureValidations.Any(v => v.CaseStageId == s.Id && v.UserId == actor.Value && v.Status == "PENDING") ||
+             db.TeamMembers.Any(m => m.TeamId == s.TeamId && m.UserId == actor.Value && m.IsSupervisor && m.IsAvailable)), ct);
     }
 }
