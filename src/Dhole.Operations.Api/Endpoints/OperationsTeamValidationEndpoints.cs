@@ -288,6 +288,15 @@ public static class OperationsTeamValidationEndpoints
             if (await db.ApertureValidations.AnyAsync(v => v.CaseStageId == stage.Id &&
                 v.Slot < validation.Slot && v.Status == "PENDING", ct))
                 return Results.Conflict(new { code = "VALIDATION_NOT_YOUR_TURN" });
+            if (decision == "APPROVED")
+            {
+                var missing = OperationsOpeningDraftValidator.EvaluateCase(operation.ModalityCode,
+                    operation.OpeningDataJson, operation.AccountId, operation.ApertureType == "MANUAL")
+                    .Where(field => field.CompletionStatus == "PENDIENTE_BLOQUEANTE")
+                    .Select(field => field.FieldCode).ToArray();
+                if (missing.Length > 0)
+                    return Results.Conflict(new { code = "APERTURE_MISSING_REQUIRED_FIELDS", missingFields = missing });
+            }
             validation.Status = decision!;
             validation.Comment = input.Comment?.Trim();
             validation.ReviewedAtUtc = DateTimeOffset.UtcNow;

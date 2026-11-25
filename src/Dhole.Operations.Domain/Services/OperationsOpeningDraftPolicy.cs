@@ -106,7 +106,7 @@ public static class OperationsOpeningDraftPolicy
 
             Required("cargoDescription", !string.IsNullOrWhiteSpace(Text("cargoDescription")));
             Required("pol", !string.IsNullOrWhiteSpace(Text("pol")));
-            if (!pricingParity) Required("pod", !string.IsNullOrWhiteSpace(Text("pod")));
+            if (!pricingParity) Required("pod", !string.IsNullOrWhiteSpace(Text("pod")) || (!strictManual && !string.IsNullOrWhiteSpace(Text("poe"))));
             else if (transport == "MARITIME" && !HasValue("pod")) NotApplicable("pod", "Optional maritime final destination");
             Required("incoterm", incoterm is not null && !(nonMaritime && (incoterm is "FAS" or "FOB" or "CFR" or "CIF")),
                 "A recognized Incoterm applicable to the transport is required");
@@ -128,10 +128,9 @@ public static class OperationsOpeningDraftPolicy
                         !string.IsNullOrWhiteSpace(type.GetString()));
                 Required("equipment", valid, "Each equipment line needs a type and positive quantity");
             }
-            else if (strictManual)
-                Required("equipment", !data.TryGetProperty("equipment", out var incompatibleEquipment) ||
-                    (incompatibleEquipment.ValueKind == JsonValueKind.Array && incompatibleEquipment.GetArrayLength() == 0),
-                    "This shipment must not contain full containers or trailers");
+            else if (strictManual && data.TryGetProperty("equipment", out var incompatibleEquipment) &&
+                !(incompatibleEquipment.ValueKind == JsonValueKind.Array && incompatibleEquipment.GetArrayLength() == 0))
+                Required("equipment", false, "This shipment must not contain full containers or trailers");
             else NotApplicable("equipment", "Shipment does not require full equipment");
 
             // Historical cases retain the original warehouse rule; new manual
@@ -174,6 +173,18 @@ public static class OperationsOpeningDraftPolicy
                 Deferred("stackable", data.TryGetProperty("stackable", out var stacking) &&
                     (stacking.ValueKind is JsonValueKind.True or JsonValueKind.False), "Origin may confirm stacking");
             else NotApplicable("stackable", "Stackability is only applicable to LCL/LTL");
+
+            // Booking and transport references can be confirmed after opening.
+            var air = shipment is "AIR" or "AIRCONSOL" || transport == "AIR";
+            var maritime = !nonMaritime && (shipment is "FCL" or "LCL" || transport == "MARITIME");
+            if (maritime || air) Deferred("bookingNumber", !string.IsNullOrWhiteSpace(Text("bookingNumber")), "Origin confirms booking");
+            else NotApplicable("bookingNumber", "No maritime or air booking");
+            if (maritime) Deferred("blNumber", !string.IsNullOrWhiteSpace(Text("blNumber")), "Documentation confirms BL");
+            else NotApplicable("blNumber", "Not a maritime shipment");
+            if (maritime && shipment == "FCL") Deferred("containerNumber", !string.IsNullOrWhiteSpace(Text("containerNumber")), "Origin confirms container");
+            else NotApplicable("containerNumber", "No dedicated maritime container");
+            if (air) Deferred("airline", !string.IsNullOrWhiteSpace(Text("airline")) || !string.IsNullOrWhiteSpace(Text("carrierReference")), "Origin confirms airline");
+            else NotApplicable("airline", "Not an air shipment");
 
             // Real weight belongs exclusively to Coordinación Origen on manual openings.
             Deferred("actualWeight", false, "Coordinación Origen confirms actual weight");

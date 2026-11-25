@@ -21,10 +21,10 @@ public static class OperationsApertureCompletenessEndpoints
             if (!await access.CanReadAsync(id, http.User, ct)) return Results.Forbid();
             var record = await db.Cases.AsNoTracking().Where(x => x.Id == id)
                 .Select(x => new { x.Id, x.ApertureType, x.ModalityCode,
-                    x.OpeningDataJson, x.Status, x.Version }).SingleOrDefaultAsync(ct);
+                    x.OpeningDataJson, x.Status, x.Version, x.AccountId }).SingleOrDefaultAsync(ct);
             if (record is null) return Results.NotFound();
-            var fields = OperationsOpeningDraftValidator.EvaluateFields(
-                record.ModalityCode, record.OpeningDataJson);
+            var fields = OperationsOpeningDraftValidator.EvaluateCase(
+                record.ModalityCode, record.OpeningDataJson, record.AccountId, record.ApertureType == "MANUAL");
             var missingFields = fields.Where(x => x.CompletionStatus == "PENDIENTE_BLOQUEANTE")
                 .Select(x => x.FieldCode).ToArray();
             // This preview does not imply an available two-person validation pool.
