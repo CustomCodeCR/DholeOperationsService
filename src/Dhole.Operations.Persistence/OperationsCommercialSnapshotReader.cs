@@ -38,9 +38,13 @@ public static class OperationsCommercialSnapshotReader
             quoteReferences = Text(e, "otherReferences"),
             executiveName = Text(e, "commercialExecutiveName"), clientName = Text(e, "clientName"),
             carrierReference = Text(providers, "carrierName"), agentReference = Text(providers, "agentName"),
+            lclGroupAgentReference = Text(providers, "lclGroupAgentName"),
+            merchantReference = Text(providers, "merchantName"),
+            warehouseId = Text(e, "warehouseId"), carrierRoute = Text(e, "carrierRoute"),
             cargoDescription = OperationsQuoteComparison.CargoDescription(cargo),
             weightValue = Number(cargo, "weightKg"), volumeValue = Number(cargo, "volumeCbm"),
-            packageCount = Number(cargo, "packages"), validFrom = Text(e, "validFrom"), validTo = Text(e, "validTo"),
+            packageCount = Number(cargo, "packages"), palletCount = Number(cargo, "pallets"),
+            chargeableQuantity = Number(cargo, "chargeableQuantity"), validFrom = Text(e, "validFrom"), validTo = Text(e, "validTo"),
             freeDays = Number(e, "freeDays"),
             weightUnit = "KG", volumeUnit = "CBM",
             supportDocuments = DocumentReferences(e),
@@ -60,22 +64,34 @@ public static class OperationsCommercialSnapshotReader
             .Select(id => (object)new { id, categoryLabel = "Adjunto de Pricing", fileName = "Adjunto de Pricing", storageId = id })
             .ToArray();
     }
+    public static object? Conditions(string? json)
+    {
+        var e = Read(json);
+        if (e.ValueKind != JsonValueKind.Object) return null;
+        return new { includes = Text(e, "includes"), excludes = Text(e, "excludes"), subjectTo = Text(e, "subjectTo") };
+    }
     public static IReadOnlyList<SnapshotCost> Costs(string? json, bool canSeeSale)
     {
         var e = Read(json);
         var lines = Get(e, "costLines");
         if (lines.ValueKind != JsonValueKind.Array) return [];
         return lines.EnumerateArray().Select((line, index) => {
-            var quantity = Number(line, "quantity");
-            var cost = Number(line, "unitCost");
-            var sale = canSeeSale ? Number(line, "unitSale") : null;
-            return new SnapshotCost(index.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            var quantity = Number(line, "commercialQuantity") ?? Number(line, "quantity");
+            var cost = Number(line, "commercialUnitCost") ?? Number(line, "unitCost");
+            var sale = canSeeSale ? Number(line, "commercialUnitSale") ?? Number(line, "unitSale") : null;
+            return new SnapshotCost(Text(line, "rateDetailId") ?? index.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 Text(line, "description"), Text(line, "costType"), Text(line, "supplierName"),
                 Text(line, "currencyCode"), Text(line, "currencyName"), quantity, cost,
-                Multiply(quantity, cost), Multiply(quantity, sale));
+                Number(line, "commercialCostSubtotal") ?? Multiply(quantity, cost),
+                canSeeSale ? Number(line, "commercialSaleSubtotal") ?? Multiply(quantity, sale) : null,
+                Text(line, "costDetailType"), Text(line, "chargeBasis"),
+                Text(line, "sourceCostId"), Text(line, "supplierId"),
+                canSeeSale ? Number(line, "commercialTaxAmount") : null,
+                canSeeSale ? Number(line, "commercialSaleTotal") : null);
         }).ToArray();
     }
     public sealed record SnapshotCost(string Id, string? Description, string? CostCode, string? SupplierName,
         string? CurrencyCode, string? CurrencyName, decimal? Quantity, decimal? UnitCost,
-        decimal? CostAmount, decimal? SaleAmount);
+        decimal? CostAmount, decimal? SaleAmount, string? CostDetailType, string? ChargeBasis,
+        string? SourceCostId, string? SupplierId, decimal? TaxAmount, decimal? SaleTotal);
 }

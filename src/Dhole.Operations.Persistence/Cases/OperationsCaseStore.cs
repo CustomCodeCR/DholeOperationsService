@@ -158,9 +158,10 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
             Description = StringProperty(element, "description"),
             CostCode = StringProperty(element, "costType"),
             CurrencyCode = StringProperty(element, "currencyCode").ToUpperInvariant(),
-            Quantity = DecimalProperty(element, "quantity"),
-            UnitCost = DecimalProperty(element, "unitCost"),
-            UnitSale = DecimalProperty(element, "unitSale")
+            Quantity = OptionalDecimalProperty(element, "commercialQuantity") ?? DecimalProperty(element, "quantity"),
+            UnitCost = OptionalDecimalProperty(element, "commercialUnitCost") ?? DecimalProperty(element, "unitCost"),
+            UnitSale = OptionalDecimalProperty(element, "commercialUnitSale") ?? DecimalProperty(element, "unitSale"),
+            SupplierName = StringProperty(element, "supplierName")
         }).ToArray();
         // Pricing is the authority for accepted historical commercial data. A
         // malformed legacy row must not prevent materializing the operational case.
@@ -241,6 +242,9 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
             incotermName = StringProperty(accepted, "incotermName"),
             provenance = StringProperty(accepted, "operationType"),
             pickupAddress = StringProperty(accepted, "pickupAddress"),
+            requiresPickup = !string.IsNullOrWhiteSpace(StringProperty(accepted, "pickupAddress")),
+            warehouseId = StringProperty(accepted, "warehouseId"),
+            carrierRoute = StringProperty(accepted, "carrierRoute"),
             transitTime = StringProperty(accepted, "transitTime"),
             quoteReferences = StringProperty(accepted, "otherReferences"),
             executiveName = StringProperty(accepted, "commercialExecutiveName"),
@@ -259,6 +263,10 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
             carrierReference = StringProperty(providers, "carrierName"),
             agentReference = StringProperty(providers, "agentName"),
             agentName = StringProperty(providers, "agentName"),
+            lclGroupAgentReference = StringProperty(providers, "lclGroupAgentName"),
+            merchantReference = StringProperty(providers, "merchantName"),
+            palletCount = OptionalDecimalProperty(cargo, "pallets"),
+            chargeableQuantity = OptionalDecimalProperty(cargo, "chargeableQuantity"),
             services = services.Select(item => new {
                 serviceId = item.Id, serviceCode = item.Code,
                 name = item.Name, source = "QUOTED"
@@ -330,6 +338,7 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
                 SourceCostId = catalogCostId,
                 Description = item.Description,
                 CostCode = item.CostCode, CurrencyCode = item.CurrencyCode,
+                SupplierName = string.IsNullOrWhiteSpace(item.SupplierName) || item.SupplierName.Length > 200 ? null : item.SupplierName,
                 CostAmount = item.UnitCost * item.Quantity,
                 SaleAmount = item.UnitSale * item.Quantity
             });
@@ -418,6 +427,11 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
         value.ValueKind == JsonValueKind.Number &&
         value.TryGetInt32(out var parsed)
             ? parsed : 0;
+
+    private static decimal? OptionalDecimalProperty(JsonElement item, string name) =>
+        item.ValueKind == JsonValueKind.Object &&
+        item.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number &&
+        value.TryGetDecimal(out var parsed) ? parsed : null;
 
     private static decimal DecimalProperty(JsonElement item, string name) =>
         item.ValueKind == JsonValueKind.Object &&
