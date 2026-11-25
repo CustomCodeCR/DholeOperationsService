@@ -42,6 +42,16 @@ public sealed class OperationsQuoteComparisonTests
     }
 
     [TestMethod]
+    public void QuotedWeightIsNotConfirmedActualWeight()
+    {
+        var snapshot = new OperationsAcceptedQuoteSnapshot { SnapshotJson = """{"cargo":{"weightKg":1000}}""" };
+        var operation = new OperationsCase { ApertureType = "AUTOMATIC", OpeningDataJson = """{"quotedWeightKg":1000,"weightValue":1000,"weightUnit":"KG"}""" };
+        Assert.AreEqual("UNCONFIRMED", OperationsQuoteComparison.Compare(operation, snapshot).Rows.Single(x => x.Field == "weightValue").Status);
+        operation.OpeningDataJson = """{"estimatedWeightValue":1000,"estimatedWeightUnit":"KG","actualWeightValue":1150,"actualWeightUnit":"KG","actualWeightKg":1150}""";
+        Assert.AreEqual("CHANGED", OperationsQuoteComparison.Compare(operation, snapshot).Rows.Single(x => x.Field == "weightValue").Status);
+    }
+
+    [TestMethod]
     public void MissingSnapshotDoesNotBecomeGreen()
     {
         var result = OperationsQuoteComparison.Compare(new OperationsCase(), null);

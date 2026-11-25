@@ -228,7 +228,7 @@ public static class OperationsOpeningDraftPolicy
             else NotApplicable("airline", "Not an air shipment");
 
             // Real weight belongs exclusively to Coordinación Origen on manual openings.
-            Deferred("actualWeight", false, "Coordinación Origen confirms actual weight");
+            Deferred("actualWeight", Positive("actualWeightValue") && Text("actualWeightUnit") is "KG" or "LB", "Coordinación Origen confirms actual weight");
             if (strictManual && (shipment is "LCL" or "LTL" or "AIR"))
                 Required("volume", Positive("volumeValue") && Text("volumeUnit") is "CBM" or "CFT");
             else
