@@ -114,6 +114,18 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
                 throw new InvalidOperationException("Historical IDTRA requires an unambiguous numeric identifier.");
             historicalNumber = number;
         }
+        var listedIdtras = ArrayProperty(accepted, "historicalIdtras");
+        var explicitIds = new Dictionary<long, string>();
+        foreach (var item in listedIdtras)
+        {
+            if (item.ValueKind != JsonValueKind.String || item.GetString() is not { } id ||
+                !TryHistoricalNumber(id, out var numeric) || !explicitIds.TryAdd(numeric, id))
+                throw new InvalidOperationException("Ambiguous explicit IDTRA list.");
+        }
+        var multi = explicitIds.Count > 1;
+        if (explicitIds.Count > 0 && (!historicalNumber.HasValue ||
+            !explicitIds.TryGetValue(historicalNumber.Value, out var declared) || declared != historicalIdtra))
+            throw new InvalidOperationException("IDTRA is not in the accepted quote list.");
 
         var services = ArrayProperty(accepted, "services").Select(element => new
         {
@@ -172,17 +184,19 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
         var processed = await db.InboxMessages.AsNoTracking().AnyAsync(x =>
             x.ConsumerService == "operations-pricing-quote" &&
             x.EventId == input.SourceEventId, ct);
-        var previous = await db.Cases.AsNoTracking()
-            .Where(x => x.ApertureType == "AUTOMATIC" &&
-                x.SourceQuoteId == input.QuoteId)
-            .Select(x => new { x.Id, x.Idtra, x.CompanyId, x.SourceQuoteOptionId })
-            .SingleOrDefaultAsync(ct);
-        if (previous is not null &&
-            (previous.SourceQuoteOptionId != input.AcceptedOptionId ||
-             previous.CompanyId != input.CompanyId ||
-             (historicalNumber.HasValue && previous.Idtra != historicalIdtra)))
-            throw new InvalidOperationException(
-                "A different commercial option or company already owns this parent QUO.");
+        var siblings = await db.Cases.AsNoTracking()
+            .Where(x => x.ApertureType == "AUTOMATIC" && x.SourceQuoteId == input.QuoteId)
+            .OrderBy(x => x.SequenceNumber)
+            .Select(x => new { x.Id, x.Idtra, x.SequenceNumber, x.CompanyId, x.SourceQuoteOptionId })
+            .ToArrayAsync(ct);
+        if (siblings.Any(x => x.SourceQuoteOptionId != input.AcceptedOptionId || x.CompanyId != input.CompanyId))
+            throw new InvalidOperationException("A different commercial option or company already owns this parent QUO.");
+        var previous = historicalNumber.HasValue
+            ? siblings.FirstOrDefault(x => x.SequenceNumber == historicalNumber.Value)
+            : siblings.FirstOrDefault();
+        if (historicalNumber.HasValue && previous is null && siblings.Length > 0 &&
+            (!multi || siblings.Any(x => !explicitIds.ContainsKey(x.SequenceNumber))))
+            throw new InvalidOperationException("Existing QUO IDTRA does not match the verified explicit list; reconciliation required.");
 
         if (processed || previous is not null)
         {
@@ -215,6 +229,7 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
         var opening = new {
             source = historicalNumber.HasValue ? "PRICING_HISTORICAL" : "PRICING",
             historicalIdtra = historicalNumber.HasValue ? historicalIdtra : null,
+            sharedQuoteIdtras = explicitIds.Values.ToArray(),
             quoteId = input.QuoteId,
             acceptedOptionId = input.AcceptedOptionId,
             commercialRevision = input.CommercialRevision,
@@ -326,6 +341,14 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
                 Status = "PENDING", Priority = 1
             });
         }
+
+        if (multi)
+            db.CaseTasks.Add(new OperationsCaseTask {
+                CaseId = operation.Id, CaseStageId = stage.Id,
+                Title = "Conciliar distribución de QUO compartida",
+                Details = "La QUO corresponde a varios IDTRA. Los valores comerciales son referencias de la QUO completa, no una distribución individual. Verificar costos y carga antes de conciliación financiera.",
+                Status = "PENDING", Priority = 1
+            });
 
         AddPricingInboxReceipt(input.SourceEventId);
         OperationsAuditWriter.Case(db, operation.Id, stage.Id, input.ActorUserId,

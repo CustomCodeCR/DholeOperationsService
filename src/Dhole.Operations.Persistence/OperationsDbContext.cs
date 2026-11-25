@@ -182,7 +182,7 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
                 .HasColumnType("jsonb").IsRequired();
             e.HasIndex(x => x.CaseId).IsUnique();
             e.HasIndex(x => x.EventId).IsUnique();
-            e.HasIndex(x => new { x.QuoteId, x.AcceptedOptionId, x.CommercialRevision }).IsUnique();
+            e.HasIndex(x => new { x.QuoteId, x.AcceptedOptionId, x.CommercialRevision });
         });
         m.Entity<OperationsCaseServiceLine>(e =>
         {
