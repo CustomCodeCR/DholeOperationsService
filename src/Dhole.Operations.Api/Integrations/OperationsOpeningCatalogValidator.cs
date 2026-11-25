@@ -26,14 +26,14 @@ public sealed class OperationsOpeningCatalogValidator(IHttpClientFactory factory
         {
             using var document = JsonDocument.Parse(openingData);
             var data = document.RootElement;
-            var terminal = Text(data, "transportType") switch { "AIR" => "APT", "ROAD" => "SD", _ => "CY" };
+            var terminal = Text(data, "transportType").ToUpperInvariant() switch { "AIR" => "APT", "ROAD" => "SD", _ => "CY" };
             var selections = new List<Selection>
             {
                 new("pol", "pol", Text(data, "polCatalogId"), Text(data, "polCatalogCode"), Text(data, "pol"), terminal),
                 new("poe", "poe", Text(data, "poeCatalogId"), Text(data, "poeCatalogCode"), Text(data, "poe"), terminal),
                 new("pod", "pod", Text(data, "podCatalogId"), Text(data, "podCatalogCode"), Text(data, "pod"), "SD")
             };
-            var shipment = Text(data, "shipmentType");
+            var shipment = Text(data, "shipmentType").ToUpperInvariant();
             if ((shipment is "FCL" or "FTL") && data.TryGetProperty("equipment", out var equipment) && equipment.ValueKind == JsonValueKind.Array)
             {
                 var group = shipment == "FTL" ? "land-equipment-sizes" : "container-types";
