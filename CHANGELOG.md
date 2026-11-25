@@ -1,3 +1,9 @@
+## [0.21.2] - 2026-11-24
+
+- Assign only the active Aperturas review, rebalance untouched legacy pairs, allocate a distinct second reviewer after the first approval, and scope dashboard and validation decisions to the active assignee.
+- Expose accepted Pricing Storage references from immutable snapshots, including existing IDTRAs.
+- Candidate: CI and authenticated staging validation pending.
+
 ## [0.21.1] - 2026-11-24
 
 - Restrict operational case visibility by current team and personal assignment; route manual openings directly to origin and retain dual validation for automatic openings.

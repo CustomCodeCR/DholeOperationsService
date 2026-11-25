@@ -75,10 +75,16 @@ public static class OperationsTeamValidationEndpoints
                 .Where(s => s.CaseId == caseId && s.DepartmentCode == "APERTURAS")
                 .Select(s => new { s.Id, s.Status, s.TeamId }).SingleOrDefaultAsync(ct);
             if (stage is null) return Results.NotFound();
+            var actor = OperationsCaseAccess.UserId(http.User);
+            var mayReview = actor.HasValue && stage.Status == "PENDING_VALIDATION" &&
+                OperationsCaseAccess.HasScope(http.User, "operations.aperture.validation.review");
             var validators = await db.ApertureValidations.AsNoTracking()
                 .Where(v => v.CaseStageId == stage.Id).OrderBy(v => v.Slot)
                 .Select(v => new { v.Id, v.TeamId, v.UserId, v.Slot, v.Status,
-                    v.AssignedAtUtc, v.ReviewedAtUtc, v.Comment }).ToArrayAsync(ct);
+                    v.AssignedAtUtc, v.ReviewedAtUtc, v.Comment,
+                    CanReview = mayReview && v.UserId == actor && v.Status == "PENDING" &&
+                        db.TeamMembers.Any(m => m.TeamId == v.TeamId && m.UserId == v.UserId && m.Team.IsActive) &&
+                        !db.ApertureValidations.Any(previous => previous.CaseStageId == v.CaseStageId && previous.Status == "PENDING" && previous.Slot < v.Slot) }).ToArrayAsync(ct);
             return Results.Ok(new { stage, requiredReviewers = 2, validators });
         });
 
@@ -155,7 +161,7 @@ public static class OperationsTeamValidationEndpoints
             var existing = await db.ApertureValidations.AsNoTracking()
                 .Where(x => x.CaseStageId == stage.Id).OrderBy(x => x.Slot)
                 .Select(x => new { x.Id, x.UserId, x.Slot, x.Status }).ToArrayAsync(ct);
-            if (existing.Length == 2)
+            if (existing.Length == 2 || (operation.ApertureType == "AUTOMATIC" && existing.Length == 1))
                 return Results.Ok(new { stageId = stage.Id, assigned = existing, duplicate = true });
             if (existing.Length != 0)
                 return Results.Conflict(new { code = "INCOMPLETE_VALIDATION_PAIR" });
@@ -180,7 +186,9 @@ public static class OperationsTeamValidationEndpoints
                 return Results.BadRequest(new { code = "APERTURE_TEAM_NOT_AVAILABLE",
                     message = "El equipo seleccionado no existe, no pertenece a Aperturas o está inactivo." });
             var workloads = await db.ApertureValidations.AsNoTracking()
-                .Where(v => v.Status == "PENDING" && v.CaseStage.Case.CompanyId == operation.CompanyId)
+                .Where(v => v.Status == "PENDING" && v.CaseStage.Case.CompanyId == operation.CompanyId &&
+                    v.CaseStage.Status == "PENDING_VALIDATION" && v.CaseStage.Case.Status == "PENDING_VALIDATION" &&
+                    !db.ApertureValidations.Any(previous => previous.CaseStageId == v.CaseStageId && previous.Status == "PENDING" && previous.Slot < v.Slot))
                 .GroupBy(v => v.UserId).Select(g => new {
                     UserId = g.Key, Points = g.Sum(v => v.CaseStage.Case.ComplexityPoints / 2m)
                 }).ToDictionaryAsync(x => x.UserId, x => x.Points, ct);
@@ -226,6 +234,7 @@ public static class OperationsTeamValidationEndpoints
                     TeamId = pair.TeamId, UserId = pair.SecondUserId, Slot = 2,
                     AssignedBy = actor.Value }
             };
+            if (operation.ApertureType == "AUTOMATIC") assignments = assignments.Take(1).ToArray();
             db.ApertureValidations.AddRange(assignments);
             stage.TeamId = pair.TeamId;
             stage.Status = "PENDING_VALIDATION";
@@ -283,7 +292,11 @@ public static class OperationsTeamValidationEndpoints
                 return Results.Conflict(new { code = "APERTURE_REVIEW_CLOSED" });
             var count = await db.ApertureValidations.CountAsync(v =>
                 v.CaseStageId == stage.Id, ct);
-            if (count != 2) return Results.Conflict(new { code = "TWO_VALIDATORS_REQUIRED" });
+            if (count != 2 && !(operation.ApertureType == "AUTOMATIC" && count == 1 && validation.Slot == 1))
+                return Results.Conflict(new { code = "TWO_VALIDATORS_REQUIRED" });
+            if (await db.ApertureValidations.AnyAsync(v => v.CaseStageId == stage.Id &&
+                v.Slot < validation.Slot && v.Status == "PENDING", ct))
+                return Results.Conflict(new { code = "VALIDATION_NOT_YOUR_TURN" });
             validation.Status = decision!;
             validation.Comment = input.Comment?.Trim();
             validation.ReviewedAtUtc = DateTimeOffset.UtcNow;

@@ -26,7 +26,11 @@ public sealed class OperationsAutomaticAperturePoolWorker(IServiceScopeFactory s
                         .Where(s => s.DepartmentCode == "APERTURAS" &&
                             (s.Status == "PENDING" || s.Status == "PENDING_VALIDATION") &&
                             s.Case.Status == "PENDING_VALIDATION" && s.Case.ApertureType == "AUTOMATIC" &&
-                            !db.ApertureValidations.Any(v => v.CaseStageId == s.Id))
+                            (!db.ApertureValidations.Any(v => v.CaseStageId == s.Id) ||
+                             (db.ApertureValidations.Count(v => v.CaseStageId == s.Id) == 1 &&
+                              db.ApertureValidations.Any(v => v.CaseStageId == s.Id && v.Slot == 1 && v.Status == "APPROVED")) ||
+                             db.ApertureValidations.Count(v => v.CaseStageId == s.Id && v.Status == "PENDING" &&
+                                 v.ReviewedAtUtc == null && v.Comment == null) == 2))
                         .OrderBy(s => s.Case.CreatedAtUtc).ThenBy(s => s.Id)
                         .Select(s => s.CaseId).ToArrayAsync(stoppingToken);
                 }
