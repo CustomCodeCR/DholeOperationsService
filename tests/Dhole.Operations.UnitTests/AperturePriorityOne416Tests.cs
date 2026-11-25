@@ -83,6 +83,10 @@ public sealed class AperturePriorityOne416Tests
     {
         CollectionAssert.Contains(OperationsOpeningDraftValidator.MissingFields("AIR", Base), "incoterm");
         CollectionAssert.Contains(OperationsOpeningDraftValidator.MissingFields("FTL", Base), "incoterm");
+        var road = Base.Replace("\"incoterm\"", "\"transportType\":\"ROAD\",\"incoterm\"");
+        CollectionAssert.Contains(OperationsOpeningDraftValidator.MissingFields("FTL", road), "incoterm");
+        Assert.AreEqual("NO_APLICA", OperationsOpeningDraftValidator.EvaluateFields("FTL", road)
+            .Single(x => x.FieldCode == "carrierReference").CompletionStatus);
         CollectionAssert.DoesNotContain(OperationsOpeningDraftValidator.MissingFields("FCL", Base), "incoterm");
         Assert.AreEqual("NO_APLICA", OperationsOpeningDraftValidator.EvaluateFields("AIRCONSOL", Base)
             .Single(x => x.FieldCode == "carrierReference").CompletionStatus);

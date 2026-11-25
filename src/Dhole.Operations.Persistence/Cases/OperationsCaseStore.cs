@@ -242,6 +242,7 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
             incotermName = StringProperty(accepted, "incotermName"),
             provenance = StringProperty(accepted, "operationType"),
             pickupAddress = StringProperty(accepted, "pickupAddress"),
+            requiresPickup = !string.IsNullOrWhiteSpace(StringProperty(accepted, "pickupAddress")),
             warehouseId = StringProperty(accepted, "warehouseId"),
             carrierRoute = StringProperty(accepted, "carrierRoute"),
             transitTime = StringProperty(accepted, "transitTime"),

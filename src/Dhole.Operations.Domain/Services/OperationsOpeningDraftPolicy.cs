@@ -53,13 +53,13 @@ public static class OperationsOpeningDraftPolicy
             var term = Regex.Match((Text("incoterm") + " " + Text("incotermName")).ToUpperInvariant(),
                 @"\b(EXW|FCA|FAS|FOB|CFR|CIF|CPT|CIP|DAP|DPU|DDP)\b", RegexOptions.CultureInvariant);
             var incoterm = term.Success ? term.Value : null;
-            var nonMaritime = transport is "AIR" or "AIRCONSOL" or "AEREO" or "AÉREO" or "TERRESTRIAL" or "LAND" or "TERRESTRE" ||
+            var nonMaritime = transport is "AIR" or "AIRCONSOL" or "AEREO" or "AÉREO" or "TERRESTRIAL" or "LAND" or "ROAD" or "TERRESTRE" ||
                 (string.IsNullOrWhiteSpace(transport) && (shipment is "AIR" or "AIRCONSOL" or "FTL" or "LTL"));
             bool Positive(string key) =>
                 data.TryGetProperty(key, out var value) &&
                 decimal.TryParse(value.ValueKind == JsonValueKind.String ? value.GetString() :
                     value.ValueKind == JsonValueKind.Number ? value.GetRawText() : null,
-                    NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var amount) && amount > 0;
+                    NumberStyles.Float, CultureInfo.InvariantCulture, out var amount) && amount > 0;
             Required("cargoDescription", !string.IsNullOrWhiteSpace(Text("cargoDescription")));
             Required("pol", !string.IsNullOrWhiteSpace(Text("pol")));
             Required("pod", !string.IsNullOrWhiteSpace(Text("pod")));
