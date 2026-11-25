@@ -57,7 +57,7 @@ public static class OperationsCargoMeasurements
         {
             var old = previous[key];
             var next = incoming[key];
-            if (next is not null && !string.IsNullOrWhiteSpace(Text(next)) &&
+            if (next is not null && !(key == "weightUnit" && old is null && Text(next) == "KG") && !string.IsNullOrWhiteSpace(Text(next)) &&
                 !JsonNode.DeepEquals(old, next))
                 throw new ArgumentException("Origin-only field: " + key);
             // Objects and arrays must also be protected, including null or missing data.
@@ -75,7 +75,7 @@ public static class OperationsCargoMeasurements
     {
         unit = unit.Trim().ToUpperInvariant();
         var normalized = ToKg(value, unit);
-        if (data["estimatedWeightValue"] is null && Positive(data["quotedWeightKg"]) is decimal quoted)
+        if (Positive(data["estimatedWeightValue"]) is null && Positive(data["quotedWeightKg"]) is decimal quoted)
         {
             data["estimatedWeightValue"] = quoted;
             data["estimatedWeightUnit"] = "KG";
