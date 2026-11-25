@@ -1,3 +1,7 @@
+## [0.26.0] - 2026-11-25
+
+- Reserve and reconcile explicit accepted QUO links on existing manual IDTRA using durable events, preserving the operational record and commercial snapshot separately. CI/staging pending.
+
 ## [0.25.3] - 2026-11-25
 
 - Validate and persist selected opening services using Config catalog identities; classify additional transport and cargo fields. CI and staging pending.

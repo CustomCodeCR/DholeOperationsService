@@ -18,12 +18,68 @@ public static class OperationsCommercialReviewEndpoints
     public sealed record AddServiceRequest(
         Guid IdempotencyKey, string ServiceCode, string ServiceName, string Reason);
 
+    public sealed record LinkQuoteRequest(Guid RateId, long ExpectedVersion);
+
     public sealed record RequestDiscrepancyReview(long ExpectedVersion, string Fingerprint, string? Comment);
 
     public static IEndpointRouteBuilder MapOperationsCommercialReviewEndpoints(
         this IEndpointRouteBuilder app)
     {
         var api = app.MapGroup("/api/operations").RequireAuthorization();
+
+        // The same command is used by both modules; no client-side dual write.
+        api.MapPost("/cases/{caseId:guid}/quote-links", async (
+            Guid caseId, LinkQuoteRequest input, HttpContext http, OperationsCaseAccess access,
+            OperationsDbContext db, CancellationToken ct) =>
+        {
+            var actor = OperationsCaseAccess.UserId(http.User);
+            if (actor is null || !OperationsCaseAccess.HasScope(http.User, "pricing.rate.update") ||
+                !(OperationsCaseAccess.HasScope(http.User, "operations.case.update") ||
+                  OperationsCaseAccess.HasScope(http.User, "operations.origin.update") ||
+                  OperationsCaseAccess.HasScope(http.User, "operations.aperture.update")) ||
+                !await access.CanReadAsync(caseId, http.User, ct)) return Results.Forbid();
+            if (input.RateId == Guid.Empty) return Results.BadRequest();
+            await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
+            var key = "operations-quote-link:" + caseId.ToString("N");
+            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({key}, 0));", ct);
+            var operation = await db.Cases.SingleOrDefaultAsync(x => x.Id == caseId, ct);
+            if (operation is null) return Results.NotFound();
+            if (operation.ApertureType != "MANUAL" || operation.Status is "CANCELLED" or "COMPLETED")
+                return Results.Conflict(new { code = "MANUAL_ACTIVE_IDTRA_REQUIRED" });
+            if (operation.SourceQuoteOptionId == input.RateId)
+                return Results.Ok(new { status = "ACCEPTED", duplicate = true });
+            if (operation.SourceQuoteId.HasValue)
+                return Results.Conflict(new { code = "IDTRA_ALREADY_LINKED" });
+            var pending = await db.CaseQuoteLinks.SingleOrDefaultAsync(x => x.CaseId == caseId && x.Status == "PENDING_LINK", ct);
+            if (pending is not null)
+                return pending.QuoteOptionId == input.RateId
+                    ? Results.Ok(new { requestId = pending.Id, status = pending.Status, duplicate = true })
+                    : Results.Conflict(new { code = "QUOTE_LINK_IN_PROGRESS" });
+            if (operation.Version != input.ExpectedVersion)
+                return Results.Conflict(new { code = "OPERATIONS_CASE_VERSION_CONFLICT" });
+            var siblings = await db.Cases.AsNoTracking().Where(x => x.SourceQuoteOptionId == input.RateId &&
+                x.CompanyId == operation.CompanyId && x.AccountId == operation.AccountId)
+                .Select(x => x.Idtra).Distinct().Take(30).ToArrayAsync(ct);
+            var link = new OperationsCaseQuoteLink
+            {
+                CaseId = caseId, QuoteId = input.RateId, QuoteOptionId = input.RateId,
+                IsPrimary = false, Status = "PENDING_LINK", LinkedBy = actor.Value
+            };
+            db.CaseQuoteLinks.Add(link);
+            operation.Version++;
+            operation.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            OperationsAuditWriter.Case(db, caseId, null, actor.Value, "operations.quote-link.requested", null,
+                new { requestId = link.Id, input.RateId, operation.Idtra });
+            db.OutboxMessages.Add(OperationsOutboxFactory.Create("operations.quote-link.requested.v1",
+                JsonSerializer.Serialize(new { requestId = link.Id, caseId, operation.AccountId, operation.CompanyId,
+                    rateId = input.RateId, requestedBy = actor.Value, operation.Idtra, operation.ModalityCode, existingIdtras = siblings })));
+            db.OutboxMessages.Add(OperationsOutboxFactory.Create("operations.case.updated.v1",
+                JsonSerializer.Serialize(new { caseId, version = operation.Version })));
+            try { await db.SaveChangesAsync(ct); }
+            catch (DbUpdateConcurrencyException) { return Results.Conflict(new { code = "OPERATIONS_CASE_VERSION_CONFLICT" }); }
+            await tx.CommitAsync(ct);
+            return Results.Accepted($"/api/operations/cases/{caseId}/workspace", new { requestId = link.Id, status = link.Status, duplicate = false });
+        });
 
         api.MapGet("/cases/{caseId:guid}/commercial/comparison", async (
             Guid caseId, HttpContext http, OperationsCaseAccess access, OperationsDbContext db, CancellationToken ct) =>
