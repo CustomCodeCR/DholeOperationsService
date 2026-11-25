@@ -133,6 +133,13 @@ public static class OperationsAutomaticAperturePool
             });
         db.OutboxMessages.Add(OperationsOutboxFactory.Create("operations.aperture.validation.assigned.v1",
             JsonSerializer.Serialize(new { caseId, stageId = stage.Id, operation.CompanyId, version = operation.Version })));
+        // Match Notifications' existing 24-hour backlog safety policy. Do not
+        // resend notifications for untouched legacy reviewer pairs or old imports.
+        var cutoff = DateTimeOffset.UtcNow.AddHours(-24);
+        if (!legacyPair && await db.AcceptedQuoteSnapshots.AsNoTracking().AnyAsync(
+                s => s.CaseId == caseId && s.AcceptedAtUtc >= cutoff, ct))
+            db.OutboxMessages.Add(OperationsOutboxFactory.CreateOpeningAssignedNotification(
+                caseId, operation.Idtra, assignment.Id, selectedUser));
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return true;

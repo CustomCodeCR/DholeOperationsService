@@ -1,3 +1,7 @@
+## [0.23.1] - 2026-11-25
+
+- Add authorized Operations dashboard invalidations over the existing Hub, durable assigned-reviewer System notifications with idempotency and backlog safety, and retry-safe Redis fanout. CI and authenticated staging pending.
+
 ## [0.23.0] - 2026-11-24
 
 - Consume canonical Pricing cost values when supplied, preserve historical snapshot compatibility, expose charge basis and stable detail references, and restrict sale/tax/terms to finance permission. Correct catalog Incoterm validation, sea-only terms, land/air carrier applicability, consolidation and positive volume completion. Regression tests added; CI and staging pending.

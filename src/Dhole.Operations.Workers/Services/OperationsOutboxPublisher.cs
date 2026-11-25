@@ -40,6 +40,18 @@ public sealed class OperationsOutboxPublisher(
                                     new("header:message_id", entry.EventId.ToString("D"))
                                 });
                         }
+                        else if (entry.EventName == Dhole.Operations.Persistence.Messaging.OperationsOutboxFactory.NotificationRequested)
+                        {
+                            await redis.GetDatabase().StreamAddAsync(
+                                config["Redis:Streams:NotificationsStreamName"] ?? "dhole.notifications.events",
+                                new NameValueEntry[] {
+                                    new("message_type", entry.EventName),
+                                    new("payload_json", entry.PayloadJson),
+                                    new("header:source_service", "DholeOperationsService"),
+                                    new("header:message_id", entry.EventId.ToString("D")),
+                                    new("header:event_id", entry.EventId.ToString("D"))
+                                });
+                        }
                         else if (entry.EventName == "operations.pricing-review.requested.v1")
                         {
                             // The Pricing worker consumes framework-style stream
