@@ -39,4 +39,14 @@ public sealed class OperationsCargoMeasurementsTests
         var malicious = OperationsCargoMeasurements.Parse("""{"actualWeightValue":10}""");
         Assert.ThrowsExactly<ArgumentException>(() => OperationsCargoMeasurements.PreserveOriginFields(malicious, old));
     }
+    [TestMethod]
+    public void OpeningEditsRetainOriginPlanning()
+    {
+        var old = OperationsCargoMeasurements.Parse("""{"etm":"2026-11-26","eta":"2026-12-02","consolidationReference":"REF-1"}""");
+        var edit = OperationsCargoMeasurements.Parse("""{"etm":"2027-01-01","consolidationReference":"REPLACEMENT"}""");
+        OperationsCargoMeasurements.PreserveOriginFields(edit, old);
+        Assert.AreEqual("2026-11-26", edit["etm"]!.GetValue<string>());
+        Assert.AreEqual("2026-12-02", edit["eta"]!.GetValue<string>());
+        Assert.AreEqual("REF-1", edit["consolidationReference"]!.GetValue<string>());
+    }
 }

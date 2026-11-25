@@ -1,5 +1,9 @@
 # 0.27.0 — candidato de Operations
 
+## [0.27.1] - 2026-11-25
+- Permit assigned pending Aperturas reviewers to edit operational opening data without changing the accepted quote.
+- Move ETD, ETA and consolidation planning to the stage-authorized Origin endpoint with concurrency, audit and outbox.
+
 ## [0.27.0] - 2026-11-25
 
 - Separación del peso estimado de QUO y del peso confirmado por Coordinación Origen, con control de permisos, versión, auditoría y Outbox.
