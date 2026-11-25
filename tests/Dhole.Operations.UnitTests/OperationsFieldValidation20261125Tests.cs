@@ -28,7 +28,7 @@ public sealed class OperationsFieldValidation20261125Tests
     {
         var empty = Fcl.Replace("40HC", "");
         Assert.IsTrue(OperationsOpeningDraftValidator.MissingFields("FCL", empty).Contains("equipment"));
-        Assert.AreEqual(0, OperationsOpeningDraftValidator.MissingFields("FCL", Fcl).Length);
+        Assert.IsEmpty(OperationsOpeningDraftValidator.MissingFields("FCL", Fcl));
         var filled = Fcl.Replace("\"cargoDescription\"", "\"bookingNumber\":\"B123\",\"cargoDescription\"");
         Assert.AreEqual("CONFIRMADO", OperationsOpeningDraftValidator.EvaluateFields("FCL", filled)
             .Single(f => f.FieldCode == "bookingNumber").CompletionStatus);
