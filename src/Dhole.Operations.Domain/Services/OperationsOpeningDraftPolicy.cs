@@ -106,7 +106,13 @@ public static class OperationsOpeningDraftPolicy
 
             Required("cargoDescription", !string.IsNullOrWhiteSpace(Text("cargoDescription")));
             Required("pol", !string.IsNullOrWhiteSpace(Text("pol")));
-            if (!pricingParity) Required("pod", !string.IsNullOrWhiteSpace(Text("pod")) || (!strictManual && !string.IsNullOrWhiteSpace(Text("poe"))));
+            if (!strictManual && Text("source") is "PRICING" or "PRICING_HISTORICAL")
+            {
+                Required("poe", !string.IsNullOrWhiteSpace(Text("poe")));
+                if (nonMaritime || !HasValue("pod")) NotApplicable("pod", "No separate final destination selected");
+                else Required("pod", !string.IsNullOrWhiteSpace(Text("pod")));
+            }
+            else if (!pricingParity) Required("pod", !string.IsNullOrWhiteSpace(Text("pod")));
             else if (transport == "MARITIME" && !HasValue("pod")) NotApplicable("pod", "Optional maritime final destination");
             Required("incoterm", incoterm is not null && !(nonMaritime && (incoterm is "FAS" or "FOB" or "CFR" or "CIF")),
                 "A recognized Incoterm applicable to the transport is required");
@@ -136,7 +142,7 @@ public static class OperationsOpeningDraftPolicy
             // Historical cases retain the original warehouse rule; new manual
             // FCA collections validate collection details instead of a fictitious WHS.
             if (incoterm == "FCA" && (pricingParity || !strictManual || !Flag("requiresPickup")))
-                Required("whsName", pricingParity ? (HasValue("warehouseId") || HasValue("warehouseAddress")) && HasValue("whsName") : HasValue("whsName"));
+                Required("whsName", pricingParity ? (HasValue("warehouseId") || HasValue("warehouseAddress")) && HasValue("whsName") : HasValue("whsName") || (!strictManual && HasValue("warehouseId")));
             else NotApplicable("whsName", "Incoterm does not require FCA warehouse");
 
             var pickup = (strictManual && incoterm == "EXW" && direction == "IMPORT") || Flag("requiresPickup") ||

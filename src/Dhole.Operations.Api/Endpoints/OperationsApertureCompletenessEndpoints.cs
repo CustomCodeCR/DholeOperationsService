@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Dhole.Operations.Api.Security;
 using Dhole.Operations.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -10,10 +11,25 @@ namespace Dhole.Operations.Api.Endpoints;
 /// </summary>
 public static class OperationsApertureCompletenessEndpoints
 {
+    public sealed record PreviewRequest(string Modality, Guid AccountId, JsonElement OpeningData);
+
     public static IEndpointRouteBuilder MapOperationsApertureCompletenessEndpoints(
         this IEndpointRouteBuilder app)
     {
         var api = app.MapGroup("/api/operations").RequireAuthorization();
+        // Pure preview; no persistence, assignment or commercial mutation.
+        api.MapPost("/apertures/drafts/completeness", (PreviewRequest input, HttpContext http) =>
+        {
+            if (!OperationsCaseAccess.HasScope(http.User, "operations.case.create")) return Results.Forbid();
+            if (input.OpeningData.ValueKind != JsonValueKind.Object ||
+                input.OpeningData.GetRawText().Length > 131072)
+                return Results.BadRequest(new { code = "OPERATIONS_OPENING_DATA_INVALID" });
+            var fields = OperationsOpeningDraftValidator.EvaluateCase(input.Modality,
+                input.OpeningData.GetRawText(), input.AccountId, true);
+            var missingFields = fields.Where(x => x.CompletionStatus == "PENDIENTE_BLOQUEANTE")
+                .Select(x => x.FieldCode).ToArray();
+            return Results.Ok(new { fields, missingFields, canPassFieldValidation = missingFields.Length == 0 });
+        });
         api.MapGet("/cases/{id:guid}/aperture/completeness", async (
             Guid id, HttpContext http, OperationsCaseAccess access,
             OperationsDbContext db, CancellationToken ct) =>

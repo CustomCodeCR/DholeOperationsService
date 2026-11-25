@@ -1,4 +1,4 @@
-# 0.25.2 — 2026-11-25
+## [0.25.2] - 2026-11-25
 
 - Classify booking, BL, container and airline individually and gate aperture approval with server-side field validation.
 
