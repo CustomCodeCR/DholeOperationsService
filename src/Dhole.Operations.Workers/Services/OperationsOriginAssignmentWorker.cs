@@ -22,7 +22,6 @@ public sealed class OperationsOriginAssignmentWorker(
             {
                 using var scope = scopeFactory.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<OperationsDbContext>();
-                var assigner = scope.ServiceProvider.GetRequiredService<AssignStageHandler>();
                 var candidates = await db.CaseStages.AsNoTracking()
                     .Where(stage => stage.DepartmentCode == "COORDINACION_ORIGEN"
                         && stage.Status == "PENDING"
@@ -30,7 +29,6 @@ public sealed class OperationsOriginAssignmentWorker(
                             (stage.Case.ApertureType == "MANUAL" && stage.Case.Status == "OPEN")))
                     .OrderBy(stage => stage.StartedAtUtc)
                     .ThenBy(stage => stage.Id)
-                    .Take(30)
                     .Select(stage => new { stage.Id, stage.CaseId, stage.Case.ApertureType, stage.Case.CreatedBy })
                     .ToArrayAsync(stoppingToken);
 
@@ -50,7 +48,9 @@ public sealed class OperationsOriginAssignmentWorker(
                     {
                         // PostgreSQL advisory locking and the partial unique
                         // index on the active stage assignment ensure idempotence.
-                        await assigner.HandleAsync(
+                        using var assignmentScope = scopeFactory.CreateScope();
+                        var caseAssigner = assignmentScope.ServiceProvider.GetRequiredService<AssignStageHandler>();
+                        await caseAssigner.HandleAsync(
                             new AssignStageCommand(stage.CaseId, stage.Id, actor),
                             stoppingToken);
                     }

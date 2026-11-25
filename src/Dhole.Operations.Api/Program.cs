@@ -30,6 +30,7 @@ builder.Services.AddAuthorization(options =>
         OperationsCaseAccess.HasScope(context.User, "operations.realtime.read")));
 });
 builder.Services.AddOperationsApplication();
+builder.Services.AddHttpClient<Dhole.Operations.Application.Cases.IOperationsAssignmentEligibility, Dhole.Operations.Infrastructure.OperationsAssignmentEligibility>(client => client.Timeout = TimeSpan.FromSeconds(8));
 builder.Services.AddOperationsPersistence(builder.Configuration);
 builder.Services.AddOperationsInfrastructure(builder.Configuration);
 builder.Services.AddScoped<OperationsCaseAccess>();

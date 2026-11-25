@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "ecosystem": "Dhole",
   "component": "DholeOperationsService",
-  "version": "0.21.3",
-  "ecosystemVersion": "1.124.34",
-  "releaseId": "DH-20261124-OPS-SINGLE-APPROVAL",
+  "version": "0.22.0",
+  "ecosystemVersion": "1.125.0",
+  "releaseId": "DH-20261124-OPS-MULTI-IDTRA",
   "releaseStatus": "candidate-ci-staging-pending",
-  "businessReleaseId": "DH-20261124-OPS-SINGLE-APPROVAL"
+  "businessReleaseId": "DH-20261124-OPS-MULTI-IDTRA"
 }

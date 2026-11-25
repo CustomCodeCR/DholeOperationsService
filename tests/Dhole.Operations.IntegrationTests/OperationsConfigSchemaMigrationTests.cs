@@ -34,6 +34,7 @@ public sealed class OperationsConfigSchemaMigrationTests
             var publishedId = Guid.NewGuid();
             var receivedId = Guid.NewGuid();
             var teamId = Guid.NewGuid();
+            var originTeamId = Guid.NewGuid();
 
             await using (var legacy = new OperationsDbContext(options))
             {
@@ -45,7 +46,7 @@ public sealed class OperationsConfigSchemaMigrationTests
                 await connection.OpenAsync();
                 var legacyTables = new[] {
                     "operations_case_sequences", "operations_team_members",
-                    "operations_assignment_rules", "operations_stage_assignments",
+                    "operations_stage_assignments",
                     "operations_documents", "operations_document_versions",
                     "operations_document_extraction_jobs", "operations_case_quote_links",
                     "operations_case_quote_costs", "operations_case_milestones",
@@ -67,6 +68,16 @@ public sealed class OperationsConfigSchemaMigrationTests
                     CREATE TABLE public.operations_teams (
                         id uuid PRIMARY KEY, company_id uuid NOT NULL, department_code varchar(30) NOT NULL,
                         name varchar(150) NOT NULL, is_active boolean NOT NULL
+                    );
+                    CREATE TABLE public.operations_assignment_rules (
+                        id uuid PRIMARY KEY,
+                        team_id uuid NOT NULL REFERENCES public.operations_teams(id),
+                        department_code varchar(30) NOT NULL,
+                        modality_code varchar(30) NULL,
+                        origin_country_code varchar(2) NULL,
+                        destination_country_code varchar(2) NULL,
+                        priority integer NOT NULL,
+                        is_active boolean NOT NULL
                     );
                     CREATE TABLE public.operations_outbox (
                         "Id" uuid PRIMARY KEY,
@@ -102,13 +113,15 @@ public sealed class OperationsConfigSchemaMigrationTests
                       ("ConsumerName","EventId","EventName","PayloadJson","ProcessedAtUtc")
                     VALUES ('operations-realtime',@received,'operations.changed','{"caseId":"received"}',now());
                     INSERT INTO public.operations_teams(id,company_id,department_code,name,is_active)
-                    VALUES (@team,@company,'APERTURAS','Legacy Pool',true);
+                    VALUES (@team,@company,'APERTURAS','Legacy Pool',true),
+                           (@originTeam,@company,'COORDINACION_ORIGEN','Origen · FCL internacional',true);
                     """, connection))
                 {
                     cmd.Parameters.AddWithValue("pending", pendingId);
                     cmd.Parameters.AddWithValue("published", publishedId);
                     cmd.Parameters.AddWithValue("received", receivedId);
                     cmd.Parameters.AddWithValue("team", teamId);
+                    cmd.Parameters.AddWithValue("originTeam", originTeamId);
                     cmd.Parameters.AddWithValue("company", Guid.NewGuid());
                     await cmd.ExecuteNonQueryAsync();
                 }
@@ -125,6 +138,10 @@ public sealed class OperationsConfigSchemaMigrationTests
                 Assert.AreEqual(OutboxMessageStatus.Processed, published.Status);
                 Assert.AreEqual(1, published.RetryCount);
                 Assert.AreEqual(teamId, (await verified.Teams.SingleAsync(x => x.Id == teamId)).Id);
+                var routing = await verified.AssignmentRules.SingleAsync(x => x.TeamId == originTeamId);
+                Assert.AreEqual("FCL", routing.ModalityCode);
+                Assert.IsNull(routing.OriginCountryCode);
+                Assert.IsTrue(routing.IsActive);
                 var receipt = await verified.InboxMessages.SingleAsync(x => x.EventId == receivedId);
                 Assert.AreEqual("operations-realtime", receipt.ConsumerService);
                 Assert.AreEqual("operations.changed", receipt.EventName);

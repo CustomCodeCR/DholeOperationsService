@@ -4,6 +4,7 @@ using System.Text.Json;
 using Dhole.Operations.Application.Cases;
 using Dhole.Operations.Persistence.Messaging;
 using Dhole.Operations.Domain.Models;
+using Dhole.Operations.Domain.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Npgsql;
@@ -11,7 +12,7 @@ using Npgsql;
 namespace Dhole.Operations.Persistence.Cases;
 
 /// <summary>Transactional Operations writes. External CRM/Pricing/Storage identifiers are references only.</summary>
-public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCaseStore
+public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssignmentEligibility? eligibility = null) : IOperationsCaseStore
 {
     public async Task<CaseCreatedResult> CreateManualAsync(CreateManualCaseCommand input, CancellationToken ct)
     {
@@ -114,6 +115,18 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
                 throw new InvalidOperationException("Historical IDTRA requires an unambiguous numeric identifier.");
             historicalNumber = number;
         }
+        var listedIdtras = ArrayProperty(accepted, "historicalIdtras");
+        var explicitIds = new Dictionary<long, string>();
+        foreach (var item in listedIdtras)
+        {
+            if (item.ValueKind != JsonValueKind.String || item.GetString() is not { } id ||
+                !TryHistoricalNumber(id, out var numeric) || !explicitIds.TryAdd(numeric, id))
+                throw new InvalidOperationException("Ambiguous explicit IDTRA list.");
+        }
+        var multi = explicitIds.Count > 1;
+        if (explicitIds.Count > 0 && (!historicalNumber.HasValue ||
+            !explicitIds.TryGetValue(historicalNumber.Value, out var declared) || declared != historicalIdtra))
+            throw new InvalidOperationException("IDTRA is not in the accepted quote list.");
 
         var services = ArrayProperty(accepted, "services").Select(element => new
         {
@@ -172,17 +185,19 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
         var processed = await db.InboxMessages.AsNoTracking().AnyAsync(x =>
             x.ConsumerService == "operations-pricing-quote" &&
             x.EventId == input.SourceEventId, ct);
-        var previous = await db.Cases.AsNoTracking()
-            .Where(x => x.ApertureType == "AUTOMATIC" &&
-                x.SourceQuoteId == input.QuoteId)
-            .Select(x => new { x.Id, x.Idtra, x.CompanyId, x.SourceQuoteOptionId })
-            .SingleOrDefaultAsync(ct);
-        if (previous is not null &&
-            (previous.SourceQuoteOptionId != input.AcceptedOptionId ||
-             previous.CompanyId != input.CompanyId ||
-             (historicalNumber.HasValue && previous.Idtra != historicalIdtra)))
-            throw new InvalidOperationException(
-                "A different commercial option or company already owns this parent QUO.");
+        var siblings = await db.Cases.AsNoTracking()
+            .Where(x => x.ApertureType == "AUTOMATIC" && x.SourceQuoteId == input.QuoteId)
+            .OrderBy(x => x.SequenceNumber)
+            .Select(x => new { x.Id, x.Idtra, x.SequenceNumber, x.CompanyId, x.SourceQuoteOptionId })
+            .ToArrayAsync(ct);
+        if (siblings.Any(x => x.SourceQuoteOptionId != input.AcceptedOptionId || x.CompanyId != input.CompanyId))
+            throw new InvalidOperationException("A different commercial option or company already owns this parent QUO.");
+        var previous = historicalNumber.HasValue
+            ? siblings.FirstOrDefault(x => x.SequenceNumber == historicalNumber.Value)
+            : siblings.FirstOrDefault();
+        if (historicalNumber.HasValue && previous is null && siblings.Length > 0 &&
+            (!multi || siblings.Any(x => !explicitIds.ContainsKey(x.SequenceNumber))))
+            throw new InvalidOperationException("Existing QUO IDTRA does not match the verified explicit list; reconciliation required.");
 
         if (processed || previous is not null)
         {
@@ -215,6 +230,7 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
         var opening = new {
             source = historicalNumber.HasValue ? "PRICING_HISTORICAL" : "PRICING",
             historicalIdtra = historicalNumber.HasValue ? historicalIdtra : null,
+            sharedQuoteIdtras = explicitIds.Values.ToArray(),
             quoteId = input.QuoteId,
             acceptedOptionId = input.AcceptedOptionId,
             commercialRevision = input.CommercialRevision,
@@ -259,6 +275,8 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
             AccountId = input.AccountId, ExecutiveUserId = input.ExecutiveUserId,
             SourceQuoteId = input.QuoteId, SourceQuoteOptionId = input.AcceptedOptionId,
             ApertureType = "AUTOMATIC", ModalityCode = input.ModalityCode.Trim().ToUpperInvariant(),
+            OriginCountryCode = OperationsOriginRouting.Country(StringProperty(route, "originCountryCode"), StringProperty(route, "polName")),
+            DestinationCountryCode = OperationsOriginRouting.Country(StringProperty(route, "destinationCountryCode"), StringProperty(route, "podName")),
             Status = "PENDING_VALIDATION", Priority = 3, ComplexityPoints = 1m,
             OpeningDataJson = JsonSerializer.Serialize(opening),
             CreatedBy = input.ActorUserId
@@ -326,6 +344,14 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
                 Status = "PENDING", Priority = 1
             });
         }
+
+        if (multi)
+            db.CaseTasks.Add(new OperationsCaseTask {
+                CaseId = operation.Id, CaseStageId = stage.Id,
+                Title = "Conciliar distribución de QUO compartida",
+                Details = "La QUO corresponde a varios IDTRA. Los valores comerciales son referencias de la QUO completa, no una distribución individual. Verificar costos y carga antes de conciliación financiera.",
+                Status = "PENDING", Priority = 1
+            });
 
         AddPricingInboxReceipt(input.SourceEventId);
         OperationsAuditWriter.Case(db, operation.Id, stage.Id, input.ActorUserId,
@@ -434,12 +460,33 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
         await db.Database.ExecuteSqlInterpolatedAsync(
             $"SELECT pg_advisory_xact_lock(hashtextextended({lockKey}, 0));", ct);
 
-        if (await db.StageAssignments.AnyAsync(x => x.CaseStageId == stage.Id && x.ReleasedAtUtc == null, ct))
+        await db.Entry(stage).ReloadAsync(ct);
+        await db.Entry(operation).ReloadAsync(ct);
+        if (stage.Status is "COMPLETED" or "SKIPPED" ||
+            await db.StageAssignments.AnyAsync(x => x.CaseStageId == stage.Id && x.ReleasedAtUtc == null, ct))
             return null;
 
         // Routing predicates always derive from persisted case data, not caller-supplied assign parameters.
         var origin = operation.OriginCountryCode;
         var destination = operation.DestinationCountryCode;
+        var isOrigin = stage.DepartmentCode == "COORDINACION_ORIGEN";
+        if (isOrigin && operation.ApertureType == "AUTOMATIC" && (origin == null || destination == null))
+        {
+            var snapshotJson = await db.AcceptedQuoteSnapshots.AsNoTracking()
+                .Where(x => x.CaseId == operation.Id).Select(x => x.SnapshotJson).SingleOrDefaultAsync(ct);
+            if (!string.IsNullOrWhiteSpace(snapshotJson))
+            {
+                using var snapshot = JsonDocument.Parse(snapshotJson);
+                var route = ObjectProperty(snapshot.RootElement, "route");
+                origin ??= OperationsOriginRouting.Country(StringProperty(route, "originCountryCode"), StringProperty(route, "polName"));
+                destination ??= OperationsOriginRouting.Country(StringProperty(route, "destinationCountryCode"), StringProperty(route, "podName"));
+            }
+        }
+        if (isOrigin)
+        {
+            operation.OriginCountryCode = origin;
+            operation.DestinationCountryCode = destination;
+        }
         var rules = await db.AssignmentRules.AsNoTracking()
             .Include(x => x.Team).ThenInclude(x => x.Members)
             .Where(x => x.IsActive && x.Team.IsActive && x.Team.CompanyId == operation.CompanyId &&
@@ -449,8 +496,26 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
                 (x.DestinationCountryCode == null || x.DestinationCountryCode == destination))
             .ToListAsync(ct);
 
+        if (isOrigin && OperationsOriginRouting.IsSpecialized(operation.ModalityCode))
+        {
+            // US routes must never fall through to the international pool; unknown countries require review.
+            if (origin is null) rules.Clear();
+            else if (origin == "US") rules = rules.Where(r => r.OriginCountryCode == "US").ToList();
+        }
+        if (isOrigin && rules.Count > 0)
+        {
+            // Geographic/modality specificity precedes load. Only compare users within the best routing tier.
+            int Specificity(OperationsAssignmentRule r) =>
+                (r.OriginCountryCode != null ? 4 : 0) + (r.ModalityCode != null ? 2 : 0) + (r.DestinationCountryCode != null ? 1 : 0);
+            var best = rules.Max(Specificity);
+            rules = rules.Where(r => Specificity(r) == best).ToList();
+            var priority = rules.Max(r => r.Priority);
+            rules = rules.Where(r => r.Priority == priority).ToList();
+        }
+
         var load = await db.StageAssignments.AsNoTracking()
-            .Where(x => x.ReleasedAtUtc == null)
+            .Where(x => x.ReleasedAtUtc == null && x.CaseStage.Case.CompanyId == operation.CompanyId &&
+                x.CaseStage.Status != "COMPLETED" && x.CaseStage.Status != "SKIPPED")
             .GroupBy(x => x.UserId).Select(g => new { UserId = g.Key, Points = g.Sum(x => x.AssignedPoints) })
             .ToDictionaryAsync(x => x.UserId, x => x.Points, ct);
 
@@ -465,8 +530,33 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
             .OrderBy(x => x.RelativeLoad).ThenByDescending(x => x.Priority)
             .ThenBy(x => x.UserId).ThenBy(x => x.TeamId).ToList();
 
-        if (candidates.Count == 0) return null;
-        var selected = candidates[0];
+        var selected = candidates.FirstOrDefault();
+        if (isOrigin)
+        {
+            selected = null;
+            if (eligibility != null)
+                foreach (var candidate in candidates)
+                    if (await eligibility.IsEligibleAsync(candidate.UserId, ct)) { selected = candidate; break; }
+        }
+        if (selected is null)
+        {
+            if (isOrigin && !await db.CaseTasks.AnyAsync(t => t.CaseStageId == stage.Id &&
+                t.Title == "Pendiente de asignación a Coordinación Origen" && t.Status == "PENDING", ct))
+            {
+                db.CaseTasks.Add(new OperationsCaseTask { CaseId = operation.Id, CaseStageId = stage.Id,
+                    Title = "Pendiente de asignación a Coordinación Origen",
+                    Details = origin is null ? "Confirmar país de origen del tramo operativo." : "Revisar reglas, disponibilidad y autorización de los operativos.",
+                    Priority = 1, Status = "PENDING" });
+                OperationsAuditWriter.Case(db, operation.Id, stage.Id, input.ActorUserId,
+                    "operations.origin.assignment.pending", null, new { origin, operation.ModalityCode });
+                operation.Version++;
+                operation.UpdatedAtUtc = DateTimeOffset.UtcNow;
+                Enqueue("operations.case.updated.v1", new { caseId = operation.Id, stageId = stage.Id, version = operation.Version });
+                await db.SaveChangesAsync(ct);
+            }
+            await transaction.CommitAsync(ct);
+            return null;
+        }
         var assignment = new OperationsStageAssignment
         {
             CaseStageId = stage.Id, TeamId = selected.TeamId, UserId = selected.UserId,
@@ -480,6 +570,9 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
         db.StageAssignments.Add(assignment);
         if (stage.DepartmentCode == "COORDINACION_ORIGEN")
         {
+            foreach (var task in await db.CaseTasks.Where(t => t.CaseStageId == stage.Id &&
+                t.Title == "Pendiente de asignación a Coordinación Origen" && t.Status == "PENDING").ToListAsync(ct))
+                task.Status = "COMPLETED";
             if (!await db.OriginProgress.AnyAsync(x => x.CaseStageId == stage.Id, ct))
                 db.OriginProgress.Add(new OperationsOriginProgress {
                     CaseStageId = stage.Id, StatusCode = "ORIGIN_COORDINATION"

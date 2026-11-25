@@ -121,6 +121,36 @@ public sealed class OperationsAcceptedPricingQuotePostgresTests
     }
 
     [TestMethod]
+    public async Task ExplicitMultipleIdtrasShareOneQuoteWithoutDuplicatingOnRetries()
+    {
+        await using var db = Db();
+        await db.Database.MigrateAsync();
+        var ct = CancellationToken.None;
+        var number = await OperationsCaseStore.ReadNextIdtraAsync(db, ct);
+        var ids = new[] { $"IDTRA{number + 20}", $"IDTRA999.{number + 21}" };
+        var input = Quote(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), []);
+        CreateAcceptedQuoteCaseCommand WithId(string id, Guid eventId)
+        {
+            var payload = System.Text.Json.Nodes.JsonNode.Parse(input.CommercialSnapshotJson)!.AsObject();
+            payload["historicalIdtra"] = id;
+            payload["historicalIdtras"] = JsonSerializer.SerializeToNode(ids);
+            return input with { SourceEventId = eventId, CommercialSnapshotJson = payload.ToJsonString() };
+        }
+        var store = new OperationsCaseStore(db);
+        var one = await store.CreateAcceptedQuoteAsync(WithId(ids[0], Guid.NewGuid()), ct);
+        var two = await store.CreateAcceptedQuoteAsync(WithId(ids[1], Guid.NewGuid()), ct);
+        Assert.AreNotEqual(one.Id, two.Id);
+        Assert.AreEqual(ids[0], one.Idtra);
+        Assert.AreEqual(ids[1], two.Idtra);
+        var retry = await store.CreateAcceptedQuoteAsync(WithId(ids[0], Guid.NewGuid()), ct);
+        Assert.AreEqual(one.Id, retry.Id);
+        Assert.IsTrue(retry.Existing);
+        Assert.AreEqual(2, await db.Cases.CountAsync(c => c.SourceQuoteId == input.QuoteId, ct));
+        Assert.AreEqual(2, await db.AcceptedQuoteSnapshots.CountAsync(c => c.QuoteId == input.QuoteId, ct));
+    }
+
+    [TestMethod]
     public async Task AnotherOptionForAcceptedParentIsRejectedBeforeAllocatingNewIdtra()
     {
         var company=Guid.NewGuid();var quoteId=Guid.NewGuid();var account=Guid.NewGuid();
