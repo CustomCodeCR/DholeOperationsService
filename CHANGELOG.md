@@ -1,3 +1,7 @@
+## [0.25.2] - 2026-11-25
+
+- Classify booking, BL, container and airline individually and gate aperture approval with server-side field validation.
+
 ## [0.23.2] - 2026-11-25
 
 - Enqueue distinct idempotent System and Email notifications in the persisted Origin assignment transaction; use registered Auth email and audit missing addresses. Existing durable realtime events and pool retained. Regression tests added; CI/staging pending.
