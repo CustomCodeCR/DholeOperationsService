@@ -41,6 +41,18 @@ public sealed class OperationsManualOpeningValidation20261125Tests
     }
 
     [TestMethod]
+    public void VersionThreeAirDoesNotRequirePodAndFcaRequiresWarehouse()
+    {
+        var air = Air.Replace("\"pod\":\"San José\",", "\"openingValidationVersion\":3,")
+            .Replace("\"podTerminalType\":\"SD\",", "")
+            .Replace("\"whsName\":\"WHS\"", "\"whsName\":\"WHS\",\"warehouseId\":\"id\"");
+        CollectionAssert.AreEqual(Array.Empty<string>(), Missing(air));
+        CollectionAssert.Contains(Missing(air.Replace("\"warehouseId\":\"id\"", "\"requiresPickup\":true")), "whsName");
+        CollectionAssert.Contains(Missing(air.Replace("\"openingValidationVersion\":3", "\"openingValidationVersion\":3,\"pod\":\"Invalid\"")), "pod");
+        CollectionAssert.Contains(Missing(air.Replace("FCA", "EXW")), "pickupLocations");
+    }
+
+    [TestMethod]
     public void ExwImportCannotSkipPickupAndFcaPickupDoesNotRequireWarehouse()
     {
         var missing = Missing(Air.Replace("FCA", "EXW"));

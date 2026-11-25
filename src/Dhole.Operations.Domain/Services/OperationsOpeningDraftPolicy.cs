@@ -29,7 +29,17 @@ public static class OperationsOpeningDraftPolicy
                 return [new("openingData", "PENDIENTE_BLOQUEANTE", "Invalid opening object")];
 
             var data = document.RootElement;
-            var strictManual = manualOpening || (data.TryGetProperty("openingValidationVersion", out var ruleVersion) && ruleVersion.ValueKind == JsonValueKind.Number && ruleVersion.TryGetInt32(out var revision) && revision >= 2);
+            var revision = data.TryGetProperty("openingValidationVersion", out var ruleVersion) && ruleVersion.ValueKind == JsonValueKind.Number && ruleVersion.TryGetInt32(out var parsedVersion) ? parsedVersion : 0;
+            var strictManual = manualOpening || revision >= 2;
+            var pricingParity = revision >= 3;
+            bool ValidPoints(string key) =>
+                data.TryGetProperty(key, out var points) && points.ValueKind == JsonValueKind.Array &&
+                points.GetArrayLength() > 0 && points.EnumerateArray().All(point =>
+                    point.ValueKind == JsonValueKind.Object &&
+                    point.TryGetProperty("address", out var address) && address.ValueKind == JsonValueKind.String &&
+                    !string.IsNullOrWhiteSpace(address.GetString()) &&
+                    point.TryGetProperty("cargoCondition", out var condition) && condition.ValueKind == JsonValueKind.String &&
+                    condition.GetString() is "FiscalCargo" or "NationalizedCargo");
             string? Text(string key) =>
                 data.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String
                     ? value.GetString()?.Trim() : null;
@@ -77,11 +87,17 @@ public static class OperationsOpeningDraftPolicy
                 Required("poe", !string.IsNullOrWhiteSpace(Text("poe")));
                 Required("polTerminalType", terminal.Length > 0 && Text("polTerminalType") == terminal, "Origin terminal incompatible with transport");
                 Required("poeTerminalType", terminal.Length > 0 && Text("poeTerminalType") == terminal, "Entry terminal incompatible with transport");
-                Required("podTerminalType", Text("podTerminalType") == "SD", "Final destination must be a delivery location");
+                if (!pricingParity || (transport == "MARITIME" && HasValue("pod")))
+                    Required("podTerminalType", Text("podTerminalType") == "SD", "Final destination must be a delivery location");
+                else if (transport is "AIR" or "ROAD")
+                    Required("pod", !HasValue("pod") && !HasValue("podCatalogId"), "Air and road use only POL and POE");
+                else NotApplicable("podTerminalType", "Optional maritime POD not selected");
                 Required("estimatedWeight", Positive("estimatedWeightValue") && Text("estimatedWeightUnit") is "KG" or "LB");
                 if (shipment == "AIR")
                     Required("dimensions", Positive("lengthCm") && Positive("widthCm") && Positive("heightCm"));
-                if (incoterm is "DAP" or "DPU" or "DDP")
+                if (pricingParity && (Flag("requiresDelivery") || incoterm is "DAP" or "DPU" or "DDP"))
+                    Required("deliveryLocations", ValidPoints("deliveryLocations"), "Add the agreed delivery point");
+                else if (incoterm is "DAP" or "DPU" or "DDP")
                     Required("destinationAddress", !string.IsNullOrWhiteSpace(Text("destinationAddress")));
                 Required("portHandlingMode", transport == "MARITIME" || !HasValue("portHandlingMode"), "Port handling is not applicable to this transport");
                 if (manualOpening)
@@ -90,7 +106,8 @@ public static class OperationsOpeningDraftPolicy
 
             Required("cargoDescription", !string.IsNullOrWhiteSpace(Text("cargoDescription")));
             Required("pol", !string.IsNullOrWhiteSpace(Text("pol")));
-            Required("pod", !string.IsNullOrWhiteSpace(Text("pod")));
+            if (!pricingParity) Required("pod", !string.IsNullOrWhiteSpace(Text("pod")));
+            else if (transport == "MARITIME" && !HasValue("pod")) NotApplicable("pod", "Optional maritime final destination");
             Required("incoterm", incoterm is not null && !(nonMaritime && (incoterm is "FAS" or "FOB" or "CFR" or "CIF")),
                 "A recognized Incoterm applicable to the transport is required");
 
@@ -119,12 +136,14 @@ public static class OperationsOpeningDraftPolicy
 
             // Historical cases retain the original warehouse rule; new manual
             // FCA collections validate collection details instead of a fictitious WHS.
-            if (incoterm == "FCA" && (!strictManual || !Flag("requiresPickup")))
-                Required("whsName", !string.IsNullOrWhiteSpace(Text("whsName")));
+            if (incoterm == "FCA" && (pricingParity || !strictManual || !Flag("requiresPickup")))
+                Required("whsName", pricingParity ? (HasValue("warehouseId") || HasValue("warehouseAddress")) && HasValue("whsName") : HasValue("whsName"));
             else NotApplicable("whsName", "Incoterm does not require FCA warehouse");
 
             var pickup = (strictManual && incoterm == "EXW" && direction == "IMPORT") || Flag("requiresPickup") ||
                 (!HasValue("requiresPickup") && !string.IsNullOrWhiteSpace(Text("pickupAddress")));
+            if (pricingParity && (incoterm == "EXW" || pickup))
+                Required("pickupLocations", ValidPoints("pickupLocations"), "Add a collection point as in Pricing");
             if (pickup)
             {
                 Required("pickupAddress", !string.IsNullOrWhiteSpace(Text("pickupAddress")));

@@ -216,6 +216,11 @@
 
 # Changelog
 
+## [0.25.0] - 2026-11-25 · DH-20261125-OPS-PRICING-PARITY
+
+- MINOR: contrato de apertura v3 compatible con Pricing: POD opcional marítimo, excluido aéreo/terrestre; WHS FCA y puntos de recolecta/entrega. Mantiene reglas v2 e históricas.
+
+
 ## [0.24.0] - 2026-11-25 · DH-20261125-OPS-OPENING-VALIDATION
 
 - MINOR: validación obligatoria en creación manual de compatibilidad de embarque, terminales declaradas, equipos, muellaje, peso estimado, dimensiones aéreas, volumen e Incoterm.
