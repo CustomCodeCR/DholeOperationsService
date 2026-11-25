@@ -1,3 +1,5 @@
+- Route validated openings to the configured Origin pool using persisted origin country and modality, with geographic specificity before workload and Auth eligibility; repair existing unassigned cases and avoid starvation.
+
 ## [0.22.0] - 2026-11-24
 
 - Allow explicitly listed historical IDTRAs to share the same accepted QUO; retain business idempotency for ordinary quotes, global IDTRA uniqueness, distinct immutable snapshots and per-case pool assignment. Add a shared-quote reconciliation task.

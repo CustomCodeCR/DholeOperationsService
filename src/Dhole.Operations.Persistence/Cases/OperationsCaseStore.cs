@@ -4,6 +4,7 @@ using System.Text.Json;
 using Dhole.Operations.Application.Cases;
 using Dhole.Operations.Persistence.Messaging;
 using Dhole.Operations.Domain.Models;
+using Dhole.Operations.Domain.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Npgsql;
@@ -11,7 +12,7 @@ using Npgsql;
 namespace Dhole.Operations.Persistence.Cases;
 
 /// <summary>Transactional Operations writes. External CRM/Pricing/Storage identifiers are references only.</summary>
-public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCaseStore
+public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssignmentEligibility? eligibility = null) : IOperationsCaseStore
 {
     public async Task<CaseCreatedResult> CreateManualAsync(CreateManualCaseCommand input, CancellationToken ct)
     {
@@ -274,6 +275,8 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
             AccountId = input.AccountId, ExecutiveUserId = input.ExecutiveUserId,
             SourceQuoteId = input.QuoteId, SourceQuoteOptionId = input.AcceptedOptionId,
             ApertureType = "AUTOMATIC", ModalityCode = input.ModalityCode.Trim().ToUpperInvariant(),
+            OriginCountryCode = OperationsOriginRouting.Country(StringProperty(route, "originCountryCode"), StringProperty(route, "polName")),
+            DestinationCountryCode = OperationsOriginRouting.Country(StringProperty(route, "destinationCountryCode"), StringProperty(route, "podName")),
             Status = "PENDING_VALIDATION", Priority = 3, ComplexityPoints = 1m,
             OpeningDataJson = JsonSerializer.Serialize(opening),
             CreatedBy = input.ActorUserId
@@ -457,12 +460,33 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
         await db.Database.ExecuteSqlInterpolatedAsync(
             $"SELECT pg_advisory_xact_lock(hashtextextended({lockKey}, 0));", ct);
 
-        if (await db.StageAssignments.AnyAsync(x => x.CaseStageId == stage.Id && x.ReleasedAtUtc == null, ct))
+        await db.Entry(stage).ReloadAsync(ct);
+        await db.Entry(operation).ReloadAsync(ct);
+        if (stage.Status is "COMPLETED" or "SKIPPED" ||
+            await db.StageAssignments.AnyAsync(x => x.CaseStageId == stage.Id && x.ReleasedAtUtc == null, ct))
             return null;
 
         // Routing predicates always derive from persisted case data, not caller-supplied assign parameters.
         var origin = operation.OriginCountryCode;
         var destination = operation.DestinationCountryCode;
+        var isOrigin = stage.DepartmentCode == "COORDINACION_ORIGEN";
+        if (isOrigin && operation.ApertureType == "AUTOMATIC" && (origin == null || destination == null))
+        {
+            var snapshotJson = await db.AcceptedQuoteSnapshots.AsNoTracking()
+                .Where(x => x.CaseId == operation.Id).Select(x => x.SnapshotJson).SingleOrDefaultAsync(ct);
+            if (!string.IsNullOrWhiteSpace(snapshotJson))
+            {
+                using var snapshot = JsonDocument.Parse(snapshotJson);
+                var route = ObjectProperty(snapshot.RootElement, "route");
+                origin ??= OperationsOriginRouting.Country(StringProperty(route, "originCountryCode"), StringProperty(route, "polName"));
+                destination ??= OperationsOriginRouting.Country(StringProperty(route, "destinationCountryCode"), StringProperty(route, "podName"));
+            }
+        }
+        if (isOrigin)
+        {
+            operation.OriginCountryCode = origin;
+            operation.DestinationCountryCode = destination;
+        }
         var rules = await db.AssignmentRules.AsNoTracking()
             .Include(x => x.Team).ThenInclude(x => x.Members)
             .Where(x => x.IsActive && x.Team.IsActive && x.Team.CompanyId == operation.CompanyId &&
@@ -472,8 +496,26 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
                 (x.DestinationCountryCode == null || x.DestinationCountryCode == destination))
             .ToListAsync(ct);
 
+        if (isOrigin && OperationsOriginRouting.IsSpecialized(operation.ModalityCode))
+        {
+            // US routes must never fall through to the international pool; unknown countries require review.
+            if (origin is null) rules.Clear();
+            else if (origin == "US") rules = rules.Where(r => r.OriginCountryCode == "US").ToList();
+        }
+        if (isOrigin && rules.Count > 0)
+        {
+            // Geographic/modality specificity precedes load. Only compare users within the best routing tier.
+            int Specificity(OperationsAssignmentRule r) =>
+                (r.OriginCountryCode != null ? 4 : 0) + (r.ModalityCode != null ? 2 : 0) + (r.DestinationCountryCode != null ? 1 : 0);
+            var best = rules.Max(Specificity);
+            rules = rules.Where(r => Specificity(r) == best).ToList();
+            var priority = rules.Max(r => r.Priority);
+            rules = rules.Where(r => r.Priority == priority).ToList();
+        }
+
         var load = await db.StageAssignments.AsNoTracking()
-            .Where(x => x.ReleasedAtUtc == null)
+            .Where(x => x.ReleasedAtUtc == null && x.CaseStage.Case.CompanyId == operation.CompanyId &&
+                x.CaseStage.Status != "COMPLETED" && x.CaseStage.Status != "SKIPPED")
             .GroupBy(x => x.UserId).Select(g => new { UserId = g.Key, Points = g.Sum(x => x.AssignedPoints) })
             .ToDictionaryAsync(x => x.UserId, x => x.Points, ct);
 
@@ -488,8 +530,33 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
             .OrderBy(x => x.RelativeLoad).ThenByDescending(x => x.Priority)
             .ThenBy(x => x.UserId).ThenBy(x => x.TeamId).ToList();
 
-        if (candidates.Count == 0) return null;
-        var selected = candidates[0];
+        var selected = candidates.FirstOrDefault();
+        if (isOrigin)
+        {
+            selected = null;
+            if (eligibility != null)
+                foreach (var candidate in candidates)
+                    if (await eligibility.IsEligibleAsync(candidate.UserId, ct)) { selected = candidate; break; }
+        }
+        if (selected is null)
+        {
+            if (isOrigin && !await db.CaseTasks.AnyAsync(t => t.CaseStageId == stage.Id &&
+                t.Title == "Pendiente de asignación a Coordinación Origen" && t.Status == "PENDING", ct))
+            {
+                db.CaseTasks.Add(new OperationsCaseTask { CaseId = operation.Id, CaseStageId = stage.Id,
+                    Title = "Pendiente de asignación a Coordinación Origen",
+                    Details = origin is null ? "Confirmar país de origen del tramo operativo." : "Revisar reglas, disponibilidad y autorización de los operativos.",
+                    Priority = 1, Status = "PENDING" });
+                OperationsAuditWriter.Case(db, operation.Id, stage.Id, input.ActorUserId,
+                    "operations.origin.assignment.pending", null, new { origin, operation.ModalityCode });
+                operation.Version++;
+                operation.UpdatedAtUtc = DateTimeOffset.UtcNow;
+                Enqueue("operations.case.updated.v1", new { caseId = operation.Id, stageId = stage.Id, version = operation.Version });
+                await db.SaveChangesAsync(ct);
+            }
+            await transaction.CommitAsync(ct);
+            return null;
+        }
         var assignment = new OperationsStageAssignment
         {
             CaseStageId = stage.Id, TeamId = selected.TeamId, UserId = selected.UserId,
@@ -503,6 +570,9 @@ public sealed class OperationsCaseStore(OperationsDbContext db) : IOperationsCas
         db.StageAssignments.Add(assignment);
         if (stage.DepartmentCode == "COORDINACION_ORIGEN")
         {
+            foreach (var task in await db.CaseTasks.Where(t => t.CaseStageId == stage.Id &&
+                t.Title == "Pendiente de asignación a Coordinación Origen" && t.Status == "PENDING").ToListAsync(ct))
+                task.Status = "COMPLETED";
             if (!await db.OriginProgress.AnyAsync(x => x.CaseStageId == stage.Id, ct))
                 db.OriginProgress.Add(new OperationsOriginProgress {
                     CaseStageId = stage.Id, StatusCode = "ORIGIN_COORDINATION"

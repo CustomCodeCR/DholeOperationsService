@@ -9,6 +9,11 @@ namespace Dhole.Operations.IntegrationTests;
 [TestClass]
 public sealed class OperationsOriginTransferPostgresTests
 {
+    private sealed class EligibleUsers : IOperationsAssignmentEligibility
+    {
+        public Task<bool> IsEligibleAsync(Guid userId, CancellationToken ct) => Task.FromResult(true);
+    }
+
     private static OperationsDbContext Db()
     {
         var connection = Environment.GetEnvironmentVariable("DHOLE_TEST_POSTGRES");
@@ -49,7 +54,7 @@ public sealed class OperationsOriginTransferPostgresTests
         });
         await db.SaveChangesAsync();
 
-        var handler = new AssignStageHandler(new OperationsCaseStore(db));
+        var handler = new AssignStageHandler(new OperationsCaseStore(db, new EligibleUsers()));
         var first = await handler.HandleAsync(
             new AssignStageCommand(created.Id, origin.Id, reviewer), CancellationToken.None);
         Assert.IsNotNull(first);

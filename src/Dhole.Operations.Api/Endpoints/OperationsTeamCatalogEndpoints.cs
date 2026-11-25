@@ -80,7 +80,7 @@ public static class OperationsTeamCatalogEndpoints
                     created++;
                 }
 
-                // A default Aperturas pool requires two active, individually authorized reviewers.
+                // A default Aperturas pool requires an active, individually authorized reviewer.
                 // Respect manually configured rules: never replace or broaden an existing rule.
                 if (template.Department == "APERTURAS" &&
                     !await db.AssignmentRules.AnyAsync(r => r.TeamId == team.Id, ct))
@@ -93,8 +93,19 @@ public static class OperationsTeamCatalogEndpoints
                         new { team.Id, department = template.Department, priority = 100 });
                 }
 
-                // Only US-specific routing is unambiguous in the current rule schema.
-                // Do not create a catch-all international route that could capture US cases.
+                // International defaults are evaluated only after country-specific routing.
+                // The assignment engine explicitly excludes US and unknown origins from these defaults.
+                if (template.Name is "Origen · FCL internacional" or "Origen · LCL y Aéreo internacional" &&
+                    !await db.AssignmentRules.AnyAsync(r => r.TeamId == team.Id, ct))
+                {
+                    var modalities = template.Name == "Origen · FCL internacional" ? new[] { "FCL" } : new[] { "LCL", "AIR" };
+                    foreach (var modality in modalities)
+                        db.AssignmentRules.Add(new OperationsAssignmentRule {
+                            TeamId = team.Id, DepartmentCode = template.Department, ModalityCode = modality, Priority = 50
+                        });
+                    OperationsAuditWriter.Team(db, team.Id, actor.Value,
+                        "operations.assignment-rule.catalog.created", null, new { team.Id, modalities, priority = 50 });
+                }
                 if (template.Name == "Origen · Estados Unidos" &&
                     !await db.AssignmentRules.AnyAsync(r => r.TeamId == team.Id, ct))
                 {
