@@ -33,4 +33,12 @@ public sealed class OperationsFieldValidation20261125Tests
         Assert.AreEqual("CONFIRMADO", OperationsOpeningDraftValidator.EvaluateFields("FCL", filled)
             .Single(f => f.FieldCode == "bookingNumber").CompletionStatus);
     }
+    [TestMethod]
+    public void NewManualOpeningRequiresServiceSelection()
+    {
+        var noServices = Fcl.Replace("\"cargoDescription\"", "\"openingValidationVersion\":4,\"cargoDescription\"");
+        Assert.IsTrue(OperationsOpeningDraftValidator.MissingFields("FCL", noServices, true).Contains("services"));
+        var withServices = noServices.Replace("\"cargoDescription\"", "\"services\":[\"service\"],\"serviceSelections\":[{\"id\":\"service\"}],\"cargoDescription\"");
+        Assert.IsFalse(OperationsOpeningDraftValidator.MissingFields("FCL", withServices, true).Contains("services"));
+    }
 }

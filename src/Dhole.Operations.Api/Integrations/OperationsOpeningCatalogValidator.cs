@@ -50,6 +50,37 @@ public sealed class OperationsOpeningCatalogValidator(IHttpClientFactory factory
                 foreach (var row in equipment.EnumerateArray())
                     selections.Add(new(group, "equipment", Text(row, "equipmentCatalogId"), Text(row, "equipmentCatalogCode"), Text(row, "equipmentType"), null));
             }
+            if (pricingParity && revision.GetInt32() >= 4)
+            {
+                if (!data.TryGetProperty("services", out var services) || services.ValueKind != JsonValueKind.Array ||
+                    !data.TryGetProperty("serviceSelections", out var serviceSelections) || serviceSelections.ValueKind != JsonValueKind.Array)
+                    return new("APERTURE_CATALOG_INVALID", 409, ["services"]);
+                var serviceIds = services.EnumerateArray().Select(x => x.ValueKind == JsonValueKind.String ? x.GetString() : null).ToArray();
+                var serviceRows = serviceSelections.EnumerateArray().ToArray();
+                if (serviceIds.Length == 0 || serviceIds.Length != serviceRows.Length ||
+                    serviceIds.Distinct().Count() != serviceIds.Length ||
+                    !serviceIds.ToHashSet().SetEquals(serviceRows.Select(x => Text(x, "id"))))
+                    return new("APERTURE_CATALOG_INVALID", 409, ["services"]);
+                foreach (var row in serviceRows)
+                    selections.Add(new("pricing-services", "services", Text(row, "id"), Text(row, "code"), Text(row, "label"), null));
+                if (data.TryGetProperty("providerSelections", out var providers) && providers.ValueKind == JsonValueKind.Array)
+                {
+                    var seen = new HashSet<string>();
+                    foreach (var row in providers.EnumerateArray())
+                    {
+                        var field = Text(row, "field");
+                        var group = Text(row, "group");
+                        if (!seen.Add(field) || !((field == "carrierReference" && group == "carriers" && terminal == "CY") ||
+                            (field == "agentReference" && group == "agents")) ||
+                            Text(row, "label") != Text(data, field))
+                            return new("APERTURE_CATALOG_INVALID", 409, [field]);
+                        selections.Add(new(group, field, Text(row, "id"), Text(row, "code"), Text(row, "label"), null));
+                    }
+                    foreach (var field in new[] { "carrierReference", "agentReference" })
+                        if (Text(data, field).Length > 0 && !seen.Contains(field))
+                            return new("APERTURE_CATALOG_INVALID", 409, [field]);
+                }
+            }
             var invalidIdentity = selections.Where(x => !Guid.TryParse(x.Id, out var id) || id == Guid.Empty || string.IsNullOrWhiteSpace(x.Code) || x.Code.Length > 200)
                 .Select(x => x.Field).Distinct().ToArray();
             if (invalidIdentity.Length > 0) return new("APERTURE_CATALOG_INVALID", 409, invalidIdentity);
