@@ -71,13 +71,12 @@ public sealed class OperationsOpeningCatalogValidator(IHttpClientFactory factory
                         var field = Text(row, "field");
                         var group = Text(row, "group");
                         if (!seen.Add(field) || !((field == "carrierReference" && group == "carriers" && terminal == "CY") ||
-                            (field == "agentReference" && group == "agents") ||
-                            (field == "merchantReference" && group == "agents" && terminal == "CY")) ||
+                            (field == "agentReference" && group == "agents")) ||
                             Text(row, "label") != Text(data, field))
                             return new("APERTURE_CATALOG_INVALID", 409, [field]);
                         selections.Add(new(group, field, Text(row, "id"), Text(row, "code"), Text(row, "label"), null));
                     }
-                    foreach (var field in new[] { "carrierReference", "agentReference", "merchantReference" })
+                    foreach (var field in new[] { "carrierReference", "agentReference" })
                         if (Text(data, field).Length > 0 && !seen.Contains(field))
                             return new("APERTURE_CATALOG_INVALID", 409, [field]);
                 }

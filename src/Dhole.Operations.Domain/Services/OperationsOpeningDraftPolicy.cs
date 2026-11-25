@@ -216,8 +216,8 @@ public static class OperationsOpeningDraftPolicy
             // Booking and transport references can be confirmed after opening.
             var air = shipment is "AIR" or "AIRCONSOL" || transport == "AIR";
             var maritime = !nonMaritime && (shipment is "FCL" or "LCL" || transport == "MARITIME");
-            if (maritime) Deferred("merchantReference", HasValue("merchantReference"), "Origin confirms merchant when applicable");
-            else NotApplicable("merchantReference", "No maritime merchant");
+            if (maritime) Deferred("haulageMode", Text("haulageMode") is "Merchant" or "Carrier" || HasValue("merchantReference"), "Origin confirms destination haulage");
+            else NotApplicable("haulageMode", "No maritime destination haulage");
             if (maritime || air) Deferred("bookingNumber", !string.IsNullOrWhiteSpace(Text("bookingNumber")), "Origin confirms booking");
             else NotApplicable("bookingNumber", "No maritime or air booking");
             if (maritime) Deferred("blNumber", !string.IsNullOrWhiteSpace(Text("blNumber")), "Documentation confirms BL");
