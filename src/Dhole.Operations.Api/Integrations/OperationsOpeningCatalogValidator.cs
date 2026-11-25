@@ -30,9 +30,19 @@ public sealed class OperationsOpeningCatalogValidator(IHttpClientFactory factory
             var selections = new List<Selection>
             {
                 new("pol", "pol", Text(data, "polCatalogId"), Text(data, "polCatalogCode"), Text(data, "pol"), terminal),
-                new("poe", "poe", Text(data, "poeCatalogId"), Text(data, "poeCatalogCode"), Text(data, "poe"), terminal),
-                new("pod", "pod", Text(data, "podCatalogId"), Text(data, "podCatalogCode"), Text(data, "pod"), "SD")
+                new("poe", "poe", Text(data, "poeCatalogId"), Text(data, "poeCatalogCode"), Text(data, "poe"), terminal)
             };
+            var pricingParity = data.TryGetProperty("openingValidationVersion", out var revision) && revision.ValueKind == JsonValueKind.Number && revision.TryGetInt32(out var rule) && rule >= 3;
+            if (!pricingParity || (terminal == "CY" && Text(data, "pod").Length > 0))
+                selections.Add(new("pod", "pod", Text(data, "podCatalogId"), Text(data, "podCatalogCode"), Text(data, "pod"), "SD"));
+            var fca = pricingParity && string.Equals(Text(data, "incoterm"), "FCA", StringComparison.OrdinalIgnoreCase);
+            var warehouseGroups = new[] { "pricing-warehouses", "warehouses", "whs", "fca-warehouses" };
+            if (fca && Text(data, "warehouseId").Length > 0)
+            {
+                var group = Text(data, "warehouseCatalogGroup");
+                if (!warehouseGroups.Contains(group)) return new("APERTURE_CATALOG_INVALID", 409, ["whsName"]);
+                selections.Add(new(group, "whsName", Text(data, "warehouseId"), Text(data, "warehouseCatalogCode"), Text(data, "whsName"), null));
+            }
             var shipment = Text(data, "shipmentType").ToUpperInvariant();
             if ((shipment is "FCL" or "FTL") && data.TryGetProperty("equipment", out var equipment) && equipment.ValueKind == JsonValueKind.Array)
             {
@@ -48,6 +58,22 @@ public sealed class OperationsOpeningCatalogValidator(IHttpClientFactory factory
             // Searching by code bypasses Config's cached group snapshot.
             var client = factory.CreateClient("config-operations-opening");
             var invalid = new List<string>();
+            // An address fallback is only permitted when no WHS catalog has active entries.
+            if (fca && Text(data, "warehouseId").Length == 0)
+            {
+                foreach (var group in warehouseGroups)
+                {
+                    using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(new Uri(baseUrl.ToString().TrimEnd('/') + "/"), $"api/config/catalog-items/select?catalogGroupSlug={group}"));
+                    request.Headers.Authorization = bearer;
+                    using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+                    if (!response.IsSuccessStatusCode) return new("CONFIG_UNAVAILABLE", 503, []);
+                    using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+                    var list = Unwrap(json.RootElement);
+                    if (list.ValueKind != JsonValueKind.Array) return new("CONFIG_INVALID_CONTRACT", 503, []);
+                    if (list.EnumerateArray().Any(item => item.TryGetProperty("isActive", out var active) && active.ValueKind == JsonValueKind.True))
+                        return new("APERTURE_CATALOG_INVALID", 409, ["whsName"]);
+                }
+            }
             foreach (var selection in selections)
             {
                 var relative = $"api/config/catalog-items/select?catalogGroupSlug={Uri.EscapeDataString(selection.Group)}&search={Uri.EscapeDataString(selection.Code)}";
