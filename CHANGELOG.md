@@ -1,3 +1,7 @@
+## [0.23.2] - 2026-11-25
+
+- Enqueue distinct idempotent System and Email notifications in the persisted Origin assignment transaction; use registered Auth email and audit missing addresses. Existing durable realtime events and pool retained. Regression tests added; CI/staging pending.
+
 ## [0.23.1] - 2026-11-25
 
 - Add authorized Operations dashboard invalidations over the existing Hub, durable assigned-reviewer System notifications with idempotency and backlog safety, and retry-safe Redis fanout. CI and authenticated staging pending.
