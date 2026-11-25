@@ -1,3 +1,12 @@
+# 0.27.0 — candidato de Operations
+
+## [0.27.0] - 2026-11-25
+
+- Separación del peso estimado de QUO y del peso confirmado por Coordinación Origen, con control de permisos, versión, auditoría y Outbox.
+- Normalización de medidas originales en kg, CBM y cm en el backend.
+- Justificación requerida en solicitudes de revisión de discrepancias.
+- Candidato parcial; pendiente de CI, staging y resto de criterios 13–18.
+
 ## [0.26.0] - 2026-11-25
 
 - Reserve and reconcile explicit accepted QUO links on existing manual IDTRA using durable events, preserving the operational record and commercial snapshot separately. CI/staging pending.

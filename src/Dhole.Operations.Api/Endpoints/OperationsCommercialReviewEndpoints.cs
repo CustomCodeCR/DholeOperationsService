@@ -110,7 +110,8 @@ public static class OperationsCommercialReviewEndpoints
             var actor = OperationsCaseAccess.UserId(http.User);
             if (actor is null || !await access.CanReadAsync(caseId, http.User, ct)) return Results.Forbid();
             if (string.IsNullOrWhiteSpace(input.Fingerprint) || input.Fingerprint.Length != 64 ||
-                input.Comment?.Length > 300) return Results.BadRequest(new { code = "OPERATIONS_DISCREPANCY_INVALID" });
+                string.IsNullOrWhiteSpace(input.Comment) || input.Comment.Trim().Length > 300)
+                return Results.BadRequest(new { code = "OPERATIONS_DISCREPANCY_INVALID" });
             await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
             var key = "operations-quote-discrepancy:" + caseId.ToString("N");
             await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({key}, 0));", ct);

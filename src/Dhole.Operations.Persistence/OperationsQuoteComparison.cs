@@ -109,7 +109,9 @@ public static class OperationsQuoteComparison
         Add("packageCount", "Bultos", Quantity(Number(cargo, "packages"), "bultos"),
             Quantity(Number(current, "packageCount") ?? Number(current, "packages"), "bultos"));
         Add("weightValue", "Peso (kg)", Quantity(Number(cargo, "weightKg"), "kg"),
-            Quantity(CurrentQuantity(current, "weightValue", "weightUnit", "weightKg", "KG", "LB", 0.45359237m), "kg"));
+            Quantity(CurrentQuantity(current, "actualWeightValue", "actualWeightUnit", "actualWeightKg", "KG", "LB", 0.45359237m)
+                ?? (Number(current, "quotedWeightKg").HasValue || operation.ApertureType == "AUTOMATIC"
+                    ? null : CurrentQuantity(current, "weightValue", "weightUnit", "weightKg", "KG", "LB", 0.45359237m)), "kg"));
         Add("volumeValue", "Volumen (CBM)", Quantity(Number(cargo, "volumeCbm"), "CBM"),
             Quantity(CurrentQuantity(current, "volumeValue", "volumeUnit", "volumeCbm", "CBM", "CFT", 0.028316846592m), "CBM"));
         Add("equipment", "Equipos y cantidades", Equipment(Get(quote, "equipment"), "equipmentName", "equipmentCode"),

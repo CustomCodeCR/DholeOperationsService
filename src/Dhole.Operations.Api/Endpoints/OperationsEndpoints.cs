@@ -41,7 +41,10 @@ public static class OperationsEndpoints
             throw new ArgumentException("Opening payload exceeds maximum size.");
         // Operational requirements are captured for the opening, not re-priced here.
         // Detailed validation occurs before approval; incomplete drafts are permitted.
-        return json;
+        var data = OperationsCargoMeasurements.Parse(json);
+        OperationsCargoMeasurements.RejectOriginOnCreate(data);
+        OperationsCargoMeasurements.NormalizeOpening(data);
+        return data.ToJsonString();
     }
 
     public static IEndpointRouteBuilder MapOperationsEndpoints(this IEndpointRouteBuilder app)

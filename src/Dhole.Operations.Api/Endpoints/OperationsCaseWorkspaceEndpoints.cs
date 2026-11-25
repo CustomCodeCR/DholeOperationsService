@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Dhole.Operations.Domain.Services;
 using Dhole.Operations.Api.Security;
 using Dhole.Operations.Domain.Models;
 using Dhole.Operations.Persistence;
@@ -24,6 +25,7 @@ public static class OperationsCaseWorkspaceEndpoints
         JsonElement? OpeningData = null);
 
     public sealed record UpdateOriginStatusRequest(long ExpectedVersion, string StatusCode);
+    public sealed record ConfirmOriginWeightRequest(long ExpectedVersion, decimal Value, string Unit);
 
     private static readonly string[] DepartmentTabs =
     [
@@ -198,7 +200,14 @@ public static class OperationsCaseWorkspaceEndpoints
                 if (request.OpeningData.Value.ValueKind != JsonValueKind.Object ||
                     request.OpeningData.Value.GetRawText().Length > 65536)
                     return Results.BadRequest(new { code = "OPERATIONS_OPENING_DATA_INVALID" });
-                operation.OpeningDataJson = request.OpeningData.Value.GetRawText();
+                try
+                {
+                    var incoming = OperationsCargoMeasurements.Parse(request.OpeningData.Value.GetRawText());
+                    OperationsCargoMeasurements.PreserveOriginFields(incoming, OperationsCargoMeasurements.Parse(operation.OpeningDataJson));
+                    OperationsCargoMeasurements.NormalizeOpening(incoming);
+                    operation.OpeningDataJson = incoming.ToJsonString();
+                }
+                catch (ArgumentException) { return Results.BadRequest(new { code = "OPERATIONS_OPENING_MEASUREMENT_INVALID" }); }
             }
             operation.Version++;
             operation.UpdatedAtUtc = DateTimeOffset.UtcNow;
@@ -215,6 +224,42 @@ public static class OperationsCaseWorkspaceEndpoints
             }
             return Results.Ok(new { operation.Id, operation.Version,
                 operation.UpdatedAtUtc });
+        });
+
+        // Weight confirmation is stage-authorized and retains the quoted estimate.
+        api.MapPost("/cases/{id:guid}/origin/actual-weight", async (
+            Guid id, ConfirmOriginWeightRequest input, HttpContext http,
+            OperationsCaseAccess access, OperationsDbContext db, CancellationToken ct) =>
+        {
+            var actor = OperationsCaseAccess.UserId(http.User);
+            if (actor is null || !OperationsCaseAccess.HasScope(http.User, "operations.origin.update") ||
+                !await access.CanReadAsync(id, http.User, ct)) return Results.Forbid();
+            var operation = await db.Cases.SingleOrDefaultAsync(x => x.Id == id, ct);
+            var stage = await db.CaseStages.SingleOrDefaultAsync(x =>
+                x.CaseId == id && x.DepartmentCode == "COORDINACION_ORIGEN", ct);
+            if (operation is null || stage is null) return Results.NotFound();
+            if (operation.Status is "CANCELLED" or "COMPLETED" ||
+                stage.Status is not ("READY" or "IN_PROGRESS") ||
+                !await CanEditStageAsync(stage.Id, stage.TeamId, actor.Value, http, db, ct))
+                return Results.Forbid();
+            if (operation.Version != input.ExpectedVersion)
+                return Results.Conflict(new { code = "OPERATIONS_CASE_VERSION_CONFLICT", currentVersion = operation.Version });
+            if (string.IsNullOrWhiteSpace(input.Unit))
+                return Results.BadRequest(new { code = "OPERATIONS_WEIGHT_INVALID" });
+            var data = OperationsCargoMeasurements.Parse(operation.OpeningDataJson);
+            var before = new { value = data["actualWeightValue"]?.DeepClone(), unit = data["actualWeightUnit"]?.DeepClone(), kg = data["actualWeightKg"]?.DeepClone() };
+            try { OperationsCargoMeasurements.ConfirmWeight(data, input.Value, input.Unit); }
+            catch (ArgumentException) { return Results.BadRequest(new { code = "OPERATIONS_WEIGHT_INVALID" }); }
+            var after = new { value = data["actualWeightValue"], unit = data["actualWeightUnit"], kg = data["actualWeightKg"] };
+            operation.OpeningDataJson = data.ToJsonString();
+            operation.Version++;
+            operation.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            OperationsAuditWriter.Case(db, id, stage.Id, actor.Value, "operations.origin.weight.confirmed", before, after);
+            db.OutboxMessages.Add(OperationsOutboxFactory.Create("operations.case.updated.v1",
+                JsonSerializer.Serialize(new { caseId = id, stageId = stage.Id, version = operation.Version })));
+            try { await db.SaveChangesAsync(ct); }
+            catch (DbUpdateConcurrencyException) { return Results.Conflict(new { code = "OPERATIONS_CASE_VERSION_CONFLICT" }); }
+            return Results.Ok(new { operation.Id, operation.Version, actualWeightKg = data["actualWeightKg"] });
         });
 
         // Manual origin progression, not a claim of confirmed physical departure.
