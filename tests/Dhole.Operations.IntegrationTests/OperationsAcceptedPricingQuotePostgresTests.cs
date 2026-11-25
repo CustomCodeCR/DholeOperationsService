@@ -265,7 +265,7 @@ public sealed class OperationsAcceptedPricingQuotePostgresTests
         await using (var db = Db())
         {
             Assert.IsFalse(await OperationsAutomaticAperturePool.TryAssignAsync(db, case1,
-                (id, _) => Task.FromResult(id == first), ct));
+                (_, _) => Task.FromResult(false), ct));
             Assert.AreEqual(0, await db.ApertureValidations.CountAsync(v => v.CaseStage.CaseId == case1, ct));
         }
         async Task<bool> Assign(Guid id)
@@ -281,11 +281,25 @@ public sealed class OperationsAcceptedPricingQuotePostgresTests
         {
             var rows = await db.ApertureValidations.Where(v => v.CaseStage.CaseId == case1 || v.CaseStage.CaseId == case2)
                 .Select(v => new { v.UserId, v.TeamId, v.Status, v.CaseStage.CaseId }).ToArrayAsync(ct);
-            Assert.HasCount(4, rows);
-            Assert.AreEqual(3, rows.Select(v => v.UserId).Distinct().Count());
+            Assert.HasCount(2, rows);
+            Assert.AreEqual(2, rows.Select(v => v.UserId).Distinct().Count());
             Assert.AreEqual(1, rows.Select(v => v.TeamId).Distinct().Count());
             Assert.IsTrue(rows.All(v => v.Status == "PENDING"));
-            Assert.AreEqual(2, rows.Where(v => v.CaseId == case1).Select(v => v.UserId).Distinct().Count());
+            Assert.AreEqual(1, rows.Where(v => v.CaseId == case1).Select(v => v.UserId).Distinct().Count());
+            var initial = await db.ApertureValidations.SingleAsync(v => v.CaseStage.CaseId == case1, ct);
+            initial.Status = "APPROVED";
+            initial.ReviewedAtUtc = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync(ct);
+        }
+        Assert.IsTrue(await Assign(case1));
+        Assert.IsFalse(await Assign(case1));
+        await using (var db = Db())
+        {
+            var reviews = await db.ApertureValidations.Where(v => v.CaseStage.CaseId == case1).OrderBy(v => v.Slot).ToArrayAsync(ct);
+            Assert.HasCount(1, reviews);
+            Assert.AreEqual("APPROVED", reviews[0].Status);
+            Assert.AreEqual("APERTURA_VALIDADA", await db.Cases.Where(c => c.Id == case1).Select(c => c.Status).SingleAsync(ct));
+            Assert.AreEqual(1, await db.CaseStages.CountAsync(x => x.CaseId == case1 && x.DepartmentCode == "COORDINACION_ORIGEN", ct));
         }
     }
 }

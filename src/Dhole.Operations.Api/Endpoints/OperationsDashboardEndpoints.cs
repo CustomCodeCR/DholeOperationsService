@@ -22,6 +22,7 @@ public static class OperationsDashboardEndpoints
 
             var isAdmin = OperationsCaseAccess.IsSystemAdministrator(http.User);
             var readAll = isAdmin;
+            var canReview = OperationsCaseAccess.HasScope(http.User, "operations.aperture.validation.review");
             var company = await access.ResolveCompanyIdAsync(http.User, ct);
             if (!isAdmin && company is null) return Results.Forbid();
 
@@ -54,7 +55,7 @@ public static class OperationsDashboardEndpoints
                     v.CaseStage.Status == "PENDING_VALIDATION"), ct);
             var approved = await query.CountAsync(c =>
                 db.ApertureValidations.Count(v =>
-                    v.CaseStage.CaseId == c.Id && v.Status == "APPROVED") >= 2, ct);
+                    v.CaseStage.CaseId == c.Id && v.Status == "APPROVED") >= 1, ct);
 
             var items = await query
                 .OrderByDescending(c => c.CreatedAtUtc).ThenBy(c => c.Id)
@@ -72,9 +73,10 @@ public static class OperationsDashboardEndpoints
                         .OrderByDescending(s => s.Status == "IN_PROGRESS")
                         .ThenByDescending(s => s.Status == "READY")
                         .Select(s => s.DepartmentCode).FirstOrDefault(),
-                    CanReview = c.ApertureType == "AUTOMATIC" && db.ApertureValidations.Any(v =>
+                    CanReview = canReview && c.ApertureType == "AUTOMATIC" && db.ApertureValidations.Any(v =>
                         v.CaseStage.CaseId == c.Id && v.UserId == actor.Value &&
-                        v.Status == "PENDING" && v.CaseStage.Status == "PENDING_VALIDATION"),
+                        v.Status == "PENDING" && v.CaseStage.Status == "PENDING_VALIDATION" &&
+                        !db.ApertureValidations.Any(previous => previous.CaseStageId == v.CaseStageId && previous.Status == "PENDING" && previous.Slot < v.Slot)),
                     ApprovedReviews = db.ApertureValidations.Count(v =>
                         v.CaseStage.CaseId == c.Id && v.Status == "APPROVED"),
                     PendingReviews = db.ApertureValidations.Count(v =>

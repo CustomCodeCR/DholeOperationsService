@@ -36,6 +36,26 @@ public sealed class DualAperturePoolScoringTests
     }
 
     [TestMethod]
+    public void SingleReviewBalancesEqualOperatorsAndAllowsOneAvailableUser()
+    {
+        var team = Guid.NewGuid();
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        var loads = new Dictionary<Guid, decimal> { [first] = 0, [second] = 0 };
+        for (var i = 0; i < 10; i++)
+        {
+            var selected = OperationsDualPoolScoring.SelectSingle(loads.Select(x =>
+                new AperturePoolMember(team, x.Key, 10m, x.Value, 0)).ToArray(), 1m);
+            Assert.IsNotNull(selected);
+            loads[selected.UserId]++;
+        }
+        Assert.AreEqual(5m, loads[first]);
+        Assert.AreEqual(5m, loads[second]);
+        Assert.AreEqual(first, OperationsDualPoolScoring.SelectSingle(
+            [new AperturePoolMember(team, first, 10m, 0m, 0)], 1m)!.UserId);
+    }
+
+    [TestMethod]
     public void NeverCombinesOneUserFromTwoTeams()
     {
         var members = new[] {

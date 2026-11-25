@@ -21,4 +21,14 @@ public sealed class OperationsCommercialSnapshotReaderTests
         Assert.IsNull(costs[0].SaleAmount);
         Assert.AreEqual((decimal?)60m, OperationsCommercialSnapshotReader.Costs(json, true)[0].SaleAmount);
     }
+    [TestMethod]
+    public void SnapshotExposesOnlyDistinctValidStorageReferences()
+    {
+        var id = Guid.NewGuid();
+        var snapshot = JsonSerializer.Serialize(new { documentStorageIds = new[] { id.ToString(), id.ToString(), "invalid", Guid.Empty.ToString() } });
+        using var result = JsonDocument.Parse(JsonSerializer.Serialize(OperationsCommercialSnapshotReader.Summary(snapshot)));
+        var documents = result.RootElement.GetProperty("supportDocuments");
+        Assert.AreEqual(1, documents.GetArrayLength());
+        Assert.AreEqual(id, documents[0].GetProperty("storageId").GetGuid());
+    }
 }

@@ -8,6 +8,16 @@ public sealed record AperturePoolPair(Guid TeamId, Guid FirstUserId, Guid Second
 
 public static class OperationsDualPoolScoring
 {
+    // Single-review policy; retain the legacy pair helper for historical callers/tests.
+    public static AperturePoolMember? SelectSingle(IReadOnlyCollection<AperturePoolMember> members, decimal points)
+    {
+        if (points <= 0) throw new ArgumentOutOfRangeException(nameof(points));
+        return members.Where(x => x.TeamId != Guid.Empty && x.UserId != Guid.Empty && x.CapacityPoints > 0)
+            .OrderBy(x => (x.ActivePoints + points) / x.CapacityPoints)
+            .ThenByDescending(x => x.RulePriority).ThenBy(x => x.TeamId).ThenBy(x => x.UserId)
+            .FirstOrDefault();
+    }
+
     public static AperturePoolPair? Select(IReadOnlyCollection<AperturePoolMember> members, decimal points)
     {
         if (points <= 0) throw new ArgumentOutOfRangeException(nameof(points));

@@ -43,11 +43,22 @@ public static class OperationsCommercialSnapshotReader
             packageCount = Number(cargo, "packages"), validFrom = Text(e, "validFrom"), validTo = Text(e, "validTo"),
             freeDays = Number(e, "freeDays"),
             weightUnit = "KG", volumeUnit = "CBM",
+            supportDocuments = DocumentReferences(e),
             services = Get(e, "services").ValueKind == JsonValueKind.Array ? Get(e, "services").EnumerateArray()
                 .Select(x => Text(x, "serviceName")).Where(x => !string.IsNullOrWhiteSpace(x)).ToArray() : [],
             equipment = Get(e, "equipment").ValueKind == JsonValueKind.Array ? Get(e, "equipment").EnumerateArray()
                 .Select(x => new { equipmentType = Text(x, "equipmentCode"), equipmentName = Text(x, "equipmentName"), quantity = Number(x, "quantity") }).ToArray() : []
         };
+    }
+    private static IReadOnlyList<object> DocumentReferences(JsonElement e)
+    {
+        var ids = Get(e, "documentStorageIds");
+        if (ids.ValueKind != JsonValueKind.Array) return [];
+        return ids.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String)
+            .Select(x => Guid.TryParse(x.GetString(), out var id) ? id : Guid.Empty)
+            .Where(id => id != Guid.Empty).Distinct()
+            .Select(id => (object)new { id, categoryLabel = "Adjunto de Pricing", fileName = "Adjunto de Pricing", storageId = id })
+            .ToArray();
     }
     public static IReadOnlyList<SnapshotCost> Costs(string? json, bool canSeeSale)
     {

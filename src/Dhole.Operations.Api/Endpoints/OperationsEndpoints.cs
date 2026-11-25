@@ -244,7 +244,7 @@ public static class OperationsEndpoints
                     c.Status, c.Priority, c.CreatedAtUtc, c.UpdatedAtUtc,
                     PendingValidatorIds = db.ApertureValidations.Where(v => v.CaseStage.CaseId == c.Id &&
                         v.Status == "PENDING" && v.CaseStage.Status == "PENDING_VALIDATION" &&
-                        c.Status == "PENDING_VALIDATION").OrderBy(v => v.Slot).Select(v => v.UserId).ToArray(),
+                        c.Status == "PENDING_VALIDATION").OrderBy(v => v.Slot).Take(1).Select(v => v.UserId).ToArray(),
                     DepartmentCode = c.Stages.OrderByDescending(s => s.Status == "IN_PROGRESS")
                         .ThenByDescending(s => s.Status == "READY")
                         .ThenByDescending(s => s.StartedAtUtc)
