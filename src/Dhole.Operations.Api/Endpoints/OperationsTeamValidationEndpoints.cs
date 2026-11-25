@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Dhole.Operations.Api.Endpoints;
 
-/// <summary>Two independent, individually audited Aperturas validation decisions per case.</summary>
+/// <summary>One individually audited Aperturas validation decision per case.</summary>
 public static class OperationsTeamValidationEndpoints
 {
     public sealed record AssignReviewersRequest(Guid? TeamId);
@@ -85,7 +85,7 @@ public static class OperationsTeamValidationEndpoints
                     CanReview = mayReview && v.UserId == actor && v.Status == "PENDING" &&
                         db.TeamMembers.Any(m => m.TeamId == v.TeamId && m.UserId == v.UserId && m.Team.IsActive) &&
                         !db.ApertureValidations.Any(previous => previous.CaseStageId == v.CaseStageId && previous.Status == "PENDING" && previous.Slot < v.Slot) }).ToArrayAsync(ct);
-            return Results.Ok(new { stage, requiredReviewers = 2, validators });
+            return Results.Ok(new { stage, requiredReviewers = 1, validators });
         });
 
         // Safe, company-scoped team choices for a manual opening. Return only
@@ -115,7 +115,7 @@ public static class OperationsTeamValidationEndpoints
                 .OrderBy(t => t.Name).ToArrayAsync(ct);
             return Results.Ok(teams.Select(t => new {
                 t.Id, t.Name, t.DepartmentCode, t.AvailableReviewers,
-                CanAssign = t.AvailableReviewers >= 2
+                CanAssign = t.AvailableReviewers >= 1
             }));
         });
 
@@ -161,10 +161,8 @@ public static class OperationsTeamValidationEndpoints
             var existing = await db.ApertureValidations.AsNoTracking()
                 .Where(x => x.CaseStageId == stage.Id).OrderBy(x => x.Slot)
                 .Select(x => new { x.Id, x.UserId, x.Slot, x.Status }).ToArrayAsync(ct);
-            if (existing.Length == 2 || (operation.ApertureType == "AUTOMATIC" && existing.Length == 1))
+            if (existing.Length > 0)
                 return Results.Ok(new { stageId = stage.Id, assigned = existing, duplicate = true });
-            if (existing.Length != 0)
-                return Results.Conflict(new { code = "INCOMPLETE_VALIDATION_PAIR" });
 
             var rules = await db.AssignmentRules.AsNoTracking().Where(r =>
                 r.IsActive && r.Team.IsActive && r.Team.CompanyId == operation.CompanyId &&
@@ -190,7 +188,7 @@ public static class OperationsTeamValidationEndpoints
                     v.CaseStage.Status == "PENDING_VALIDATION" && v.CaseStage.Case.Status == "PENDING_VALIDATION" &&
                     !db.ApertureValidations.Any(previous => previous.CaseStageId == v.CaseStageId && previous.Status == "PENDING" && previous.Slot < v.Slot))
                 .GroupBy(v => v.UserId).Select(g => new {
-                    UserId = g.Key, Points = g.Sum(v => v.CaseStage.Case.ComplexityPoints / 2m)
+                    UserId = g.Key, Points = g.Sum(v => v.CaseStage.Case.ComplexityPoints)
                 }).ToDictionaryAsync(x => x.UserId, x => x.Points, ct);
             var candidates = teams.SelectMany(team => team.Members
                 .Where(member => member.IsAvailable && member.CapacityPoints > 0)
@@ -198,19 +196,15 @@ public static class OperationsTeamValidationEndpoints
                     member.CapacityPoints, workloads.GetValueOrDefault(member.UserId),
                     rules.Where(r => r.TeamId == team.Id).Select(r => r.Priority)
                         .DefaultIfEmpty(0).Max()))).ToList();
-            AperturePoolPair? pair;
+            AperturePoolMember? selected;
             try
             {
-                while ((pair = OperationsDualPoolScoring.Select(candidates,
+                while ((selected = OperationsDualPoolScoring.SelectSingle(candidates,
                     operation.ComplexityPoints)) is not null)
                 {
-                    var validFirst = await auth.IsEligibleAsync(pair.FirstUserId,
-                        http.Request.Headers.Authorization.ToString(), ct, requireReview: true);
-                    var validSecond = await auth.IsEligibleAsync(pair.SecondUserId,
-                        http.Request.Headers.Authorization.ToString(), ct, requireReview: true);
-                    if (validFirst && validSecond) break;
-                    candidates.RemoveAll(x => (x.UserId == pair.FirstUserId && !validFirst) ||
-                        (x.UserId == pair.SecondUserId && !validSecond));
+                    if (await auth.IsEligibleAsync(selected.UserId,
+                        http.Request.Headers.Authorization.ToString(), ct, requireReview: true)) break;
+                    candidates.RemoveAll(x => x.UserId == selected.UserId);
                 }
             }
             catch (UnauthorizedAccessException) { return Results.Forbid(); }
@@ -220,23 +214,18 @@ public static class OperationsTeamValidationEndpoints
             catch (TaskCanceledException) when (!ct.IsCancellationRequested) {
                 return Results.Problem(statusCode: 503, title: "Auth timed out, validation not assigned");
             }
-            if (pair is null)
+            if (selected is null)
                 return Results.Conflict(new {
-                    code = "POOL_REQUIRES_TWO_ELIGIBLE_DISTINCT_USERS",
-                    message = "El equipo no tiene dos validadores distintos, disponibles y autorizados en Auth. Configure su equipo o seleccione otro; el IDTRA existente se conserva."
+                    code = "POOL_REQUIRES_ELIGIBLE_USER",
+                    message = "El equipo no tiene un operativo disponible y autorizado en Auth. El IDTRA existente se conserva."
                 });
-
             var assignments = new[] {
                 new OperationsApertureValidation { CaseStageId = stage.Id,
-                    TeamId = pair.TeamId, UserId = pair.FirstUserId, Slot = 1,
-                    AssignedBy = actor.Value },
-                new OperationsApertureValidation { CaseStageId = stage.Id,
-                    TeamId = pair.TeamId, UserId = pair.SecondUserId, Slot = 2,
+                    TeamId = selected.TeamId, UserId = selected.UserId, Slot = 1,
                     AssignedBy = actor.Value }
             };
-            if (operation.ApertureType == "AUTOMATIC") assignments = assignments.Take(1).ToArray();
             db.ApertureValidations.AddRange(assignments);
-            stage.TeamId = pair.TeamId;
+            stage.TeamId = selected.TeamId;
             stage.Status = "PENDING_VALIDATION";
             stage.Version++;
             operation.Status = "PENDING_VALIDATION";
@@ -244,7 +233,7 @@ public static class OperationsTeamValidationEndpoints
             operation.UpdatedAtUtc = DateTimeOffset.UtcNow;
             OperationsAuditWriter.Case(db, caseId, stage.Id, actor.Value,
                 "operations.aperture.validation.assigned", null,
-                new { teamId = pair.TeamId, slots = assignments.Select(a =>
+                new { teamId = selected.TeamId, slots = assignments.Select(a =>
                     new { a.Slot, a.UserId }).ToArray() });
             // Sanitized case event for the existing Operations SignalR inbox/relay.
             db.OutboxMessages.Add(OperationsOutboxFactory.Create(
@@ -253,7 +242,7 @@ public static class OperationsTeamValidationEndpoints
                     version = operation.Version })));
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
-            return Results.Ok(new { stageId = stage.Id, teamId = pair.TeamId,
+            return Results.Ok(new { stageId = stage.Id, teamId = selected.TeamId,
                 assigned = assignments.Select(a => new { a.Id, a.Slot, a.UserId, a.Status }), duplicate = false });
         });
 
@@ -296,31 +285,37 @@ public static class OperationsTeamValidationEndpoints
             var operation = await db.Cases.SingleAsync(c => c.Id == caseId, ct);
             if (stage.Status != "PENDING_VALIDATION" || operation.Status != "PENDING_VALIDATION")
                 return Results.Conflict(new { code = "APERTURE_REVIEW_CLOSED" });
-            var count = await db.ApertureValidations.CountAsync(v =>
-                v.CaseStageId == stage.Id, ct);
-            if (count != 2 && !(operation.ApertureType == "AUTOMATIC" && count == 1 && validation.Slot == 1))
-                return Results.Conflict(new { code = "TWO_VALIDATORS_REQUIRED" });
             if (await db.ApertureValidations.AnyAsync(v => v.CaseStageId == stage.Id &&
                 v.Slot < validation.Slot && v.Status == "PENDING", ct))
                 return Results.Conflict(new { code = "VALIDATION_NOT_YOUR_TURN" });
             validation.Status = decision!;
             validation.Comment = input.Comment?.Trim();
             validation.ReviewedAtUtc = DateTimeOffset.UtcNow;
-            var otherApproved = await db.ApertureValidations.AnyAsync(v =>
-                v.CaseStageId == stage.Id && v.Id != validation.Id && v.Status == "APPROVED", ct);
-            var bothApproved = decision == "APPROVED" && otherApproved;
+            var approved = decision == "APPROVED";
+            // Cancel only unused legacy reservations; historical reviewed decisions are immutable.
+            var unused = await db.ApertureValidations.AsNoTracking().Where(v => v.CaseStageId == stage.Id &&
+                v.Id != validation.Id && v.Status == "PENDING" && v.ReviewedAtUtc == null && v.Comment == null)
+                .Select(v => new { v.Id, v.UserId, v.Slot }).ToArrayAsync(ct);
+            if (unused.Length > 0)
+            {
+                await db.ApertureValidations.Where(v => v.CaseStageId == stage.Id &&
+                    v.Id != validation.Id && v.Status == "PENDING" && v.ReviewedAtUtc == null && v.Comment == null)
+                    .ExecuteDeleteAsync(ct);
+                OperationsAuditWriter.Case(db, caseId, stage.Id, actor.Value,
+                    "operations.aperture.validation.legacy-reservations-released", unused, new { requiredReviewers = 1 });
+            }
             Guid? originStageId = null;
             if (decision == "REJECTED")
             {
                 stage.Status = "CHANGES_REQUIRED";
                 operation.Status = "APERTURA_REQUIERE_CAMBIOS";
             }
-            else if (bothApproved)
+            else if (approved)
             {
                 stage.Status = "COMPLETED";
                 stage.CompletedAtUtc = DateTimeOffset.UtcNow;
                 operation.Status = "APERTURA_VALIDADA";
-                // Origin starts only after BOTH reviewers approve the same opening.
+                // Origin starts immediately after the assigned reviewer approves.
                 var existingOrigin = await db.CaseStages.SingleOrDefaultAsync(s =>
                     s.CaseId == caseId && s.DepartmentCode == "COORDINACION_ORIGEN", ct);
                 if (existingOrigin is null)
@@ -342,7 +337,7 @@ public static class OperationsTeamValidationEndpoints
             OperationsAuditWriter.Case(db, caseId, stage.Id, actor.Value,
                 "operations.aperture.validation.reviewed",
                 new { validationId, status = "PENDING" },
-                new { validationId, decision, slot = validation.Slot, bothApproved });
+                new { validationId, decision, slot = validation.Slot, approved });
             db.OutboxMessages.Add(OperationsOutboxFactory.Create(
                 "operations.aperture.validation.reviewed.v1",
                 JsonSerializer.Serialize(new { caseId, stageId = stage.Id, operation.CompanyId,
@@ -350,7 +345,7 @@ public static class OperationsTeamValidationEndpoints
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
             StageAssignedResult? originAssignment = null;
-            if (bothApproved && originStageId.HasValue)
+            if (approved && originStageId.HasValue)
             {
                 try
                 {
@@ -368,7 +363,7 @@ public static class OperationsTeamValidationEndpoints
             }
             return Results.Ok(new { validation.Id, validation.Status,
                 stageStatus = stage.Status, operationStatus = operation.Status,
-                bothApproved, originStageId, originAssigned = originAssignment is not null,
+                approved, bothApproved = approved, requiredReviewers = 1, originStageId, originAssigned = originAssignment is not null,
                 originAssigneeId = originAssignment?.UserId, duplicate = false });
         });
 

@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Dhole.Operations.Persistence.Cases;
 
-/// <summary>Assign one active review at a time, choosing the second reviewer after the first approval.</summary>
+/// <summary>Assign one authorized reviewer; reconcile untouched legacy pairs and already approved openings.</summary>
 public static class OperationsAutomaticAperturePool
 {
     public static async Task<bool> TryAssignAsync(OperationsDbContext db, Guid caseId,
@@ -35,9 +35,38 @@ public static class OperationsAutomaticAperturePool
             .OrderBy(v => v.Slot).ToArrayAsync(ct);
         var legacyPair = existing.Length == 2 && existing.All(v => v.Status == "PENDING" &&
             v.ReviewedAtUtc == null && v.Comment == null);
-        var secondReview = existing.Length == 1 && existing[0].Slot == 1 &&
-            existing[0].Status == "APPROVED";
-        if (existing.Length != 0 && !legacyPair && !secondReview) return false;
+        // An already recorded approval satisfies the new policy. Never erase a decision.
+        var approved = existing.FirstOrDefault(v => v.Status == "APPROVED");
+        if (approved is not null && existing.All(v => v.Status is "APPROVED" or "PENDING"))
+        {
+            var origin = await db.CaseStages.SingleOrDefaultAsync(s => s.CaseId == caseId &&
+                s.DepartmentCode == "COORDINACION_ORIGEN", ct);
+            if (origin is null)
+            {
+                origin = new OperationsCaseStage { CaseId = caseId,
+                    DepartmentCode = "COORDINACION_ORIGEN", Status = "PENDING" };
+                db.CaseStages.Add(origin);
+            }
+            await db.ApertureValidations.Where(v => v.CaseStageId == stage.Id && v.Status == "PENDING" &&
+                v.ReviewedAtUtc == null && v.Comment == null).ExecuteDeleteAsync(ct);
+            stage.Status = "COMPLETED";
+            stage.CompletedAtUtc = DateTimeOffset.UtcNow;
+            stage.Version++;
+            operation.Status = "APERTURA_VALIDADA";
+            operation.Version++;
+            operation.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            OperationsAuditWriter.Case(db, caseId, stage.Id, approved.UserId,
+                "operations.aperture.validation.policy-reconciled",
+                existing.Select(v => new { v.Id, v.Slot, v.UserId, v.Status }).ToArray(),
+                new { approved.Id, requiredReviewers = 1, originStageId = origin.Id, source = "SingleReviewPolicy" });
+            db.OutboxMessages.Add(OperationsOutboxFactory.Create("operations.case.validated.v1",
+                JsonSerializer.Serialize(new { caseId, stageId = stage.Id, originStageId = origin.Id,
+                    actorId = approved.UserId, operation.CompanyId, version = operation.Version })));
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+            return true;
+        }
+        if (existing.Length != 0 && !legacyPair) return false;
         var rules = await db.AssignmentRules.AsNoTracking().Where(r => r.IsActive &&
             r.Team.IsActive && r.Team.CompanyId == operation.CompanyId && r.DepartmentCode == "APERTURAS" &&
             (r.ModalityCode == null || r.ModalityCode == operation.ModalityCode) &&
@@ -58,7 +87,7 @@ public static class OperationsAutomaticAperturePool
                 v.CaseStage.Status == "PENDING_VALIDATION" && v.CaseStage.Case.Status == "PENDING_VALIDATION" &&
                 v.CaseStageId != stage.Id && !db.ApertureValidations.Any(previous => previous.CaseStageId == v.CaseStageId && previous.Status == "PENDING" && previous.Slot < v.Slot))
             .GroupBy(v => v.UserId).Select(gr => new { UserId = gr.Key,
-                Points = gr.Sum(v => v.CaseStage.Case.ComplexityPoints / 2m) })
+                Points = gr.Sum(v => v.CaseStage.Case.ComplexityPoints) })
             .ToDictionaryAsync(x => x.UserId, x => x.Points, ct);
         var stageWorkloads = await db.StageAssignments.AsNoTracking()
             .Where(v => v.ReleasedAtUtc == null && v.CaseStage.Case.CompanyId == operation.CompanyId &&
@@ -70,44 +99,22 @@ public static class OperationsAutomaticAperturePool
             .Select(member => new AperturePoolMember(team.Id, member.UserId, member.CapacityPoints,
                 workloads.GetValueOrDefault(member.UserId) + stageWorkloads.GetValueOrDefault(member.UserId),
                 rules.Where(r => r.TeamId == team.Id).Select(r => r.Priority).DefaultIfEmpty(0).Max()))).ToList();
-        Guid selectedTeam;
-        Guid selectedUser;
-        if (secondReview)
+        AperturePoolMember? selected;
+        while ((selected = OperationsDualPoolScoring.SelectSingle(candidates, operation.ComplexityPoints)) is not null)
         {
-            var first = existing[0];
-            AperturePoolMember? next = null;
-            foreach (var candidate in candidates.Where(x => x.TeamId == first.TeamId && x.UserId != first.UserId)
-                .OrderBy(x => (x.ActivePoints + operation.ComplexityPoints / 2m) / x.CapacityPoints)
-                .ThenByDescending(x => x.RulePriority).ThenBy(x => x.UserId))
-            {
-                if (await eligible(candidate.UserId, ct)) { next = candidate; break; }
-            }
-            if (next is null) return false;
-            selectedTeam = next.TeamId;
-            selectedUser = next.UserId;
+            if (await eligible(selected.UserId, ct)) break;
+            candidates.RemoveAll(x => x.UserId == selected.UserId);
         }
-        else
-        {
-            // Verify two eligible users without reserving the second slot.
-            AperturePoolPair? pair;
-            while ((pair = OperationsDualPoolScoring.Select(candidates, operation.ComplexityPoints)) is not null)
-            {
-                var first = await eligible(pair.FirstUserId, ct);
-                var second = await eligible(pair.SecondUserId, ct);
-                if (first && second) break;
-                candidates.RemoveAll(x => (x.UserId == pair.FirstUserId && !first) || (x.UserId == pair.SecondUserId && !second));
-            }
-            if (pair is null) return false;
-            selectedTeam = pair.TeamId;
-            selectedUser = pair.FirstUserId;
-        }
+        if (selected is null) return false;
+        var selectedTeam = selected.TeamId;
+        var selectedUser = selected.UserId;
         // Only replace untouched legacy assignments, preserving the audit trail and all decisions.
         if (legacyPair)
             await db.ApertureValidations.Where(v => v.CaseStageId == stage.Id &&
                 v.Status == "PENDING" && v.ReviewedAtUtc == null && v.Comment == null).ExecuteDeleteAsync(ct);
         var assignment = new OperationsApertureValidation {
             CaseStageId = stage.Id, TeamId = selectedTeam, UserId = selectedUser,
-            Slot = (short)(secondReview ? 2 : 1), AssignedBy = operation.CreatedBy
+            Slot = 1, AssignedBy = operation.CreatedBy
         };
         db.ApertureValidations.Add(assignment);
         stage.TeamId = selectedTeam;

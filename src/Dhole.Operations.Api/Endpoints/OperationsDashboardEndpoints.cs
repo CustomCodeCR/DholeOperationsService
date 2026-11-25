@@ -55,7 +55,7 @@ public static class OperationsDashboardEndpoints
                     v.CaseStage.Status == "PENDING_VALIDATION"), ct);
             var approved = await query.CountAsync(c =>
                 db.ApertureValidations.Count(v =>
-                    v.CaseStage.CaseId == c.Id && v.Status == "APPROVED") >= 2, ct);
+                    v.CaseStage.CaseId == c.Id && v.Status == "APPROVED") >= 1, ct);
 
             var items = await query
                 .OrderByDescending(c => c.CreatedAtUtc).ThenBy(c => c.Id)

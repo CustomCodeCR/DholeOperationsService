@@ -1,3 +1,8 @@
+## [0.21.3] - 2026-11-24
+
+- Require a single Aperturas reviewer, select one eligible user by weighted active workload, and release directly to Origin upon approval. Reconcile untouched legacy pairs and preserve recorded approvals and audit history.
+- CI and authenticated staging pending.
+
 ## [0.21.2] - 2026-11-24
 
 - Assign only the active Aperturas review, rebalance untouched legacy pairs, allocate a distinct second reviewer after the first approval, and scope dashboard and validation decisions to the active assignee.
