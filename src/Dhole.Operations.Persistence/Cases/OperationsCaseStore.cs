@@ -243,7 +243,7 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
             // services. Commercial cost lines are a separate immutable snapshot.
             var uniqueCostIds = new HashSet<Guid>();
             foreach (var item in projectableCosts)
-                pending.Costs.Add(new OperationsCaseQuoteCost {
+                db.CaseQuoteCosts.Add(new OperationsCaseQuoteCost {
                     QuoteLinkId = pending.Id,
                     SourceCostId = item.SourceCostId != Guid.Empty && uniqueCostIds.Add(item.SourceCostId) ? item.SourceCostId : null,
                     Description = item.Description, CostCode = item.CostCode, CurrencyCode = item.CurrencyCode,
