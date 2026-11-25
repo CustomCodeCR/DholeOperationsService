@@ -216,6 +216,12 @@
 
 # Changelog
 
+## [0.24.0] - 2026-11-25 · DH-20261125-OPS-OPENING-VALIDATION
+
+- MINOR: validación obligatoria en creación manual de compatibilidad de embarque, terminales declaradas, equipos, muellaje, peso estimado, dimensiones aéreas, volumen e Incoterm.
+- Preserva la política histórica de expedientes y el peso real de Coordinación Origen. Candidato pendiente de CI y staging.
+
+
 ## [0.1.2] - 2026-11-13
 
 - PATCH DH-20261113-OPERATIONS-NO-FLAGS-128: elimina la condición por variable `DHOLE_OPERATIONS_PRODUCTION_ENABLED` que omitía el despliegue de master.

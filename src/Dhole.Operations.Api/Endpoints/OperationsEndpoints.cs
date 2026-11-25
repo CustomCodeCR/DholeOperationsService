@@ -97,7 +97,7 @@ public static class OperationsEndpoints
             try
             {
                 var openingData = ValidateOpeningData(request.OpeningData);
-                var missing = OperationsOpeningDraftValidator.MissingFields(request.ModalityCode, openingData);
+                var missing = OperationsOpeningDraftValidator.MissingFields(request.ModalityCode, openingData, manualOpening: true);
                 if (missing.Length > 0)
                     return Results.Conflict(new { code = "APERTURE_MISSING_REQUIRED_FIELDS", missingFields = missing });
                 var result = await handler.HandleAsync(

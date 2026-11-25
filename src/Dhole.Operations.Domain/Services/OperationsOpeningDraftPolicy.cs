@@ -13,12 +13,12 @@ public static class OperationsOpeningDraftPolicy
 {
     public sealed record FieldStatus(string FieldCode, string CompletionStatus, string? Reason = null);
 
-    public static string[] MissingFields(string modality, string? json) =>
-        EvaluateFields(modality, json)
+    public static string[] MissingFields(string modality, string? json, bool manualOpening = false) =>
+        EvaluateFields(modality, json, manualOpening)
             .Where(x => x.CompletionStatus == "PENDIENTE_BLOQUEANTE")
             .Select(x => x.FieldCode).ToArray();
 
-    public static IReadOnlyList<FieldStatus> EvaluateFields(string modality, string? json)
+    public static IReadOnlyList<FieldStatus> EvaluateFields(string modality, string? json, bool manualOpening = false)
     {
         var fields = new List<FieldStatus>();
         JsonDocument? document = null;
@@ -29,6 +29,7 @@ public static class OperationsOpeningDraftPolicy
                 return [new("openingData", "PENDIENTE_BLOQUEANTE", "Invalid opening object")];
 
             var data = document.RootElement;
+            var strictManual = manualOpening || (data.TryGetProperty("openingValidationVersion", out var ruleVersion) && ruleVersion.ValueKind == JsonValueKind.Number && ruleVersion.TryGetInt32(out var revision) && revision >= 2);
             string? Text(string key) =>
                 data.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String
                     ? value.GetString()?.Trim() : null;
@@ -60,6 +61,32 @@ public static class OperationsOpeningDraftPolicy
                 decimal.TryParse(value.ValueKind == JsonValueKind.String ? value.GetString() :
                     value.ValueKind == JsonValueKind.Number ? value.GetRawText() : null,
                     NumberStyles.Float, CultureInfo.InvariantCulture, out var amount) && amount > 0;
+            var direction = Text("operationDirection")?.ToUpperInvariant();
+            if (strictManual)
+            {
+                var compatible = transport switch
+                {
+                    "MARITIME" => (shipment is "FCL" or "LCL") && mode == shipment,
+                    "AIR" => shipment == "AIR" && mode == shipment,
+                    "ROAD" => (shipment is "FTL" or "LTL") && mode == shipment,
+                    _ => false
+                };
+                Required("shipmentType", compatible, "Shipment must be compatible with transport and case modality");
+                Required("operationDirection", direction is "IMPORT" or "EXPORT" or "OTHER");
+                var terminal = transport switch { "AIR" => "APT", "ROAD" => "SD", "MARITIME" => "CY", _ => "" };
+                Required("poe", !string.IsNullOrWhiteSpace(Text("poe")));
+                Required("polTerminalType", terminal.Length > 0 && Text("polTerminalType") == terminal, "Origin terminal incompatible with transport");
+                Required("poeTerminalType", terminal.Length > 0 && Text("poeTerminalType") == terminal, "Entry terminal incompatible with transport");
+                Required("podTerminalType", Text("podTerminalType") == "SD", "Final destination must be a delivery location");
+                Required("estimatedWeight", Positive("estimatedWeightValue") && Text("estimatedWeightUnit") is "KG" or "LB");
+                if (shipment == "AIR")
+                    Required("dimensions", Positive("lengthCm") && Positive("widthCm") && Positive("heightCm"));
+                if (incoterm is "DAP" or "DPU" or "DDP")
+                    Required("destinationAddress", !string.IsNullOrWhiteSpace(Text("destinationAddress")));
+                Required("portHandlingMode", transport == "MARITIME" || !HasValue("portHandlingMode"), "Port handling is not applicable to this transport");
+                Required("actualWeightInput", !Positive("weightValue") && !Positive("weightKg"), "Actual weight is confirmed by origin coordination");
+            }
+
             Required("cargoDescription", !string.IsNullOrWhiteSpace(Text("cargoDescription")));
             Required("pol", !string.IsNullOrWhiteSpace(Text("pol")));
             Required("pod", !string.IsNullOrWhiteSpace(Text("pod")));
@@ -83,14 +110,19 @@ public static class OperationsOpeningDraftPolicy
                         !string.IsNullOrWhiteSpace(type.GetString()));
                 Required("equipment", valid, "Each equipment line needs a type and positive quantity");
             }
+            else if (strictManual)
+                Required("equipment", !data.TryGetProperty("equipment", out var incompatibleEquipment) ||
+                    (incompatibleEquipment.ValueKind == JsonValueKind.Array && incompatibleEquipment.GetArrayLength() == 0),
+                    "This shipment must not contain full containers or trailers");
             else NotApplicable("equipment", "Shipment does not require full equipment");
 
-            // FCA requires a real warehouse, including but not limited to LCL/LTL.
-            if (incoterm == "FCA")
+            // Historical cases retain the original warehouse rule; new manual
+            // FCA collections validate collection details instead of a fictitious WHS.
+            if (incoterm == "FCA" && (!strictManual || !Flag("requiresPickup")))
                 Required("whsName", !string.IsNullOrWhiteSpace(Text("whsName")));
             else NotApplicable("whsName", "Incoterm does not require FCA warehouse");
 
-            var pickup = Flag("requiresPickup") ||
+            var pickup = (strictManual && incoterm == "EXW" && direction == "IMPORT") || Flag("requiresPickup") ||
                 (!HasValue("requiresPickup") && !string.IsNullOrWhiteSpace(Text("pickupAddress")));
             if (pickup)
             {
@@ -127,8 +159,11 @@ public static class OperationsOpeningDraftPolicy
 
             // Real weight belongs exclusively to Coordinación Origen on manual openings.
             Deferred("actualWeight", false, "Coordinación Origen confirms actual weight");
-            Deferred("volume", Positive("volume") || Positive("volumeCbm") || Positive("volumeValue"),
-                "Volume may be confirmed during origin coordination");
+            if (strictManual && (shipment is "LCL" or "LTL" or "AIR"))
+                Required("volume", Positive("volumeValue") && Text("volumeUnit") is "CBM" or "CFT");
+            else
+                Deferred("volume", Positive("volume") || Positive("volumeCbm") || Positive("volumeValue"),
+                    "Volume may be confirmed during origin coordination");
             if (shipment is "LCL" or "LTL")
                 Deferred("consolidation", HasValue("consolidationReference") || HasValue("consolidation"),
                     "Consolidation can be confirmed by origin");
