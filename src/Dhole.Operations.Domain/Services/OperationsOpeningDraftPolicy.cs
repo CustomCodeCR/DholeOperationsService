@@ -81,6 +81,7 @@ public static class OperationsOpeningDraftPolicy
                     "ROAD" => (shipment is "FTL" or "LTL") && mode == shipment,
                     _ => false
                 };
+                Required("transportType", transport is "MARITIME" or "AIR" or "ROAD", "Select a compatible transport");
                 Required("shipmentType", compatible, "Shipment must be compatible with transport and case modality");
                 Required("operationDirection", direction is "IMPORT" or "EXPORT" or "OTHER");
                 var terminal = transport switch { "AIR" => "APT", "ROAD" => "SD", "MARITIME" => "CY", _ => "" };
@@ -90,18 +91,24 @@ public static class OperationsOpeningDraftPolicy
                 if (!pricingParity || (transport == "MARITIME" && HasValue("pod")))
                     Required("podTerminalType", Text("podTerminalType") == "SD", "Final destination must be a delivery location");
                 else if (transport is "AIR" or "ROAD")
-                    Required("pod", !HasValue("pod") && !HasValue("podCatalogId"), "Air and road use only POL and POE");
+                {
+                    if (HasValue("pod") || HasValue("podCatalogId")) Required("pod", false, "Air and road use only POL and POE");
+                    else NotApplicable("pod", "Air and road use only POL and POE");
+                }
                 else NotApplicable("podTerminalType", "Optional maritime POD not selected");
                 Required("estimatedWeight", Positive("estimatedWeightValue") && Text("estimatedWeightUnit") is "KG" or "LB");
                 if (shipment == "AIR")
                     Required("dimensions", Positive("lengthCm") && Positive("widthCm") && Positive("heightCm"));
+                else NotApplicable("dimensions", "Air cargo dimensions are not required for this shipment");
                 if (pricingParity && (Flag("requiresDelivery") || incoterm is "DAP" or "DPU" or "DDP"))
                     Required("deliveryLocations", ValidPoints("deliveryLocations"), "Add the agreed delivery point");
                 else if (incoterm is "DAP" or "DPU" or "DDP")
                     Required("destinationAddress", !string.IsNullOrWhiteSpace(Text("destinationAddress")));
-                Required("portHandlingMode", transport == "MARITIME" || !HasValue("portHandlingMode"), "Port handling is not applicable to this transport");
-                if (manualOpening)
-                    Required("actualWeightInput", !HasValue("weightValue") && !HasValue("weightKg"), "Actual weight is confirmed by origin coordination");
+                if (transport == "MARITIME") Deferred("portHandlingMode", HasValue("portHandlingMode"), "Origin can confirm port handling");
+                else if (HasValue("portHandlingMode")) Required("portHandlingMode", false, "Port handling is not applicable to this transport");
+                else NotApplicable("portHandlingMode", "Not a maritime shipment");
+                if (manualOpening && (HasValue("weightValue") || HasValue("weightKg")))
+                    Required("actualWeightInput", false, "Actual weight is confirmed by origin coordination");
             }
 
             Required("cargoDescription", !string.IsNullOrWhiteSpace(Text("cargoDescription")));
@@ -113,7 +120,11 @@ public static class OperationsOpeningDraftPolicy
                 else Required("pod", !string.IsNullOrWhiteSpace(Text("pod")));
             }
             else if (!pricingParity) Required("pod", !string.IsNullOrWhiteSpace(Text("pod")));
-            else if (transport == "MARITIME" && !HasValue("pod")) NotApplicable("pod", "Optional maritime final destination");
+            else if (transport == "MARITIME")
+            {
+                if (HasValue("pod")) Required("pod", !string.IsNullOrWhiteSpace(Text("pod")));
+                else NotApplicable("pod", "Optional maritime final destination");
+            }
             Required("incoterm", incoterm is not null && !(nonMaritime && (incoterm is "FAS" or "FOB" or "CFR" or "CIF")),
                 "A recognized Incoterm applicable to the transport is required");
 
@@ -179,6 +190,22 @@ public static class OperationsOpeningDraftPolicy
                 Deferred("stackable", data.TryGetProperty("stackable", out var stacking) &&
                     (stacking.ValueKind is JsonValueKind.True or JsonValueKind.False), "Origin may confirm stacking");
             else NotApplicable("stackable", "Stackability is only applicable to LCL/LTL");
+
+            // Optional opening fields retain their own state without adding mandatory business rules.
+            bool NonEmptyArray(string key) => data.TryGetProperty(key, out var array) &&
+                array.ValueKind == JsonValueKind.Array && array.GetArrayLength() > 0;
+            foreach (var key in new[] { "provenance", "clientPoReference", "crmDivisionId", "cargoNature",
+                "cabysCode", "packageType", "agentReference", "merchantReference", "etm", "eta", "observations" })
+                Deferred(key, !string.IsNullOrWhiteSpace(Text(key)), "Optional opening information");
+            Deferred("packageCount", Positive("packageCount"), "Origin can confirm package count");
+            Deferred("contactIds", NonEmptyArray("contactIds"), "Operational contacts may be registered later");
+            Deferred("services", NonEmptyArray("services"), "Optional service information");
+            Deferred("supportDocuments", NonEmptyArray("supportDocuments"), "Documents can be supplied later");
+            if (!strictManual)
+            {
+                Required("shipmentType", !string.IsNullOrWhiteSpace(shipment));
+                Deferred("operationDirection", HasValue("operationDirection") || HasValue("provenance"), "Operation direction can be reviewed");
+            }
 
             // Booking and transport references can be confirmed after opening.
             var air = shipment is "AIR" or "AIRCONSOL" || transport == "AIR";
