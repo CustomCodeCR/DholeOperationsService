@@ -545,12 +545,16 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
             .ThenBy(x => x.UserId).ThenBy(x => x.TeamId).ToList();
 
         var selected = candidates.FirstOrDefault();
+        OperationsAssignmentRecipient? recipient = null;
         if (isOrigin)
         {
             selected = null;
             if (eligibility != null)
                 foreach (var candidate in candidates)
-                    if (await eligibility.IsEligibleAsync(candidate.UserId, ct)) { selected = candidate; break; }
+                {
+                    recipient = await eligibility.GetRecipientAsync(candidate.UserId, ct);
+                    if (recipient is not null) { selected = candidate; break; }
+                }
         }
         if (selected is null)
         {
@@ -591,6 +595,14 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
                 db.OriginProgress.Add(new OperationsOriginProgress {
                     CaseStageId = stage.Id, StatusCode = "ORIGIN_COORDINATION"
                 });
+            db.OutboxMessages.Add(OperationsOutboxFactory.CreateOriginAssignedNotification(
+                operation.Id, operation.Idtra, assignment.Id, assignment.UserId));
+            if (System.Net.Mail.MailAddress.TryCreate(recipient?.Email, out var email))
+                db.OutboxMessages.Add(OperationsOutboxFactory.CreateOriginAssignedNotification(
+                    operation.Id, operation.Idtra, assignment.Id, assignment.UserId, email.Address));
+            else
+                OperationsAuditWriter.Case(db, operation.Id, stage.Id, input.ActorUserId,
+                    "operations.origin.notification.email.unavailable", null, new { assignment.UserId });
             Enqueue("operations.origin.assigned.v1", new {
                 caseId = operation.Id, stageId = stage.Id,
                 version = operation.Version, teamId = assignment.TeamId,

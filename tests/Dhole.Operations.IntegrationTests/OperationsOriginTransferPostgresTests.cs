@@ -12,6 +12,8 @@ public sealed class OperationsOriginTransferPostgresTests
     private sealed class EligibleUsers : IOperationsAssignmentEligibility
     {
         public Task<bool> IsEligibleAsync(Guid userId, CancellationToken ct) => Task.FromResult(true);
+        public Task<OperationsAssignmentRecipient?> GetRecipientAsync(Guid userId, CancellationToken ct)
+            => Task.FromResult<OperationsAssignmentRecipient?>(new("operator@example.test"));
     }
 
     private static OperationsDbContext Db()
@@ -76,6 +78,20 @@ public sealed class OperationsOriginTransferPostgresTests
         var events = await verify.OutboxMessages
             .Where(x => x.EventName == "operations.origin.assigned.v1")
             .Select(x => x.PayloadJson).ToArrayAsync();
+        var notifications = await verify.OutboxMessages
+            .Where(x => x.EventName == "notifications.notification.requested")
+            .Select(x => x.PayloadJson).ToArrayAsync();
+        var channels = new List<string>();
+        foreach (var json in notifications)
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.GetProperty("entityId").GetString() != created.Id.ToString("D") ||
+                root.GetProperty("notificationType").GetString() != "operations.origin.assigned") continue;
+            Assert.AreEqual(operatorId.ToString("D"), root.GetProperty("recipients")[0].GetProperty("userId").GetString());
+            channels.Add(root.GetProperty("channel").GetString()!);
+        }
+        CollectionAssert.AreEquivalent(new[] { "System", "Email" }, channels.ToArray());
         Assert.AreEqual(1, events.Count(json =>
         {
             using var doc = System.Text.Json.JsonDocument.Parse(json);

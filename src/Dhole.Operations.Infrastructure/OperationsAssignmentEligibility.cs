@@ -8,6 +8,9 @@ namespace Dhole.Operations.Infrastructure;
 public sealed class OperationsAssignmentEligibility(HttpClient client, IConfiguration config) : IOperationsAssignmentEligibility
 {
     public async Task<bool> IsEligibleAsync(Guid userId, CancellationToken ct)
+        => await GetRecipientAsync(userId, ct) is not null;
+
+    public async Task<OperationsAssignmentRecipient?> GetRecipientAsync(Guid userId, CancellationToken ct)
     {
         var key = config["Auth:OperationsPool:InternalServiceKey"];
         if (!Uri.TryCreate(config["Auth:OperationsPool:BaseAddress"], UriKind.Absolute, out var address) ||
@@ -17,9 +20,12 @@ public sealed class OperationsAssignmentEligibility(HttpClient client, IConfigur
             $"api/internal/auth/operations-users/{userId:D}/eligibility"));
         request.Headers.TryAddWithoutValidation("X-Dhole-Service-Key", key);
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
-        if (response.StatusCode == HttpStatusCode.NotFound) return false;
+        if (response.StatusCode == HttpStatusCode.NotFound) return null;
         if (!response.IsSuccessStatusCode) throw new HttpRequestException("Internal Auth eligibility unavailable");
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
-        return json.RootElement.TryGetProperty("eligibleForOperations", out var eligible) && eligible.ValueKind == JsonValueKind.True;
+        if (!json.RootElement.TryGetProperty("eligibleForOperations", out var eligible) || eligible.ValueKind != JsonValueKind.True) return null;
+        var email = json.RootElement.TryGetProperty("email", out var addressValue) && addressValue.ValueKind == JsonValueKind.String
+            ? addressValue.GetString() : null;
+        return new OperationsAssignmentRecipient(email);
     }
 }

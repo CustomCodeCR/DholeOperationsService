@@ -25,6 +25,27 @@ public sealed class OutboxMessageTests
     }
 
     [TestMethod]
+    public void OriginNotificationsHaveDistinctStableKeysAndCorrectRecipient()
+    {
+        var caseId = Guid.NewGuid();
+        var assignment = Guid.NewGuid();
+        var user = Guid.NewGuid();
+        string Key(string? email)
+        {
+            var message = OperationsOutboxFactory.CreateOriginAssignedNotification(caseId, "IDTRA123", assignment, user, email);
+            using var doc = System.Text.Json.JsonDocument.Parse(message.PayloadJson);
+            var root = doc.RootElement;
+            Assert.AreEqual(email is null ? "System" : "Email", root.GetProperty("channel").GetString());
+            Assert.AreEqual(user.ToString("D"), root.GetProperty("recipients")[0].GetProperty("userId").GetString());
+            Assert.AreEqual(email, root.GetProperty("recipients")[0].GetProperty("address").GetString());
+            return root.GetProperty("idempotencyKey").GetString()!;
+        }
+        Assert.AreEqual(Key(null), Key(null));
+        Assert.AreEqual(Key("operator@example.test"), Key("operator@example.test"));
+        Assert.AreNotEqual(Key(null), Key("operator@example.test"));
+    }
+
+    [TestMethod]
     public void FactoryValidatesNameAndJson()
     {
         Assert.ThrowsExactly<ArgumentException>(() => OperationsOutboxFactory.Create("", "{}"));

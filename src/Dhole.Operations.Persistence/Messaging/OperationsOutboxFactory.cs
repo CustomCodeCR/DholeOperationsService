@@ -28,6 +28,29 @@ public static class OperationsOutboxFactory
         }));
     }
 
+    public static OutboxMessage CreateOriginAssignedNotification(
+        Guid caseId, string idtra, Guid assignmentId, Guid userId, string? email = null)
+    {
+        if (caseId == Guid.Empty || assignmentId == Guid.Empty || userId == Guid.Empty)
+            throw new ArgumentException("Origin notification requires a persisted assignment and recipient.");
+        var channel = email is null ? "System" : "Email";
+        if (email is not null && !System.Net.Mail.MailAddress.TryCreate(email, out _))
+            throw new ArgumentException("Invalid registered recipient email.", nameof(email));
+        return Create(NotificationRequested, JsonSerializer.Serialize(new
+        {
+            notificationType = "operations.origin.assigned",
+            channel,
+            entityType = "OperationsCase",
+            entityId = caseId.ToString("D"),
+            subject = $"Nuevo trámite asignado: {idtra}",
+            body = $"El expediente {idtra} fue asignado a tu equipo de Coordinación Origen. Ingresa a DHOLE para continuar el trámite.",
+            idempotencyKey = $"operations:origin-assignment:{assignmentId:D}:{userId:D}:{channel.ToLowerInvariant()}",
+            recipients = new[] { new { userId = userId.ToString("D"), address = email } },
+            payload = new { caseId, idtra, action = "open-operations-case",
+                route = $"/operations/cases/{caseId:D}" }
+        }));
+    }
+
     public static OutboxMessage Create(string eventName, string payloadJson)
     {
         if (string.IsNullOrWhiteSpace(eventName))
