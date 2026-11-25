@@ -26,6 +26,7 @@ public static class OperationsCaseWorkspaceEndpoints
 
     public sealed record UpdateOriginStatusRequest(long ExpectedVersion, string StatusCode);
     public sealed record ConfirmOriginWeightRequest(long ExpectedVersion, decimal Value, string Unit);
+    public sealed record UpdateOriginPlanningRequest(long ExpectedVersion, string? Etd, string? Eta, string? ConsolidationReference);
 
     private static readonly string[] DepartmentTabs =
     [
@@ -262,6 +263,46 @@ public static class OperationsCaseWorkspaceEndpoints
             return Results.Ok(new { operation.Id, operation.Version, actualWeightKg = data["actualWeightKg"] });
         });
 
+        // Operational dates and consolidation are controlled by the Origin stage.
+        api.MapPost("/cases/{id:guid}/origin/planning", async (
+            Guid id, UpdateOriginPlanningRequest input, HttpContext http,
+            OperationsCaseAccess access, OperationsDbContext db, CancellationToken ct) =>
+        {
+            var actor = OperationsCaseAccess.UserId(http.User);
+            if (actor is null || !OperationsCaseAccess.HasScope(http.User, "operations.origin.update") ||
+                !await access.CanReadAsync(id, http.User, ct)) return Results.Forbid();
+            var operation = await db.Cases.SingleOrDefaultAsync(x => x.Id == id, ct);
+            var stage = await db.CaseStages.SingleOrDefaultAsync(x =>
+                x.CaseId == id && x.DepartmentCode == "COORDINACION_ORIGEN", ct);
+            if (operation is null || stage is null) return Results.NotFound();
+            if (operation.Status is "CANCELLED" or "COMPLETED" || stage.Status is not ("READY" or "IN_PROGRESS") ||
+                !await CanEditStageAsync(stage.Id, stage.TeamId, actor.Value, http, db, ct)) return Results.Forbid();
+            if (operation.Version != input.ExpectedVersion)
+                return Results.Conflict(new { code = "OPERATIONS_CASE_VERSION_CONFLICT", currentVersion = operation.Version });
+            var etd = input.Etd?.Trim() ?? "";
+            var eta = input.Eta?.Trim() ?? "";
+            var consolidation = input.ConsolidationReference?.Trim() ?? "";
+            if ((etd.Length > 0 && !DateOnly.TryParseExact(etd, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _)) ||
+                (eta.Length > 0 && !DateOnly.TryParseExact(eta, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _)) ||
+                (etd.Length > 0 && eta.Length > 0 && string.CompareOrdinal(eta, etd) < 0) ||
+                consolidation.Length > 250 || (consolidation.Length > 0 && operation.ModalityCode is not ("LCL" or "LTL")))
+                return Results.BadRequest(new { code = "OPERATIONS_ORIGIN_PLANNING_INVALID" });
+            var data = OperationsCargoMeasurements.Parse(operation.OpeningDataJson);
+            var before = new { etd = data["etm"]?.DeepClone(), eta = data["eta"]?.DeepClone(), consolidation = data["consolidationReference"]?.DeepClone() };
+            data["etm"] = etd; data["eta"] = eta;
+            if (operation.ModalityCode is "LCL" or "LTL") data["consolidationReference"] = consolidation;
+            operation.OpeningDataJson = data.ToJsonString();
+            operation.Version++;
+            operation.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            OperationsAuditWriter.Case(db, id, stage.Id, actor.Value, "operations.origin.planning.updated",
+                before, new { etd, eta, consolidation });
+            db.OutboxMessages.Add(OperationsOutboxFactory.Create("operations.case.updated.v1",
+                JsonSerializer.Serialize(new { caseId = id, stageId = stage.Id, version = operation.Version })));
+            try { await db.SaveChangesAsync(ct); }
+            catch (DbUpdateConcurrencyException) { return Results.Conflict(new { code = "OPERATIONS_CASE_VERSION_CONFLICT" }); }
+            return Results.Ok(new { operation.Id, operation.Version });
+        });
+
         // Manual origin progression, not a claim of confirmed physical departure.
         // IN_TRANSIT is exclusively handled by evidence-backed departure confirmation.
         api.MapPost("/cases/{id:guid}/origin/progress", async (
@@ -344,8 +385,9 @@ public static class OperationsCaseWorkspaceEndpoints
         HttpContext http, OperationsCaseAccess access, OperationsDbContext db,
         CancellationToken ct)
     {
-        if (!OperationsCaseAccess.HasScope(http.User, "operations.case.update") ||
-            !await access.CanReadAsync(id, http.User, ct)) return false;
+        var mayUpdate = OperationsCaseAccess.HasScope(http.User, "operations.case.update");
+        var mayReview = OperationsCaseAccess.HasScope(http.User, "operations.aperture.validation.review");
+        if ((!mayUpdate && !mayReview) || !await access.CanReadAsync(id, http.User, ct)) return false;
         var operation = await db.Cases.AsNoTracking()
             .Where(c => c.Id == id)
             .Select(c => new { c.Status, c.ApertureType, c.CreatedBy })
@@ -353,14 +395,18 @@ public static class OperationsCaseWorkspaceEndpoints
         if (operation is null ||
             operation.Status is not ("DRAFT" or "PENDING_VALIDATION" or "APERTURA_REQUIERE_CAMBIOS"))
             return false;
-        if (OperationsCaseAccess.IsSystemAdministrator(http.User)) return true;
-        if (operation.ApertureType == "MANUAL" && operation.CreatedBy == actor) return true;
+        if (mayUpdate && OperationsCaseAccess.IsSystemAdministrator(http.User)) return true;
+        if (mayUpdate && operation.ApertureType == "MANUAL" && operation.CreatedBy == actor) return true;
         var stage = await db.CaseStages.AsNoTracking()
             .Where(s => s.CaseId == id && s.DepartmentCode == "APERTURAS" &&
                 s.Status != "COMPLETED" && s.Status != "SKIPPED")
             .Select(s => new { s.Id, s.TeamId }).SingleOrDefaultAsync(ct);
-        return stage is not null && await CanEditStageAsync(
-            stage.Id, stage.TeamId, actor, http, db, ct);
+        if (stage is null) return false;
+        if (mayUpdate && await CanEditStageAsync(stage.Id, stage.TeamId, actor, http, db, ct)) return true;
+        return mayReview && operation.ApertureType == "AUTOMATIC" && operation.Status == "PENDING_VALIDATION" &&
+            await db.ApertureValidations.AnyAsync(v => v.CaseStageId == stage.Id && v.UserId == actor && v.Status == "PENDING" &&
+                db.TeamMembers.Any(m => m.TeamId == v.TeamId && m.UserId == actor && m.Team.IsActive) &&
+                !db.ApertureValidations.Any(previous => previous.CaseStageId == v.CaseStageId && previous.Status == "PENDING" && previous.Slot < v.Slot), ct);
     }
 
     private static async Task<bool> CanEditStageAsync(

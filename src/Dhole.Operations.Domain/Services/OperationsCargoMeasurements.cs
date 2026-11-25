@@ -66,6 +66,12 @@ public static class OperationsCargoMeasurements
             if (previous.ContainsKey(key)) incoming[key] = old?.DeepClone();
             else incoming.Remove(key);
         }
+        // Planning is owned by Origin. Legacy opening clients may send these keys; retain the saved values.
+        foreach (var key in new[] { "etm", "eta", "consolidationReference" })
+        {
+            if (previous.ContainsKey(key)) incoming[key] = previous[key]?.DeepClone();
+            else incoming.Remove(key);
+        }
         if (previous.ContainsKey("quotedWeightKg"))
             incoming["quotedWeightKg"] = previous["quotedWeightKg"]?.DeepClone();
         else incoming.Remove("quotedWeightKg");
