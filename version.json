@@ -3,7 +3,7 @@
   "ecosystem": "Dhole",
   "component": "DholeOperationsService",
   "version": "0.25.3",
-  "ecosystemVersion": "1.129.4",
+  "ecosystemVersion": "1.130.1",
   "releaseId": "DH-20261125-OPS-OPENING-CAPTURE",
   "releaseStatus": "candidate-ci-staging-pending",
   "businessReleaseId": "DH-20261125-OPS-OPENING-CAPTURE"
