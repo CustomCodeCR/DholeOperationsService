@@ -259,7 +259,7 @@ public static class OperationsTeamValidationEndpoints
 
         api.MapPost("/cases/{caseId:guid}/aperture-validations/{validationId:guid}/decision", async (
             Guid caseId, Guid validationId, ReviewDecisionRequest input, HttpContext http,
-            OperationsDbContext db, AssignStageHandler originAssigner,
+            OperationsDbContext db, OperationsCaseAccess access, AssignStageHandler originAssigner,
             ILoggerFactory loggerFactory, CancellationToken ct) =>
         {
             var actor = OperationsCaseAccess.UserId(http.User);
@@ -280,6 +280,12 @@ public static class OperationsTeamValidationEndpoints
                 v.Id == validationId && v.CaseStage.CaseId == caseId, ct);
             if (validation is null) return Results.NotFound();
             if (validation.UserId != actor.Value) return Results.Forbid();
+            if (!OperationsCaseAccess.IsSystemAdministrator(http.User))
+            {
+                var company = await access.ResolveCompanyIdAsync(http.User, ct);
+                if (!company.HasValue || !await db.Cases.AnyAsync(c => c.Id == caseId && c.CompanyId == company.Value, ct))
+                    return Results.Forbid();
+            }
             if (!await db.TeamMembers.AnyAsync(m => m.TeamId == validation.TeamId &&
                 m.UserId == actor.Value && m.Team.IsActive, ct)) return Results.Forbid();
             if (validation.Status == decision)

@@ -78,8 +78,9 @@ public sealed class OperationsCaseAccess(OperationsDbContext db)
                     db.TeamMembers.Any(m => m.TeamId == s.TeamId.Value &&
                         m.UserId == actor.Value && m.Team.IsActive &&
                         (m.IsSupervisor ||
-                         db.StageAssignments.Any(a => a.CaseStageId == s.Id &&
-                             a.TeamId == m.TeamId && a.UserId == actor.Value && a.ReleasedAtUtc == null) ||
+                         ((s.DepartmentCode != "APERTURAS" || c.ApertureType != "AUTOMATIC") &&
+                          db.StageAssignments.Any(a => a.CaseStageId == s.Id &&
+                             a.TeamId == m.TeamId && a.UserId == actor.Value && a.ReleasedAtUtc == null)) ||
                          (s.DepartmentCode == "APERTURAS" && c.ApertureType == "AUTOMATIC" &&
                           db.ApertureValidations.Any(v => v.CaseStageId == s.Id &&
                              v.TeamId == m.TeamId && v.UserId == actor.Value &&

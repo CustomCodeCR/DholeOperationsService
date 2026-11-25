@@ -281,11 +281,25 @@ public sealed class OperationsAcceptedPricingQuotePostgresTests
         {
             var rows = await db.ApertureValidations.Where(v => v.CaseStage.CaseId == case1 || v.CaseStage.CaseId == case2)
                 .Select(v => new { v.UserId, v.TeamId, v.Status, v.CaseStage.CaseId }).ToArrayAsync(ct);
-            Assert.HasCount(4, rows);
-            Assert.AreEqual(3, rows.Select(v => v.UserId).Distinct().Count());
+            Assert.HasCount(2, rows);
+            Assert.AreEqual(2, rows.Select(v => v.UserId).Distinct().Count());
             Assert.AreEqual(1, rows.Select(v => v.TeamId).Distinct().Count());
             Assert.IsTrue(rows.All(v => v.Status == "PENDING"));
-            Assert.AreEqual(2, rows.Where(v => v.CaseId == case1).Select(v => v.UserId).Distinct().Count());
+            Assert.AreEqual(1, rows.Where(v => v.CaseId == case1).Select(v => v.UserId).Distinct().Count());
+            var initial = await db.ApertureValidations.SingleAsync(v => v.CaseStage.CaseId == case1, ct);
+            initial.Status = "APPROVED";
+            initial.ReviewedAtUtc = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync(ct);
+        }
+        Assert.IsTrue(await Assign(case1));
+        Assert.IsFalse(await Assign(case1));
+        await using (var db = Db())
+        {
+            var reviews = await db.ApertureValidations.Where(v => v.CaseStage.CaseId == case1).OrderBy(v => v.Slot).ToArrayAsync(ct);
+            Assert.HasCount(2, reviews);
+            Assert.AreEqual("APPROVED", reviews[0].Status);
+            Assert.AreEqual("PENDING", reviews[1].Status);
+            Assert.AreNotEqual(reviews[0].UserId, reviews[1].UserId);
         }
     }
 }
