@@ -195,11 +195,17 @@ public static class OperationsOpeningDraftPolicy
             bool NonEmptyArray(string key) => data.TryGetProperty(key, out var array) &&
                 array.ValueKind == JsonValueKind.Array && array.GetArrayLength() > 0;
             foreach (var key in new[] { "provenance", "clientPoReference", "crmDivisionId", "cargoNature",
-                "cabysCode", "packageType", "agentReference", "merchantReference", "etm", "eta", "observations" })
+                "cabysCode", "packageType", "agentReference", "etm", "eta", "observations" })
                 Deferred(key, !string.IsNullOrWhiteSpace(Text(key)), "Optional opening information");
             Deferred("packageCount", Positive("packageCount"), "Origin can confirm package count");
             Deferred("contactIds", NonEmptyArray("contactIds"), "Operational contacts may be registered later");
-            Deferred("services", NonEmptyArray("services"), "Optional service information");
+            if (manualOpening && revision >= 4)
+                Required("services", NonEmptyArray("services") && NonEmptyArray("serviceSelections"), "Select the agreed services before sending to Origin");
+            else Deferred("services", NonEmptyArray("services"), "Optional service information");
+            if (shipment is "FTL" or "LTL") Deferred("roadCarrierReference", HasValue("roadCarrierReference"), "Origin confirms road carrier");
+            else NotApplicable("roadCarrierReference", "Not a road shipment");
+            Deferred("isImo", data.TryGetProperty("isImo", out var imoFlag) && imoFlag.ValueKind is JsonValueKind.True or JsonValueKind.False, "Cargo classification may need confirmation");
+            Deferred("overweight", data.TryGetProperty("overweight", out var overweightFlag) && overweightFlag.ValueKind is JsonValueKind.True or JsonValueKind.False, "Origin confirms overweight");
             Deferred("supportDocuments", NonEmptyArray("supportDocuments"), "Documents can be supplied later");
             if (!strictManual)
             {
@@ -210,6 +216,8 @@ public static class OperationsOpeningDraftPolicy
             // Booking and transport references can be confirmed after opening.
             var air = shipment is "AIR" or "AIRCONSOL" || transport == "AIR";
             var maritime = !nonMaritime && (shipment is "FCL" or "LCL" || transport == "MARITIME");
+            if (maritime) Deferred("merchantReference", HasValue("merchantReference"), "Origin confirms merchant when applicable");
+            else NotApplicable("merchantReference", "No maritime merchant");
             if (maritime || air) Deferred("bookingNumber", !string.IsNullOrWhiteSpace(Text("bookingNumber")), "Origin confirms booking");
             else NotApplicable("bookingNumber", "No maritime or air booking");
             if (maritime) Deferred("blNumber", !string.IsNullOrWhiteSpace(Text("blNumber")), "Documentation confirms BL");

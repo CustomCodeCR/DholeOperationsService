@@ -1,3 +1,7 @@
+## [0.25.3] - 2026-11-25
+
+- Validate and persist selected opening services using Config catalog identities; classify additional transport and cargo fields. CI and staging pending.
+
 ## [0.25.2] - 2026-11-25
 
 - Classify booking, BL, container and airline individually and gate aperture approval with server-side field validation.

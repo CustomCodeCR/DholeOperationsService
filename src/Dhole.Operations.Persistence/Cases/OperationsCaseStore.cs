@@ -53,6 +53,22 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
             operation.Stages.Add(initialStage);
         }
         db.Cases.Add(operation);
+        using (var opening = JsonDocument.Parse(operation.OpeningDataJson))
+        {
+            foreach (var service in ArrayProperty(opening.RootElement, "serviceSelections"))
+            {
+                var id = GuidProperty(service, "id");
+                var code = StringProperty(service, "code");
+                var label = StringProperty(service, "label");
+                if (id == Guid.Empty || code.Length is < 1 or > 60 || label.Length is < 1 or > 200)
+                    throw new ArgumentException("Invalid opening service reference.");
+                db.CaseServiceLines.Add(new OperationsCaseServiceLine
+                {
+                    CaseId = operation.Id, PricingServiceId = id, ServiceCode = code, ServiceName = label,
+                    Source = "OPERATIONS_ADDED", CreatedBy = input.ActorUserId
+                });
+            }
+        }
         OperationsAuditWriter.Case(db, operation.Id, openingStage.Id, input.ActorUserId,
             "operations.case.created", null, new {
                 operation.Idtra, operation.CompanyId, operation.AccountId, operation.ModalityCode
