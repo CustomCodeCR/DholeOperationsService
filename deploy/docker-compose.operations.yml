@@ -11,6 +11,7 @@ services:
       ConnectionStrings__Postgres: "Host=${POSTGRES_HOST:-postgres};Port=${POSTGRES_PORT:-5432};Database=${OPERATIONS_DB:-dhole_operations};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
       Redis__ConnectionString: ${REDIS_CONNECTION_STRING:-redis:6379}
       Crm__ApiBaseUrl: ${CRM_HTTP_URL:-http://crm-api:8080}
+      Config__ApiBaseUrl: ${CONFIG_HTTP_URL:-http://config-api:8080}
       Crm__OperationsAcceptance__InternalServiceKey: ${INTERNAL_SERVICE_KEY}
       Auth__ApiBaseUrl: ${AUTH_HTTP_URL:-http://auth-api:8080}
       Auth__OperationsPool__BaseAddress: ${AUTH_HTTP_URL:-http://auth-api:8080}

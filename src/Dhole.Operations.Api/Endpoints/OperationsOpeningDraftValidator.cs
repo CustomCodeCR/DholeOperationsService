@@ -6,8 +6,8 @@ namespace Dhole.Operations.Api.Endpoints;
 public static class OperationsOpeningDraftValidator
 {
     public sealed record FieldStatus(string FieldCode, string CompletionStatus, string? Reason = null);
-    public static string[] MissingFields(string modality, string? json) =>
-        OperationsOpeningDraftPolicy.MissingFields(modality, json);
+    public static string[] MissingFields(string modality, string? json, bool manualOpening = false) =>
+        OperationsOpeningDraftPolicy.MissingFields(modality, json, manualOpening);
     public static IReadOnlyList<FieldStatus> EvaluateFields(string modality, string? json) =>
         OperationsOpeningDraftPolicy.EvaluateFields(modality, json)
             .Select(x => new FieldStatus(x.FieldCode, x.CompletionStatus, x.Reason)).ToArray();

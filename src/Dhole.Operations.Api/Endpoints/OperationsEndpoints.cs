@@ -81,7 +81,7 @@ public static class OperationsEndpoints
 
         api.MapPost("/cases", async (
             NewCaseRequest request, HttpContext http, CreateManualCaseHandler handler,
-            OperationsCaseAccess access, OperationsCrmAccountResolver crm, AssignStageHandler originAssigner,
+            OperationsCaseAccess access, OperationsCrmAccountResolver crm, OperationsOpeningCatalogValidator catalogValidator, AssignStageHandler originAssigner,
             ILoggerFactory loggerFactory, CancellationToken ct) =>
         {
             var actor = OperationsCaseAccess.UserId(http.User);
@@ -97,9 +97,12 @@ public static class OperationsEndpoints
             try
             {
                 var openingData = ValidateOpeningData(request.OpeningData);
-                var missing = OperationsOpeningDraftValidator.MissingFields(request.ModalityCode, openingData);
+                var missing = OperationsOpeningDraftValidator.MissingFields(request.ModalityCode, openingData, manualOpening: true);
                 if (missing.Length > 0)
                     return Results.Conflict(new { code = "APERTURE_MISSING_REQUIRED_FIELDS", missingFields = missing });
+                var catalogResult = await catalogValidator.ValidateAsync(openingData, http.Request.Headers.Authorization.ToString(), ct);
+                if (catalogResult.ErrorCode is not null)
+                    return Results.Json(new { code = catalogResult.ErrorCode, missingFields = catalogResult.Fields }, statusCode: catalogResult.StatusCode);
                 var result = await handler.HandleAsync(
                     new CreateManualCaseCommand(request.CompanyId,
                         request.AccountId, crmAccount.ExecutiveUserId!.Value, request.ModalityCode,
