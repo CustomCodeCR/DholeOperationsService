@@ -332,4 +332,49 @@ public sealed class OperationsAcceptedPricingQuotePostgresTests
             Assert.AreEqual(1, await db.CaseStages.CountAsync(x => x.CaseId == case1 && x.DepartmentCode == "COORDINACION_ORIGEN", ct));
         }
     }
+    [TestMethod]
+    public async Task ManualQuoteLinkPreservesIdtraAndOpeningAndIsIdempotent()
+    {
+        await using var db = Db();
+        await db.Database.MigrateAsync();
+        var ct = CancellationToken.None;
+        var input = Quote(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), []);
+        const string opening = "{\"cargoDescription\":\"Manual preserved\"}";
+        var store = new OperationsCaseStore(db);
+        var created = await store.CreateManualAsync(new CreateManualCaseCommand(input.CompanyId,
+            input.AccountId, input.ExecutiveUserId, "FCL", 1, 1m, input.ActorUserId, "CN", "CR",
+            opening, SendDirectlyToOrigin: true), ct);
+        var link = new Dhole.Operations.Domain.Models.OperationsCaseQuoteLink {
+            CaseId = created.Id, QuoteId = input.AcceptedOptionId, QuoteOptionId = input.AcceptedOptionId,
+            Status = "PENDING_LINK", LinkedBy = input.ActorUserId
+        };
+        db.CaseQuoteLinks.Add(link);
+        await db.SaveChangesAsync(ct);
+        var payload = System.Text.Json.Nodes.JsonNode.Parse(input.CommercialSnapshotJson)!.AsObject();
+        payload["manualCaseId"] = created.Id;
+        payload["quoteLinkRequestId"] = link.Id;
+        payload["historicalIdtra"] = created.Idtra;
+        payload["historicalIdtras"] = JsonSerializer.SerializeToNode(new[] { created.Idtra });
+        var linked = input with { CommercialSnapshotJson = payload.ToJsonString() };
+        var next = await OperationsCaseStore.ReadNextIdtraAsync(db, ct);
+        var result = await store.CreateAcceptedQuoteAsync(linked, ct);
+        var retry = await store.CreateAcceptedQuoteAsync(linked, ct);
+        Assert.AreEqual(created.Id, result.Id);
+        Assert.AreEqual(created.Id, retry.Id);
+        Assert.AreEqual(created.Idtra, result.Idtra);
+        Assert.AreEqual(next, await OperationsCaseStore.ReadNextIdtraAsync(db, ct));
+        var operation = await db.Cases.AsNoTracking().SingleAsync(x => x.Id == created.Id, ct);
+        Assert.AreEqual("MANUAL", operation.ApertureType);
+        Assert.AreEqual("OPEN", operation.Status);
+        Assert.AreEqual("Manual preserved", JsonDocument.Parse(operation.OpeningDataJson).RootElement.GetProperty("cargoDescription").GetString());
+        Assert.AreEqual<Guid?>(input.QuoteId, operation.SourceQuoteId);
+        Assert.AreEqual(1, await db.Cases.CountAsync(x => x.SourceQuoteId == input.QuoteId, ct));
+        Assert.AreEqual(1, await db.AcceptedQuoteSnapshots.CountAsync(x => x.CaseId == created.Id, ct));
+        Assert.AreEqual(2, await db.CaseQuoteCosts.CountAsync(x => x.QuoteLink.CaseId == created.Id, ct));
+        Assert.AreEqual("ACCEPTED", await db.CaseQuoteLinks.Where(x => x.Id == link.Id).Select(x => x.Status).SingleAsync(ct));
+        // A delayed acceptance event for the same parent must not allocate another case.
+        var delayed = await store.CreateAcceptedQuoteAsync(input with { SourceEventId = Guid.NewGuid() }, ct);
+        Assert.AreEqual(created.Id, delayed.Id);
+    }
 }

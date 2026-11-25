@@ -1,3 +1,7 @@
+using System.Data;
+using Dhole.Operations.Persistence.Audit;
+using Dhole.Operations.Persistence.Messaging;
+using CustomCodeFramework.Messaging.Inbox;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -57,7 +61,7 @@ public sealed class OperationsPricingAcceptanceInboxWorker(
                 {
                     var type = Field(entry, "message_type");
                     if (string.IsNullOrWhiteSpace(type)) type = Field(entry, "type");
-                    if (type != EventName)
+                    if (type is not (EventName or "pricing.quote.linked.v1" or "pricing.quote-link.rejected.v1"))
                     {
                         await dbRedis.StreamAcknowledgeAsync(stream, group, entry.Id);
                         continue;
@@ -90,7 +94,8 @@ public sealed class OperationsPricingAcceptanceInboxWorker(
                     if (string.IsNullOrWhiteSpace(payload)) payload = Field(entry, "data");
                     try
                     {
-                        await ConsumeAcceptanceAsync(eventId, payload, stoppingToken);
+                        if (type == "pricing.quote-link.rejected.v1") await ConsumeRejectionAsync(eventId, payload, stoppingToken);
+                        else await ConsumeAcceptanceAsync(eventId, payload, stoppingToken);
                         await dbRedis.StreamAcknowledgeAsync(stream, group, entry.Id);
                     }
                     catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -170,7 +175,13 @@ public sealed class OperationsPricingAcceptanceInboxWorker(
 
         var configured = config["PricingAcceptance:CompanyId"];
         Guid companyId;
-        if (Guid.TryParse(configured, out var explicitCompany) &&
+        var manualId = ReadGuid(root, "manualCaseId");
+        if (manualId != Guid.Empty)
+        {
+            var company = await operations.Cases.AsNoTracking().Where(x => x.Id == manualId && x.AccountId == accountId && x.ApertureType == "MANUAL").Select(x => (Guid?)x.CompanyId).SingleOrDefaultAsync(ct);
+            companyId = company ?? throw new InvalidOperationException("Manual quote link company does not match.");
+        }
+        else if (Guid.TryParse(configured, out var explicitCompany) &&
             explicitCompany != Guid.Empty &&
             (knownCompanies.Length == 0 || knownCompanies.Contains(explicitCompany)))
             companyId = explicitCompany;
@@ -188,6 +199,43 @@ public sealed class OperationsPricingAcceptanceInboxWorker(
             eventId, payload, mode), ct);
         logger.LogInformation("Accepted quotation {QuoteId} linked to {Idtra}, duplicate={Duplicate}",
             quoteId, result.Idtra, result.Existing);
+    }
+
+    private async Task ConsumeRejectionAsync(Guid eventId, string payload, CancellationToken ct)
+    {
+        using var document = JsonDocument.Parse(payload);
+        var root = document.RootElement;
+        var caseId = ReadGuid(root, "caseId");
+        var requestId = ReadGuid(root, "quoteLinkRequestId");
+        var rateId = ReadGuid(root, "rateId");
+        var reason = ReadString(root, "reason");
+        using var scope = scopes.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<OperationsDbContext>();
+        await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
+        var key = "operations-quote-link:" + caseId.ToString("N");
+        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({key}, 0));", ct);
+        if (await db.InboxMessages.AnyAsync(x => x.ConsumerService == "operations-pricing-quote" && x.EventId == eventId, ct))
+        { await tx.CommitAsync(ct); return; }
+        var link = await db.CaseQuoteLinks.SingleAsync(x => x.Id == requestId && x.CaseId == caseId && x.QuoteOptionId == rateId, ct);
+        if (link.Status == "PENDING_LINK")
+        {
+            var operation = await db.Cases.SingleAsync(x => x.Id == caseId, ct);
+            link.Status = "LINK_REJECTED";
+            operation.Version++;
+            operation.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            OperationsAuditWriter.Case(db, caseId, null, link.LinkedBy, "operations.quote-link.rejected", null, new { requestId, reason });
+            db.OutboxMessages.Add(OperationsOutboxFactory.Create("operations.case.updated.v1",
+                JsonSerializer.Serialize(new { caseId, version = operation.Version })));
+        }
+        var receipt = new InboxMessage {
+            EventId = eventId, EventType = "pricing.quote-link.rejected.v1", EventName = "pricing.quote-link.rejected.v1",
+            ConsumerService = "operations-pricing-quote", SourceService = "DholePricingService", Status = InboxMessageStatus.Processed,
+            CreatedAtUtc = DateTime.UtcNow, ProcessedAtUtc = DateTime.UtcNow
+        };
+        db.InboxMessages.Add(receipt);
+        db.Entry(receipt).Property("PayloadJson").CurrentValue = "{}";
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
     }
 
     private async Task<CrmAcceptedAccount> ResolveCrmAccountAsync(

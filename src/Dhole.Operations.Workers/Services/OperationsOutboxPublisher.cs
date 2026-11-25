@@ -52,7 +52,7 @@ public sealed class OperationsOutboxPublisher(
                                     new("header:event_id", entry.EventId.ToString("D"))
                                 });
                         }
-                        else if (entry.EventName == "operations.pricing-review.requested.v1")
+                        else if (entry.EventName is "operations.pricing-review.requested.v1" or "operations.quote-link.requested.v1")
                         {
                             // The Pricing worker consumes framework-style stream
                             // envelopes, not Operations' realtime envelope.

@@ -202,8 +202,66 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
         var processed = await db.InboxMessages.AsNoTracking().AnyAsync(x =>
             x.ConsumerService == "operations-pricing-quote" &&
             x.EventId == input.SourceEventId, ct);
+        var manualCaseId = GuidProperty(accepted, "manualCaseId");
+        var requestId = GuidProperty(accepted, "quoteLinkRequestId");
+        if (manualCaseId != Guid.Empty || requestId != Guid.Empty)
+        {
+            if (manualCaseId == Guid.Empty || requestId == Guid.Empty || !historicalNumber.HasValue)
+                throw new InvalidOperationException("Manual quote link identity incomplete.");
+            var caseLock = "operations-quote-link:" + manualCaseId.ToString("N");
+            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({caseLock}, 0));", ct);
+            var target = await db.Cases.SingleOrDefaultAsync(x => x.Id == manualCaseId && x.ApertureType == "MANUAL", ct);
+            var pending = await db.CaseQuoteLinks.SingleOrDefaultAsync(x => x.Id == requestId && x.CaseId == manualCaseId, ct);
+            if (target is null || pending is null || target.AccountId != input.AccountId ||
+                target.CompanyId != input.CompanyId || target.Idtra != historicalIdtra ||
+                !string.Equals(target.ModalityCode, input.ModalityCode, StringComparison.OrdinalIgnoreCase) ||
+                pending.LinkedBy != input.ActorUserId || pending.QuoteOptionId != input.AcceptedOptionId)
+                throw new InvalidOperationException("Manual quote link does not match its reserved case.");
+            if (pending.Status == "ACCEPTED" && target.SourceQuoteId == input.QuoteId && target.SourceQuoteOptionId == input.AcceptedOptionId)
+            {
+                if (!processed) { AddPricingInboxReceipt(input.SourceEventId, "pricing.quote.linked.v1"); await db.SaveChangesAsync(ct); }
+                await transaction.CommitAsync(ct);
+                return new AcceptedQuoteCaseCreatedResult(target.Id, target.Idtra, true);
+            }
+            if (processed || pending.Status != "PENDING_LINK" || target.SourceQuoteId.HasValue)
+                throw new InvalidOperationException("Manual quote link is no longer reserved.");
+            target.SourceQuoteId = input.QuoteId;
+            target.SourceQuoteOptionId = input.AcceptedOptionId;
+            target.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            target.Version++;
+            pending.QuoteId = input.QuoteId;
+            pending.QuoteNumber = input.QuoteNumber;
+            pending.IsPrimary = true;
+            pending.Status = "ACCEPTED";
+            pending.SnapshotVersion = input.CommercialRevision;
+            db.AcceptedQuoteSnapshots.Add(new OperationsAcceptedQuoteSnapshot {
+                CaseId = target.Id, EventId = input.SourceEventId, QuoteId = input.QuoteId,
+                AcceptedOptionId = input.AcceptedOptionId, CommercialRevision = input.CommercialRevision,
+                SnapshotJson = input.CommercialSnapshotJson, AcceptedAtUtc = input.AcceptedAtUtc
+            });
+            // Retain manual opening data, operational assignments, documents and
+            // services. Commercial cost lines are a separate immutable snapshot.
+            var uniqueCostIds = new HashSet<Guid>();
+            foreach (var item in projectableCosts)
+                db.CaseQuoteCosts.Add(new OperationsCaseQuoteCost {
+                    QuoteLinkId = pending.Id,
+                    SourceCostId = item.SourceCostId != Guid.Empty && uniqueCostIds.Add(item.SourceCostId) ? item.SourceCostId : null,
+                    Description = item.Description, CostCode = item.CostCode, CurrencyCode = item.CurrencyCode,
+                    SupplierName = string.IsNullOrWhiteSpace(item.SupplierName) || item.SupplierName.Length > 200 ? null : item.SupplierName,
+                    CostAmount = item.UnitCost * item.Quantity, SaleAmount = item.UnitSale * item.Quantity
+                });
+            AddPricingInboxReceipt(input.SourceEventId, "pricing.quote.linked.v1");
+            OperationsAuditWriter.Case(db, target.Id, null, input.ActorUserId, "operations.quote-link.confirmed", null,
+                new { requestId, input.QuoteId, input.AcceptedOptionId, input.CommercialRevision, target.Idtra,
+                    sharedQuote = multi, costsPendingReconciliation = rejectedCosts.Length });
+            Enqueue("operations.case.updated.v1", new { caseId = target.Id, version = target.Version, quoteId = input.QuoteId });
+            await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+            return new AcceptedQuoteCaseCreatedResult(target.Id, target.Idtra, true);
+        }
+
         var siblings = await db.Cases.AsNoTracking()
-            .Where(x => x.ApertureType == "AUTOMATIC" && x.SourceQuoteId == input.QuoteId)
+            .Where(x => x.SourceQuoteId == input.QuoteId)
             .OrderBy(x => x.SequenceNumber)
             .Select(x => new { x.Id, x.Idtra, x.SequenceNumber, x.CompanyId, x.SourceQuoteOptionId })
             .ToArrayAsync(ct);
@@ -397,13 +455,13 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
         return new AcceptedQuoteCaseCreatedResult(operation.Id, operation.Idtra, false);
     }
 
-    private void AddPricingInboxReceipt(Guid eventId)
+    private void AddPricingInboxReceipt(Guid eventId, string eventName = "pricing.quote.accepted.v1")
     {
         var receipt = new CustomCodeFramework.Messaging.Inbox.InboxMessage
         {
             EventId = eventId,
-            EventType = "pricing.quote.accepted.v1",
-            EventName = "pricing.quote.accepted.v1",
+            EventType = eventName,
+            EventName = eventName,
             SourceService = "DholePricingService",
             ConsumerService = "operations-pricing-quote",
             Status = CustomCodeFramework.Messaging.Inbox.InboxMessageStatus.Processed,
