@@ -39,13 +39,13 @@ public sealed class AperturePriorityOne416Tests
     }
 
     [TestMethod]
-    public void PickupNeedsAddressContactAndWindow()
+    public void PickupNeedsAddressButNotContactOrWindow()
     {
         var data = Base.Replace("\"incoterm\"", "\"requiresPickup\":true, \"incoterm\"");
         var missing = OperationsOpeningDraftValidator.MissingFields("LCL", data);
         CollectionAssert.Contains(missing, "pickupAddress");
-        CollectionAssert.Contains(missing, "pickupContact");
-        CollectionAssert.Contains(missing, "pickupWindow");
+        CollectionAssert.DoesNotContain(missing, "pickupContact");
+        CollectionAssert.DoesNotContain(missing, "pickupWindow");
     }
 
     [TestMethod]

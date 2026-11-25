@@ -53,12 +53,30 @@ public sealed class OperationsManualOpeningValidation20261125Tests
     }
 
     [TestMethod]
+    public void VersionThreeRoadExwCanCompleteWithoutPickupContactOrWindow()
+    {
+        const string opening = """
+            {"openingValidationVersion":3,"transportType":"ROAD","shipmentType":"FTL",
+             "operationDirection":"EXPORT","cargoDescription":"Piezas","pol":"San José",
+             "poe":"Ciudad de Guatemala","polTerminalType":"SD","poeTerminalType":"SD",
+             "incoterm":"EXW","requiresPickup":true,"pickupAddress":"San José",
+             "pickupLocations":[{"address":"San José","cargoCondition":"NationalizedCargo"}],
+             "estimatedWeightValue":"100","estimatedWeightUnit":"KG",
+             "equipment":[{"equipmentType":"Furgón 48","quantity":1}]}
+            """;
+        CollectionAssert.AreEqual(Array.Empty<string>(), Missing(opening, "FTL"));
+        var fields = OperationsOpeningDraftValidator.EvaluateFields("FTL", opening);
+        Assert.IsFalse(fields.Any(f => f.FieldCode is "pickupContact" or "pickupWindow"));
+        CollectionAssert.Contains(Missing(opening.Replace("\"pickupAddress\":\"San José\"", "\"pickupAddress\":\"\""), "FTL"), "pickupAddress");
+    }
+
+    [TestMethod]
     public void ExwImportCannotSkipPickupAndFcaPickupDoesNotRequireWarehouse()
     {
         var missing = Missing(Air.Replace("FCA", "EXW"));
         CollectionAssert.Contains(missing, "pickupAddress");
-        CollectionAssert.Contains(missing, "pickupContact");
-        CollectionAssert.Contains(missing, "pickupWindow");
+        CollectionAssert.DoesNotContain(missing, "pickupContact");
+        CollectionAssert.DoesNotContain(missing, "pickupWindow");
         var pickup = Air.Replace("\"whsName\":\"WHS\"", "\"requiresPickup\":true,\"pickupAddress\":\"Address\",\"pickupContact\":\"Contact\",\"pickupWindow\":\"Monday\"");
         CollectionAssert.AreEqual(Array.Empty<string>(), Missing(pickup));
     }

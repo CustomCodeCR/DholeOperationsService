@@ -216,6 +216,11 @@
 
 # Changelog
 
+## [0.25.1] - 2026-11-25 · DH-20261125-OPS-PICKUP-COMPLETENESS
+
+- PATCH: contacto y ventana de recolecta no forman parte de completitud de apertura; se conservan los datos históricos y la validación de dirección y puntos. Prueba FTL EXW sin contacto ni ventana.
+
+
 ## [0.25.0] - 2026-11-25 · DH-20261125-OPS-PRICING-PARITY
 
 - MINOR: contrato de apertura v3 compatible con Pricing: POD opcional marítimo, excluido aéreo/terrestre; WHS FCA y puntos de recolecta/entrega. Mantiene reglas v2 e históricas.
