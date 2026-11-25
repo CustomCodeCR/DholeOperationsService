@@ -144,17 +144,15 @@ public static class OperationsOpeningDraftPolicy
                 (!HasValue("requiresPickup") && !string.IsNullOrWhiteSpace(Text("pickupAddress")));
             if (pricingParity && (incoterm == "EXW" || pickup))
                 Required("pickupLocations", ValidPoints("pickupLocations"), "Add a collection point as in Pricing");
+            // Pickup contact and time window are not opening requirements. Preserve any
+            // historical JSON values without evaluating them as completeness fields.
             if (pickup)
             {
                 Required("pickupAddress", !string.IsNullOrWhiteSpace(Text("pickupAddress")));
-                Required("pickupContact", !string.IsNullOrWhiteSpace(Text("pickupContact")));
-                Required("pickupWindow", !string.IsNullOrWhiteSpace(Text("pickupWindow")));
             }
             else
             {
                 NotApplicable("pickupAddress", "No collection service selected");
-                NotApplicable("pickupContact", "No collection service selected");
-                NotApplicable("pickupWindow", "No collection service selected");
             }
 
             if (Flag("isImo"))
