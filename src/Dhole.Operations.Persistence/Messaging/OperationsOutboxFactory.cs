@@ -6,6 +6,28 @@ namespace Dhole.Operations.Persistence.Messaging;
 /// <summary>Config-compatible transactional outbox factory; explicit source and event ID.</summary>
 public static class OperationsOutboxFactory
 {
+    public const string NotificationRequested = "notifications.notification.requested";
+
+    public static OutboxMessage CreateOpeningAssignedNotification(
+        Guid caseId, string idtra, Guid assignmentId, Guid userId)
+    {
+        if (caseId == Guid.Empty || assignmentId == Guid.Empty || userId == Guid.Empty)
+            throw new ArgumentException("Opening notification requires a persisted assignment and recipient.");
+        return Create(NotificationRequested, JsonSerializer.Serialize(new
+        {
+            notificationType = "operations.aperture.validation.assigned",
+            channel = "System",
+            entityType = "OperationsCase",
+            entityId = caseId.ToString("D"),
+            subject = $"Nueva apertura asignada: {idtra}",
+            body = $"Se te asignó el expediente {idtra} para revisar y validar su apertura.",
+            idempotencyKey = $"operations:opening-assignment:{assignmentId:D}:{userId:D}:system",
+            recipients = new[] { new { userId = userId.ToString("D") } },
+            payload = new { caseId, idtra, action = "review-operations-opening",
+                route = $"/operations/cases/{caseId:D}" }
+        }));
+    }
+
     public static OutboxMessage Create(string eventName, string payloadJson)
     {
         if (string.IsNullOrWhiteSpace(eventName))

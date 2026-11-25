@@ -1,14 +1,17 @@
 using System.Text.Json;
 using Dhole.Operations.Api.Hubs;
+using Dhole.Operations.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.SignalR;
 using StackExchange.Redis;
 
 namespace Dhole.Operations.Api.Realtime;
 
-/// <summary>Only case-scoped invalidations are pushed; clients refetch authorized data over REST.</summary>
+/// <summary>Case and company-scoped dashboard invalidations; REST remains the authority for data.</summary>
 public sealed class OperationsRealtimeRelay(
     IConnectionMultiplexer redis,
     IHubContext<OperationsHub> hub,
+    IServiceScopeFactory scopes,
     ILogger<OperationsRealtimeRelay> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -30,6 +33,20 @@ public sealed class OperationsRealtimeRelay(
                 var eventName = obj.TryGetProperty("type", out var type) ? type.GetString() : null;
                 await hub.Clients.Group($"operations:case:{caseId:N}")
                     .SendAsync("operationsChanged", new { eventId, eventName, caseId }, stoppingToken);
+
+                // A dashboard cannot subscribe to a case that does not yet exist
+                // or is not yet assigned. Resolve the persisted tenant rather
+                // than trusting the stream payload, and send no case metadata.
+                if (eventName?.StartsWith("operations.", StringComparison.Ordinal) != true) return;
+                using var scope = scopes.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<OperationsDbContext>();
+                var company = await db.Cases.AsNoTracking().Where(c => c.Id == caseId)
+                    .Select(c => (Guid?)c.CompanyId).SingleOrDefaultAsync(stoppingToken);
+                await hub.Clients.Group("operations:dashboard:admin")
+                    .SendAsync("operationsDashboardChanged", cancellationToken: stoppingToken);
+                if (company.HasValue)
+                    await hub.Clients.Group($"operations:dashboard:{company.Value:N}")
+                        .SendAsync("operationsDashboardChanged", cancellationToken: stoppingToken);
             }
             catch (Exception ex) { logger.LogWarning(ex, "Operations realtime invalidation failed"); }
         });

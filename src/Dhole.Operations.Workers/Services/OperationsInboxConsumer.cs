@@ -25,9 +25,9 @@ public sealed class OperationsInboxConsumer(
             {
                 try { await database.StreamCreateConsumerGroupAsync(stream, group, "0-0", createStream: true); }
                 catch (RedisServerException ex) when (ex.Message.Contains("BUSYGROUP", StringComparison.OrdinalIgnoreCase)) { }
-                var entries = await database.StreamReadGroupAsync(stream, group, consumer, "0-0", count: 50);
-                if (entries.Length == 0)
-                    entries = await database.StreamReadGroupAsync(stream, group, consumer, ">", count: 50);
+                var pending = await database.StreamReadGroupAsync(stream, group, consumer, "0-0", count: 50);
+                var fresh = await database.StreamReadGroupAsync(stream, group, consumer, ">", count: 50);
+                var entries = pending.Concat(fresh).DistinctBy(x => x.Id);
                 foreach (var entry in entries)
                 {
                     var idText = entry.Values.FirstOrDefault(x => x.Name == "id").Value.ToString();
@@ -66,9 +66,11 @@ public sealed class OperationsInboxConsumer(
                         };
                         db.InboxMessages.Add(receipt);
                         db.Entry(receipt).Property("PayloadJson").CurrentValue = payload;
-                        await db.SaveChangesAsync(stoppingToken);
+                        // Publish before committing the receipt: a failed publish
+                        // must remain retryable. Repeated invalidations are harmless.
                         await redis.GetSubscriber().PublishAsync(RedisChannel.Literal("dhole.operations.realtime"),
                             System.Text.Json.JsonSerializer.Serialize(new { eventId, type, payload }));
+                        await db.SaveChangesAsync(stoppingToken);
                     }
                     await database.StreamAcknowledgeAsync(stream, group, entry.Id);
                 }
