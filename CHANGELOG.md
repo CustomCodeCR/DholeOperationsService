@@ -1,3 +1,7 @@
+## [0.23.0] - 2026-11-24
+
+- Consume canonical Pricing cost values when supplied, preserve historical snapshot compatibility, expose charge basis and stable detail references, and restrict sale/tax/terms to finance permission. Correct catalog Incoterm validation, sea-only terms, land/air carrier applicability, consolidation and positive volume completion. Regression tests added; CI and staging pending.
+
 - Route validated openings to the configured Origin pool using persisted origin country and modality, with geographic specificity before workload and Auth eligibility; repair existing unassigned cases and avoid starvation.
 
 ## [0.22.0] - 2026-11-24

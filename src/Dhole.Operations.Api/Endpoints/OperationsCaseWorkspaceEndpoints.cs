@@ -154,7 +154,8 @@ public static class OperationsCaseWorkspaceEndpoints
             var snapshotJson = await db.AcceptedQuoteSnapshots.AsNoTracking().Where(x => x.CaseId == id)
                 .OrderByDescending(x => x.CommercialRevision).Select(x => x.SnapshotJson).FirstOrDefaultAsync(ct);
             var snapshotItems = OperationsCommercialSnapshotReader.Costs(snapshotJson, canSeeSale);
-            return Results.Ok(new { caseId = id, items = costs, snapshotItems });
+            return Results.Ok(new { caseId = id, items = costs, snapshotItems,
+                conditions = canSeeSale ? OperationsCommercialSnapshotReader.Conditions(snapshotJson) : null });
         });
 
         // Editing is intentionally limited to mutable opening metadata. The accepted

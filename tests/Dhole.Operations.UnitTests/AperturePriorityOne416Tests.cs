@@ -68,6 +68,38 @@ public sealed class AperturePriorityOne416Tests
     }
 
     [TestMethod]
+    public void CatalogIncotermNameStillRequiresFcaWarehouse()
+    {
+        const string data = """
+            {"cargoDescription":"Piezas","pol":"Shanghai","pod":"San José",
+             "incoterm":"INC-2026-004","incotermName":"FCA","transportType":"MARITIME"}
+            """;
+        CollectionAssert.Contains(OperationsOpeningDraftValidator.MissingFields("LCL", data), "whsName");
+        CollectionAssert.DoesNotContain(OperationsOpeningDraftValidator.MissingFields("LCL", data), "incoterm");
+    }
+
+    [TestMethod]
+    public void SeaOnlyIncotermsAreNotValidForLandAndAir()
+    {
+        CollectionAssert.Contains(OperationsOpeningDraftValidator.MissingFields("AIR", Base), "incoterm");
+        CollectionAssert.Contains(OperationsOpeningDraftValidator.MissingFields("FTL", Base), "incoterm");
+        CollectionAssert.DoesNotContain(OperationsOpeningDraftValidator.MissingFields("FCL", Base), "incoterm");
+        Assert.AreEqual("NO_APLICA", OperationsOpeningDraftValidator.EvaluateFields("AIRCONSOL", Base)
+            .Single(x => x.FieldCode == "carrierReference").CompletionStatus);
+    }
+
+    [TestMethod]
+    public void ConsolidationReferenceAndPositiveVolumeUsePersistedFormKeys()
+    {
+        var data = Base.Replace("\"incoterm\"", "\"consolidationReference\":\"54\",\"volumeValue\":\"2.5\",\"incoterm\"");
+        var fields = OperationsOpeningDraftValidator.EvaluateFields("LCL", data);
+        Assert.AreEqual("CONFIRMADO", fields.Single(x => x.FieldCode == "consolidation").CompletionStatus);
+        Assert.AreEqual("CONFIRMADO", fields.Single(x => x.FieldCode == "volume").CompletionStatus);
+        Assert.AreEqual("PENDIENTE_PERMITIDO", OperationsOpeningDraftValidator.EvaluateFields("LCL",
+            data.Replace("2.5", "0")).Single(x => x.FieldCode == "volume").CompletionStatus);
+    }
+
+    [TestMethod]
     public void CorruptedJsonIsBlockingAndDoesNotThrow()
     {
         CollectionAssert.Contains(

@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Globalization;
+using System.Text.RegularExpressions;
 
 namespace Dhole.Operations.Domain.Services;
 
@@ -48,11 +50,21 @@ public static class OperationsOpeningDraftPolicy
             var mode = modality?.Trim().ToUpperInvariant() ?? "";
             var shipment = (Text("shipmentType") ?? mode).ToUpperInvariant();
             var transport = Text("transportType")?.ToUpperInvariant();
-            var incoterm = Text("incoterm")?.ToUpperInvariant();
+            var term = Regex.Match((Text("incoterm") + " " + Text("incotermName")).ToUpperInvariant(),
+                @"\b(EXW|FCA|FAS|FOB|CFR|CIF|CPT|CIP|DAP|DPU|DDP)\b", RegexOptions.CultureInvariant);
+            var incoterm = term.Success ? term.Value : null;
+            var nonMaritime = transport is "AIR" or "AIRCONSOL" or "AEREO" or "AÉREO" or "TERRESTRIAL" or "LAND" or "TERRESTRE" ||
+                (string.IsNullOrWhiteSpace(transport) && (shipment is "AIR" or "AIRCONSOL" or "FTL" or "LTL"));
+            bool Positive(string key) =>
+                data.TryGetProperty(key, out var value) &&
+                decimal.TryParse(value.ValueKind == JsonValueKind.String ? value.GetString() :
+                    value.ValueKind == JsonValueKind.Number ? value.GetRawText() : null,
+                    NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var amount) && amount > 0;
             Required("cargoDescription", !string.IsNullOrWhiteSpace(Text("cargoDescription")));
             Required("pol", !string.IsNullOrWhiteSpace(Text("pol")));
             Required("pod", !string.IsNullOrWhiteSpace(Text("pod")));
-            Required("incoterm", !string.IsNullOrWhiteSpace(incoterm));
+            Required("incoterm", incoterm is not null && !(nonMaritime && (incoterm is "FAS" or "FOB" or "CFR" or "CIF")),
+                "A recognized Incoterm applicable to the transport is required");
 
             var requiresEquipment = shipment is "FCL" or "FTL" ||
                 (mode is "FCL" or "FTL");
@@ -78,7 +90,8 @@ public static class OperationsOpeningDraftPolicy
                 Required("whsName", !string.IsNullOrWhiteSpace(Text("whsName")));
             else NotApplicable("whsName", "Incoterm does not require FCA warehouse");
 
-            var pickup = Flag("requiresPickup");
+            var pickup = Flag("requiresPickup") ||
+                (!HasValue("requiresPickup") && !string.IsNullOrWhiteSpace(Text("pickupAddress")));
             if (pickup)
             {
                 Required("pickupAddress", !string.IsNullOrWhiteSpace(Text("pickupAddress")));
@@ -108,18 +121,19 @@ public static class OperationsOpeningDraftPolicy
             else NotApplicable("overweightNotes", "No overweight declared");
 
             if (shipment is "LCL" or "LTL")
-                Deferred("stackable", HasValue("stackable"), "Origin may confirm stacking");
+                Deferred("stackable", data.TryGetProperty("stackable", out var stacking) &&
+                    (stacking.ValueKind is JsonValueKind.True or JsonValueKind.False), "Origin may confirm stacking");
             else NotApplicable("stackable", "Stackability is only applicable to LCL/LTL");
 
             // Real weight belongs exclusively to Coordinación Origen on manual openings.
             Deferred("actualWeight", false, "Coordinación Origen confirms actual weight");
-            Deferred("volume", HasValue("volume") || HasValue("volumeCbm"),
+            Deferred("volume", Positive("volume") || Positive("volumeCbm") || Positive("volumeValue"),
                 "Volume may be confirmed during origin coordination");
             if (shipment is "LCL" or "LTL")
-                Deferred("consolidation", HasValue("consolidation"),
+                Deferred("consolidation", HasValue("consolidationReference") || HasValue("consolidation"),
                     "Consolidation can be confirmed by origin");
             else NotApplicable("consolidation", "Consolidation not required for this shipment");
-            if (transport is "AIR" or "AEREO" or "AÉREO" or "TERRESTRIAL" or "LAND")
+            if (nonMaritime)
                 NotApplicable("carrierReference", "Maritime carrier is not applicable");
             else
                 Deferred("carrierReference", HasValue("carrierReference"),
