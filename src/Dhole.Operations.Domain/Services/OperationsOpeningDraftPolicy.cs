@@ -84,7 +84,8 @@ public static class OperationsOpeningDraftPolicy
                 if (incoterm is "DAP" or "DPU" or "DDP")
                     Required("destinationAddress", !string.IsNullOrWhiteSpace(Text("destinationAddress")));
                 Required("portHandlingMode", transport == "MARITIME" || !HasValue("portHandlingMode"), "Port handling is not applicable to this transport");
-                Required("actualWeightInput", !Positive("weightValue") && !Positive("weightKg"), "Actual weight is confirmed by origin coordination");
+                if (manualOpening)
+                    Required("actualWeightInput", !HasValue("weightValue") && !HasValue("weightKg"), "Actual weight is confirmed by origin coordination");
             }
 
             Required("cargoDescription", !string.IsNullOrWhiteSpace(Text("cargoDescription")));
