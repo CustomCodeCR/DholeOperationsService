@@ -39,4 +39,37 @@ public static class OperationsOriginRouting
     }
 
     public static bool IsSpecialized(string modality) => modality is "FCL" or "LCL" or "AIR";
+
+    public const string UnitedStatesTeam = "Origen · Estados Unidos";
+    public const string FclTeam = "Origen · FCL internacional";
+    public const string LclAirTeam = "Origen · LCL y Aéreo internacional";
+    public const string CentralAmericaTeam = "Origen · Centroamérica";
+    public const string TransitTeam = "Origen · Tránsito";
+    public const string FtlTeam = "Origen · FTL";
+    public const string LtlTeam = "Origen · LTL";
+
+    private static readonly HashSet<string> CentralAmerica = new(StringComparer.Ordinal)
+        { "BZ", "GT", "SV", "HN", "NI", "CR", "PA" };
+
+    /// <summary>Manual intake routing precedes operator load: transit, US, intraregional, then shipment.</summary>
+    public static string? ManualTeamName(string modality, string? origin, string? destination, string? direction)
+    {
+        var mode = modality.Trim().ToUpperInvariant();
+        origin = Country(origin, null);
+        destination = Country(destination, null);
+        direction = direction?.Trim().ToUpperInvariant();
+        if (origin is null || destination is null || direction is not ("IMPORT" or "EXPORT" or "OTHER") ||
+            mode is not ("FCL" or "LCL" or "AIR" or "FTL" or "LTL")) return null;
+        if (direction == "OTHER" && origin != destination) return TransitTeam;
+        if (origin == "US" || destination == "US") return UnitedStatesTeam;
+        if (CentralAmerica.Contains(origin) && CentralAmerica.Contains(destination)) return CentralAmericaTeam;
+        return mode switch
+        {
+            "FCL" => FclTeam,
+            "LCL" or "AIR" => LclAirTeam,
+            "FTL" => FtlTeam,
+            "LTL" => LtlTeam,
+            _ => null
+        };
+    }
 }
