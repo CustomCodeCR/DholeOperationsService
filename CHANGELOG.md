@@ -1,3 +1,7 @@
+## [0.31.0] - 2026-11-26
+
+- MINOR (WIP, no integrar): DH-20261126-OPS-QUO-OPENING. Reserva transaccional opcional de QUO aceptada con el IDTRA manual y Outbox existente; requiere permiso comercial. Pendientes aceptación de QUO no aceptada, pruebas CI y staging.
+
 ## [0.30.2] - 2026-11-26
 
 - PATCH: DH-20261126-OPS-WHS-AGENT-METADATA. Resuelve el agente activo en Config antes de validar el WHS, reconoce códigos y nombres existentes y rechaza relaciones ajenas o inválidas; no modifica los propietarios registrados. Compatibilidad REST y realtime preservada. CI y staging pendientes.
