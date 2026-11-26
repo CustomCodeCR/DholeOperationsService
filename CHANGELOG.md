@@ -1,3 +1,7 @@
+## [0.30.0] - 2026-11-26
+
+- DH-20261126-OPS-WHS-AGENT-RECONCILED: apertura manual v7 valida la identidad y propiedad WHS-agente con Config. Compatibilidad con aperturas anteriores, REST y realtime existente. CI y staging pendientes.
+
 ## [0.29.0] - 2026-11-26
 
 - DH-20261126-OPS-MANUAL-WHS-ROUTING: validación de apertura manual v6 con WHS LCL/LTL y FCL/FTL FCA, verificada contra Config. Enrutamiento inicial por tránsito, Estados Unidos, Centroamérica y modalidad; catálogo de equipos de Origen ampliado. Conserva versiones anteriores, pool por carga y autorización, transacción, Outbox y recuperación de asignaciones pendientes. CI y staging pendientes.
