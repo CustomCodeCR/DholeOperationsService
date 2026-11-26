@@ -19,6 +19,12 @@ public static class OperationsAuditWriter
             ActionCode = action, BeforeJson = beforeJson, AfterJson = afterJson
         });
         EnqueueAudit(db, eventId, "OperationsTeam", teamId, actor, action, beforeJson, afterJson);
+        // Transactional invalidation. Auth derives permissions from the latest complete
+        // membership snapshot, not from possibly reordered individual grant events.
+        if (action is "operations.team.member.added" or "operations.team.member.updated" or
+            "operations.team.member.removed" or "operations.team.active.changed")
+            db.OutboxMessages.Add(OperationsOutboxFactory.Create("operations.team.permissions.changed.v1",
+                JsonSerializer.Serialize(new { teamId })));
     }
     public static void Case(OperationsDbContext db, Guid caseId, Guid? stageId,
         Guid actor, string action, object? before, object? after)
