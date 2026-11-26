@@ -38,4 +38,26 @@ public sealed class OperationsManualOpeningBasicsV5Tests
         CollectionAssert.Contains(OperationsOpeningDraftPolicy.MissingFields("FCL", Fcl.Replace("\"carrierReference\":\"Carrier\"", "\"carrierReference\":\"\""), true), "carrierReference");
         CollectionAssert.Contains(OperationsOpeningDraftPolicy.MissingFields("FCL", Fcl.Replace("\"volumeValue\":\"2\"", "\"volumeValue\":\"\""), true), "volume");
     }
+
+    [TestMethod]
+    public void V6FcaFullContainerRequiresWarehouseWithoutChangingV5()
+    {
+        var v6 = Fcl.Replace("\"openingValidationVersion\":5", "\"openingValidationVersion\":6");
+        CollectionAssert.Contains(OperationsOpeningDraftPolicy.MissingFields("FCL", v6, true), "whsName");
+        var complete = v6.Replace("\"carrierReference\":\"Carrier\"", "\"carrierReference\":\"Carrier\",\"warehouseAddress\":\"Origin warehouse\",\"whsName\":\"Origin warehouse\"");
+        CollectionAssert.AreEqual(Array.Empty<string>(), OperationsOpeningDraftPolicy.MissingFields("FCL", complete, true));
+        var cpt = v6.Replace("\"incoterm\":\"FCA\"", "\"incoterm\":\"CPT\"");
+        CollectionAssert.AreEqual(Array.Empty<string>(), OperationsOpeningDraftPolicy.MissingFields("FCL", cpt, true));
+    }
+
+    [DataRow("LCL", "EXW", true)]
+    [DataRow("LTL", "CPT", true)]
+    [DataRow("FCL", "FCA", true)]
+    [DataRow("FTL", "FCA", true)]
+    [DataRow("FCL", "FOB", false)]
+    [DataRow("FTL", "CPT", false)]
+    [DataRow("AIR", "FCA", false)]
+    [TestMethod]
+    public void V6WarehouseMatrix(string shipment, string term, bool required)
+        => Assert.AreEqual(required, OperationsOpeningDraftPolicy.RequiresManualWarehouse(shipment, term, 6));
 }
