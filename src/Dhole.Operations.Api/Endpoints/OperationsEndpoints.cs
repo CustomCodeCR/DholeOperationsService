@@ -340,10 +340,13 @@ public static class OperationsEndpoints
             if (!OperationsCaseAccess.IsSystemAdministrator(http.User) && company is null) return Results.Forbid();
             var query = db.Teams.AsNoTracking();
             if (!OperationsCaseAccess.IsSystemAdministrator(http.User)) query = query.Where(x => x.CompanyId == company);
-            return Results.Ok(await query.OrderBy(x => x.DepartmentCode).ThenBy(x => x.Name)
+            var teams = await query.OrderBy(x => x.DepartmentCode).ThenBy(x => x.Name)
                 .Select(x => new { x.Id, x.CompanyId, x.DepartmentCode, x.Name, x.IsActive,
                     Members = x.Members.Select(m => new { m.UserId, m.CapacityPoints, m.IsAvailable, m.IsSupervisor }) })
-                .ToArrayAsync(ct));
+                .ToArrayAsync(ct);
+            return Results.Ok(teams.Select(t => new { t.Id, t.CompanyId, t.DepartmentCode, t.Name, t.IsActive,
+                t.Members, OperatorScopes = OperationsTeamCatalogEndpoints.OperatorScopes(t.DepartmentCode),
+                SupervisorScopes = OperationsTeamCatalogEndpoints.SupervisorScopes(t.DepartmentCode) }));
         });
 
         api.MapPost("/teams/{teamId:guid}/members", async (

@@ -34,6 +34,25 @@ public static class OperationsTeamCatalogEndpoints
         ("FINANZAS", "Finanzas")
     ];
 
+    // A team profile documents the least-privilege scopes that Auth must grant explicitly.
+    // Membership never elevates a user or changes their token. Future departments have no
+    // default grants until their business rules are defined.
+    public static string[] OperatorScopes(string department) => department switch
+    {
+        "APERTURAS" => ["operations.case.read", "operations.case.create", "operations.case.update",
+            "operations.aperture.update", "operations.aperture.validation.review", "operations.realtime.read"],
+        "COORDINACION_ORIGEN" => ["operations.case.read", "operations.origin.read", "operations.origin.update",
+            "operations.origin.departure.confirm", "operations.internal-note.read",
+            "operations.internal-note.create", "operations.document.manage", "operations.realtime.read"],
+        _ => []
+    };
+
+    public static string[] SupervisorScopes(string department) => department switch
+    {
+        "APERTURAS" or "COORDINACION_ORIGEN" => [.. OperatorScopes(department), "operations.audit.read"],
+        _ => []
+    };
+
     public static IEndpointRouteBuilder MapOperationsTeamCatalogEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapPost("/api/operations/teams/initialize", async (

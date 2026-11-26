@@ -325,14 +325,7 @@ public static class OperationsCaseWorkspaceEndpoints
                 return Results.Forbid();
 
             var status = input.StatusCode?.Trim().ToUpperInvariant();
-            var allowed = operation.ModalityCode switch
-            {
-                "FCL" or "LCL" => new[] { "ORIGIN_COORDINATION", "BOOKING_READY", "PORT_OF_LOADING" },
-                "AIR" => new[] { "ORIGIN_COORDINATION", "ORIGIN_WAREHOUSE", "DEPARTURE_AIRPORT" },
-                "FTL" or "MULTIMODAL" => new[] { "ORIGIN_COORDINATION", "PREPARING_DISPATCH" },
-                "LTL" => new[] { "ORIGIN_COORDINATION", "ORIGIN_WAREHOUSE", "PREPARING_DISPATCH" },
-                _ => new[] { "ORIGIN_COORDINATION" }
-            };
+            var allowed = OperationsOriginStatusPolicy.Allowed(operation.ModalityCode, operation.OpeningDataJson);
             if (status is null || !allowed.Contains(status, StringComparer.Ordinal))
                 return Results.BadRequest(new { code = "ORIGIN_STATUS_NOT_APPLICABLE" });
             var progress = await db.OriginProgress.SingleOrDefaultAsync(x => x.CaseStageId == stage.Id, ct);
