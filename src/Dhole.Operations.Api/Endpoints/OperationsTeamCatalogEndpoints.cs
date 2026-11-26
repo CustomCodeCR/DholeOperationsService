@@ -12,7 +12,7 @@ namespace Dhole.Operations.Api.Endpoints;
 
 /// <summary>
 /// Idempotent, tenant-scoped creation of the standard operations team catalog.
-/// This endpoint NEVER creates user accounts, memberships, supervisors or grants.
+/// This endpoint creates only teams; active memberships are synchronized to Auth separately.
 /// </summary>
 public static class OperationsTeamCatalogEndpoints
 {
@@ -34,9 +34,8 @@ public static class OperationsTeamCatalogEndpoints
         ("FINANZAS", "Finanzas")
     ];
 
-    // A team profile documents the least-privilege scopes that Auth must grant explicitly.
-    // Membership never elevates a user or changes their token. Future departments have no
-    // default grants until their business rules are defined.
+    // Profiles mirror Auth's allowlisted automatic membership grants. Future departments
+    // have no default grants until their business rules are defined.
     public static string[] OperatorScopes(string department) => department switch
     {
         "APERTURAS" => ["operations.case.read", "operations.case.create", "operations.case.update",
