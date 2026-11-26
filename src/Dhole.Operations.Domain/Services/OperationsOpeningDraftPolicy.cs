@@ -167,7 +167,13 @@ public static class OperationsOpeningDraftPolicy
 
             // V6 manual openings require WHS for consolidated cargo and full equipment under FCA.
             // Existing V5 records retain their original contract.
-            if (basicManual && RequiresManualWarehouse(shipment, incoterm, revision))
+            var requiresLinkedWarehouse = basicManual && revision >= 7 && RequiresManualWarehouse(shipment, incoterm, revision);
+            if (requiresLinkedWarehouse)
+            {
+                Required("whsName", Guid.TryParse(Text("warehouseId"), out var warehouseId) && warehouseId != Guid.Empty && HasValue("whsName"));
+                Required("agentReference", Guid.TryParse(Text("agentId"), out var agentId) && agentId != Guid.Empty && HasValue("agentReference"));
+            }
+            else if (basicManual && RequiresManualWarehouse(shipment, incoterm, revision))
                 Required("whsName", (HasValue("warehouseId") || HasValue("warehouseAddress")) && HasValue("whsName"));
             else if (basicManual) NotApplicable("whsName", "Warehouse applies to consolidated shipments or FCA full equipment");
             else if (incoterm == "FCA" && (pricingParity || !strictManual || !Flag("requiresPickup")))
@@ -217,7 +223,8 @@ public static class OperationsOpeningDraftPolicy
                 array.ValueKind == JsonValueKind.Array && array.GetArrayLength() > 0;
             foreach (var key in new[] { "provenance", "clientPoReference", "crmDivisionId", "cargoNature",
                 "cabysCode", "packageType", "agentReference", "etm", "eta", "observations" })
-                Deferred(key, !string.IsNullOrWhiteSpace(Text(key)), "Optional opening information");
+                if (key != "agentReference" || !requiresLinkedWarehouse)
+                    Deferred(key, !string.IsNullOrWhiteSpace(Text(key)), "Optional opening information");
             if (basicManual) Required("packageCount", Positive("packageCount") && decimal.TryParse(data.GetProperty("packageCount").ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var packages) && packages == decimal.Truncate(packages));
             else Deferred("packageCount", Positive("packageCount"), "Origin can confirm package count");
             Deferred("contactIds", NonEmptyArray("contactIds"), "Operational contacts may be registered later");
