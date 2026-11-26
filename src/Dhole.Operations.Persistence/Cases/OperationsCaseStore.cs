@@ -73,6 +73,25 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
             "operations.case.created", null, new {
                 operation.Idtra, operation.CompanyId, operation.AccountId, operation.ModalityCode
             });
+        if (input.QuoteRateId is Guid rateId)
+        {
+            // Reserve the explicit option in the same transaction as the manual IDTRA.
+            // Pricing remains authoritative for the accepted status, account and modality.
+            var siblings = await db.Cases.AsNoTracking().Where(x => x.SourceQuoteOptionId == rateId &&
+                x.CompanyId == operation.CompanyId && x.AccountId == operation.AccountId)
+                .Select(x => x.Idtra).Distinct().Take(30).ToArrayAsync(ct);
+            var link = new OperationsCaseQuoteLink
+            {
+                CaseId = operation.Id, QuoteId = rateId, QuoteOptionId = rateId,
+                IsPrimary = false, Status = "PENDING_LINK", LinkedBy = input.ActorUserId
+            };
+            db.CaseQuoteLinks.Add(link);
+            OperationsAuditWriter.Case(db, operation.Id, null, input.ActorUserId, "operations.quote-link.requested", null,
+                new { requestId = link.Id, RateId = rateId, operation.Idtra });
+            Enqueue("operations.quote-link.requested.v1", new { requestId = link.Id, caseId = operation.Id,
+                operation.AccountId, operation.CompanyId, rateId, requestedBy = input.ActorUserId,
+                operation.Idtra, operation.ModalityCode, existingIdtras = siblings });
+        }
         Enqueue("operations.case.created.v1", new { caseId = operation.Id, idtra, actorId = input.ActorUserId, version = operation.Version });
         if (input.SendDirectlyToOrigin)
         {
