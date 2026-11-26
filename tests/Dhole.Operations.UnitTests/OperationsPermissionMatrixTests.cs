@@ -23,7 +23,7 @@ public sealed class OperationsPermissionMatrixTests
             CollectionAssert.DoesNotContain(supervisor, "operations.finance.manage");
             CollectionAssert.DoesNotContain(supervisor, "operations.team.manage");
         }
-        Assert.AreEqual(0, OperationsTeamCatalogEndpoints.OperatorScopes("TRANSITO").Length);
+        Assert.IsEmpty(OperationsTeamCatalogEndpoints.OperatorScopes("TRANSITO"));
     }
 
     [TestMethod]
