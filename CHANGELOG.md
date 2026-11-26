@@ -1,3 +1,7 @@
+## [0.30.0] - 2026-11-26
+
+- DH-20261126-OPS-WHS-AGENT: validación v7 de nuevas aperturas con WHS; exige identidad de agente y almacén y verifica propiedad explícita en Config. Mantiene validaciones anteriores, API REST, routing y realtime existentes. CI y staging pendientes.
+
 ## [0.29.0] - 2026-11-26
 
 - DH-20261126-OPS-MANUAL-WHS-ROUTING: validación de apertura manual v6 con WHS LCL/LTL y FCL/FTL FCA, verificada contra Config. Enrutamiento inicial por tránsito, Estados Unidos, Centroamérica y modalidad; catálogo de equipos de Origen ampliado. Conserva versiones anteriores, pool por carga y autorización, transacción, Outbox y recuperación de asignaciones pendientes. CI y staging pendientes.
