@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "ecosystem": "Dhole",
   "component": "DholeOperationsService",
-  "version": "0.29.0",
-  "ecosystemVersion": "1.134.0",
-  "releaseId": "DH-20261126-OPS-MANUAL-WHS-ROUTING",
+  "version": "0.30.0",
+  "ecosystemVersion": "1.136.0",
+  "releaseId": "DH-20261126-OPS-WHS-AGENT-RECONCILED",
   "releaseStatus": "candidate-ci-staging-pending",
-  "businessReleaseId": "DH-20261126-OPS-MANUAL-WHS-ROUTING"
+  "businessReleaseId": "DH-20261126-OPS-WHS-AGENT-RECONCILED"
 }
