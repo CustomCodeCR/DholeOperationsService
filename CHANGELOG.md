@@ -1,3 +1,7 @@
+## [0.32.0] - 2026-11-26
+
+- MINOR candidato: expone los perfiles de scopes de Aperturas y Origen en el catálogo de equipos sin otorgamiento automático. Agrega WHS para LCL, booking aéreo y recolecta cuando se declara el servicio; preserva autorización, transición real a tránsito, auditoría y Outbox. Pruebas añadidas; CI y staging pendientes. Conserva pendientes de 0.31.0.
+
 ## [0.31.0] - 2026-11-26
 
 - MINOR (WIP, no integrar): DH-20261126-OPS-QUO-OPENING. Reserva transaccional opcional de QUO aceptada con el IDTRA manual y Outbox existente; requiere permiso comercial. Pendientes aceptación de QUO no aceptada, pruebas CI y staging.
