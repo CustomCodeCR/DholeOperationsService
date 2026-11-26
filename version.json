@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "ecosystem": "Dhole",
   "component": "DholeOperationsService",
-  "version": "0.31.0",
-  "ecosystemVersion": "1.137.0",
-  "releaseId": "DH-20261126-OPS-QUO-OPENING",
+  "version": "0.32.0",
+  "ecosystemVersion": "1.138.0",
+  "releaseId": "DH-20261126-OPS-PERMISSION-MATRIX",
   "releaseStatus": "draft-incomplete-ci-staging-pending",
-  "businessReleaseId": "DH-20261126-OPS-QUO-OPENING"
+  "businessReleaseId": "DH-20261126-OPS-PERMISSION-MATRIX"
 }
