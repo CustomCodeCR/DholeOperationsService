@@ -1,4 +1,7 @@
 using System.Net.Http.Headers;
+using System.Globalization;
+using System.Text;
+using System.Text.RegularExpressions;
 using System.Text.Json;
 using Dhole.Operations.Domain.Services;
 
@@ -119,7 +122,9 @@ public sealed class OperationsOpeningCatalogValidator(IHttpClientFactory factory
                         return new("APERTURE_CATALOG_INVALID", 409, ["whsName"]);
                 }
             }
-            foreach (var selection in selections)
+            JsonElement? verifiedAgent = null;
+            // Resolve the selected agent against Config before validating WHS ownership.
+            foreach (var selection in selections.OrderBy(selection => selection.Field == "agentReference" ? 0 : 1))
             {
                 var relative = $"api/config/catalog-items/select?catalogGroupSlug={Uri.EscapeDataString(selection.Group)}&search={Uri.EscapeDataString(selection.Code)}";
                 using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(new Uri(baseUrl.ToString().TrimEnd('/') + "/"), relative));
@@ -129,10 +134,13 @@ public sealed class OperationsOpeningCatalogValidator(IHttpClientFactory factory
                 using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
                 var list = Unwrap(json.RootElement);
                 if (list.ValueKind != JsonValueKind.Array) return new("CONFIG_INVALID_CONTRACT", 503, []);
-                if (!list.EnumerateArray().Any(item => Matches(item, selection) &&
+                var matched = list.EnumerateArray().FirstOrDefault(item => Matches(item, selection) &&
                     (!linkedWarehouseRequired || selection.Field != "whsName" ||
-                     WarehouseAvailableToAgent(Text(item, "metadataJson"), Text(data, "agentId")))))
+                     (verifiedAgent.HasValue && WarehouseAvailableToAgent(Text(item, "metadataJson"), Text(data, "agentId"), verifiedAgent.Value))));
+                if (matched.ValueKind == JsonValueKind.Undefined)
                     invalid.Add(selection.Field);
+                else if (selection.Field == "agentReference")
+                    verifiedAgent = matched.Clone();
             }
             return invalid.Count == 0 ? new(null, 200, []) : new("APERTURE_CATALOG_INVALID", 409, invalid.Distinct().ToArray());
         }
@@ -153,10 +161,10 @@ public sealed class OperationsOpeningCatalogValidator(IHttpClientFactory factory
         catch (JsonException) { return false; }
     }
 
-    // Existing global warehouses may have no recorded owner. The agent selection
-    // applies to this operation only; never mutate the Config warehouse owner here.
-    // Explicit ownership by another agent and malformed ownership remain invalid.
-    public static bool WarehouseAvailableToAgent(string? metadataJson, string? agentId)
+    // Existing Config warehouse rows already carry agentCode(s) and agentName(s).
+    // Match explicit IDs first, then declared codes (names only when codes are absent).
+    // Unknown owners must not be treated as unassigned. Never mutate Config here.
+    public static bool WarehouseAvailableToAgent(string? metadataJson, string? agentId, JsonElement agent = default)
     {
         if (!Guid.TryParse(agentId, out var selectedAgent) || selectedAgent == Guid.Empty) return false;
         if (string.IsNullOrWhiteSpace(metadataJson)) return true;
@@ -165,13 +173,66 @@ public sealed class OperationsOpeningCatalogValidator(IHttpClientFactory factory
             using var metadata = JsonDocument.Parse(metadataJson);
             var root = metadata.RootElement;
             if (root.ValueKind != JsonValueKind.Object) return false;
-            if (!root.TryGetProperty("agentId", out var owner) || owner.ValueKind == JsonValueKind.Null) return true;
-            if (owner.ValueKind != JsonValueKind.String) return false;
-            var value = owner.GetString();
-            if (string.IsNullOrWhiteSpace(value)) return true;
-            return Guid.TryParse(value, out var ownerId) && ownerId == selectedAgent;
+            if (root.TryGetProperty("agentId", out var owner) && owner.ValueKind != JsonValueKind.Null)
+            {
+                if (owner.ValueKind != JsonValueKind.String) return false;
+                var value = owner.GetString();
+                if (!string.IsNullOrWhiteSpace(value))
+                    return Guid.TryParse(value, out var ownerId) && ownerId == selectedAgent;
+            }
+            var ownershipFields = new[] { "agentCode", "agentCodes", "agentName", "agentNames" };
+            if (ownershipFields.Any(field => root.TryGetProperty(field, out var value) &&
+                value.ValueKind is not (JsonValueKind.Null or JsonValueKind.String) &&
+                (value.ValueKind != JsonValueKind.Array || value.EnumerateArray().Any(item => item.ValueKind != JsonValueKind.String))))
+                return false;
+
+            var codes = Strings(root, "agentCode").Concat(Strings(root, "agentCodes")).ToArray();
+            var names = Strings(root, "agentName").Concat(Strings(root, "agentNames")).ToArray();
+            if (codes.Length == 0 && names.Length == 0) return true;
+            if (!Guid.TryParse(Text(agent, "id"), out var actualAgent) || actualAgent != selectedAgent) return false;
+
+            var agentAliases = new[] { "code", "label", "value", "slug" }
+                .SelectMany(field => Strings(agent, field)).ToList();
+            var rawAgentMetadata = Text(agent, "metadataJson");
+            if (!string.IsNullOrWhiteSpace(rawAgentMetadata))
+            {
+                try
+                {
+                    using var agentMetadata = JsonDocument.Parse(rawAgentMetadata);
+                    agentAliases.AddRange(ownershipFields.SelectMany(field => Strings(agentMetadata.RootElement, field)));
+                }
+                catch (JsonException) { /* Only verified catalog identity is used if optional metadata is malformed. */ }
+            }
+            return Aliases(codes.Length > 0 ? codes : names).Overlaps(Aliases(agentAliases));
         }
         catch (JsonException) { return false; }
+    }
+
+    private static IEnumerable<string> Strings(JsonElement element, string key)
+    {
+        if (element.ValueKind != JsonValueKind.Object || !element.TryGetProperty(key, out var value))
+            return Array.Empty<string>();
+        if (value.ValueKind == JsonValueKind.String)
+            return string.IsNullOrWhiteSpace(value.GetString()) ? Array.Empty<string>() : new[] { value.GetString()!.Trim() };
+        if (value.ValueKind != JsonValueKind.Array) return Array.Empty<string>();
+        return value.EnumerateArray().Where(item => item.ValueKind == JsonValueKind.String)
+            .Select(item => item.GetString()?.Trim() ?? "").Where(item => item.Length > 0).ToArray();
+    }
+
+    private static HashSet<string> Aliases(IEnumerable<string> values)
+    {
+        var result = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var value in values)
+        {
+            var decomposed = value.Normalize(NormalizationForm.FormD);
+            var withoutMarks = new string(decomposed.Where(c => CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark).ToArray());
+            var key = Regex.Replace(withoutMarks.ToLowerInvariant(), "[^a-z0-9]+", " ").Trim();
+            if (key.Length == 0) continue;
+            result.Add(key);
+            var alias = Regex.Replace(key, "^(agent|agente) ", "");
+            if (alias.Length > 0) result.Add(alias);
+        }
+        return result;
     }
 
     private static JsonElement Unwrap(JsonElement root)
