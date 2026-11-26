@@ -19,7 +19,7 @@ public sealed class OperationsTeamScopeOutboxTests
         var team = Guid.NewGuid();
         OperationsAuditWriter.Team(db, team, Guid.NewGuid(), action, null, null);
         var events = db.OutboxMessages.Local.ToArray();
-        Assert.AreEqual(2, events.Length);
+        Assert.HasCount(2, events);
         var invalidation = events.Single(e => e.EventName == "operations.team.permissions.changed.v1");
         using var payload = System.Text.Json.JsonDocument.Parse(invalidation.PayloadJson);
         Assert.AreEqual(team, payload.RootElement.GetProperty("teamId").GetGuid());
