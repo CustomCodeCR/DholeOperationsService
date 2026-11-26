@@ -17,7 +17,7 @@ public static class OperationsEndpoints
         Guid CompanyId, Guid AccountId, string ModalityCode,
         Guid? ExecutiveUserId = null, short Priority = 1, decimal ComplexityPoints = 1m,
         string? OriginCountryCode = null, string? DestinationCountryCode = null,
-        System.Text.Json.JsonElement? OpeningData = null);
+        System.Text.Json.JsonElement? OpeningData = null, Guid? QuoteRateId = null);
 
     public sealed record IdtraSequenceRequest(long NextNumber, long ExpectedNextNumber, string Reason);
     public sealed record NewTeamRequest(Guid CompanyId, string DepartmentCode, string Name);
@@ -92,6 +92,8 @@ public static class OperationsEndpoints
             if (actor is null || !OperationsCaseAccess.HasScope(http.User, "operations.case.create") ||
                 (!OperationsCaseAccess.IsSystemAdministrator(http.User) && company != request.CompanyId))
                 return Results.Forbid();
+            if (request.QuoteRateId.HasValue && !OperationsCaseAccess.HasScope(http.User, "pricing.rate.update")) return Results.Forbid();
+            if (request.QuoteRateId == Guid.Empty) return Results.BadRequest(new { code = "QUOTE_OPTION_REQUIRED" });
             if (request.AccountId == Guid.Empty) return Results.BadRequest(new { code = "CRM_ACCOUNT_REQUIRED" });
             var crmAccount = await crm.ResolveAsync(request.AccountId,
                 http.Request.Headers.Authorization.ToString(), ct);
@@ -111,7 +113,7 @@ public static class OperationsEndpoints
                         request.AccountId, crmAccount.ExecutiveUserId!.Value, request.ModalityCode,
                         request.Priority, request.ComplexityPoints, actor.Value,
                         request.OriginCountryCode, request.DestinationCountryCode,
-                        openingData, SendDirectlyToOrigin: true), ct);
+                        openingData, SendDirectlyToOrigin: true, QuoteRateId: request.QuoteRateId), ct);
                 // The persisted pending Origin stage is recovered by the durable worker
                 // even if the immediate assignment fails. Never return failure after creation.
                 try

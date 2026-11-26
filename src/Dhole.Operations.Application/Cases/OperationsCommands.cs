@@ -6,7 +6,7 @@ public sealed record CreateManualCaseCommand(
     Guid CompanyId, Guid AccountId, Guid ExecutiveUserId,
     string ModalityCode, short Priority, decimal ComplexityPoints, Guid ActorUserId,
     string? OriginCountryCode = null, string? DestinationCountryCode = null,
-    string? OpeningDataJson = null, bool SendDirectlyToOrigin = false);
+    string? OpeningDataJson = null, bool SendDirectlyToOrigin = false, Guid? QuoteRateId = null);
 
 /// <summary>Only called by the verified Pricing Stream + CRM internal account contract.</summary>
 public sealed record CreateAcceptedQuoteCaseCommand(
@@ -53,6 +53,7 @@ public sealed class CreateManualCaseHandler(IOperationsCaseStore store)
             throw new ArgumentException("Priority or complexity points out of range.");
         if (!IsCountryCode(command.OriginCountryCode) || !IsCountryCode(command.DestinationCountryCode))
             throw new ArgumentException("Country codes must be two ISO alphabetic characters when provided.");
+        if (command.QuoteRateId == Guid.Empty) throw new ArgumentException("A valid quote option is required.");
         return store.CreateManualAsync(command, ct);
     }
 
