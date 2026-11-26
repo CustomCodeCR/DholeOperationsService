@@ -41,7 +41,11 @@ public sealed class OperationsOpeningCatalogValidator(IHttpClientFactory factory
                 ? OperationsOpeningDraftPolicy.RequiresManualWarehouse(shipment,
                     Text(data, "incoterm") + " " + Text(data, "incotermName"), revision.GetInt32())
                 : string.Equals(Text(data, "incoterm"), "FCA", StringComparison.OrdinalIgnoreCase));
+            var linkedWarehouseRequired = warehouseRequired && pricingParity && revision.GetInt32() >= 7;
             var warehouseGroups = new[] { "pricing-warehouses", "warehouses", "whs", "fca-warehouses" };
+            if (linkedWarehouseRequired && (!Guid.TryParse(Text(data, "warehouseId"), out var warehouseId) || warehouseId == Guid.Empty ||
+                !Guid.TryParse(Text(data, "agentId"), out var agentId) || agentId == Guid.Empty))
+                return new("APERTURE_CATALOG_INVALID", 409, ["whsName", "agentReference"]);
             if (warehouseRequired && Text(data, "warehouseId").Length > 0)
             {
                 var group = Text(data, "warehouseCatalogGroup");
@@ -85,6 +89,12 @@ public sealed class OperationsOpeningCatalogValidator(IHttpClientFactory factory
                             return new("APERTURE_CATALOG_INVALID", 409, [field]);
                 }
             }
+            if (linkedWarehouseRequired && !selections.Any(selection =>
+                selection.Field == "agentReference" && selection.Group == "agents" &&
+                Guid.TryParse(selection.Id, out var selectedAgent) &&
+                Guid.TryParse(Text(data, "agentId"), out var submittedAgent) && selectedAgent == submittedAgent))
+                return new("APERTURE_CATALOG_INVALID", 409, ["agentReference"]);
+
             var invalidIdentity = selections.Where(x => !Guid.TryParse(x.Id, out var id) || id == Guid.Empty || string.IsNullOrWhiteSpace(x.Code) || x.Code.Length > 200)
                 .Select(x => x.Field).Distinct().ToArray();
             if (invalidIdentity.Length > 0) return new("APERTURE_CATALOG_INVALID", 409, invalidIdentity);
@@ -119,7 +129,9 @@ public sealed class OperationsOpeningCatalogValidator(IHttpClientFactory factory
                 using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
                 var list = Unwrap(json.RootElement);
                 if (list.ValueKind != JsonValueKind.Array) return new("CONFIG_INVALID_CONTRACT", 503, []);
-                if (!list.EnumerateArray().Any(item => Matches(item, selection)))
+                if (!list.EnumerateArray().Any(item => Matches(item, selection) &&
+                    (!linkedWarehouseRequired || selection.Field != "whsName" ||
+                     WarehouseBelongsToAgent(Text(item, "metadataJson"), Text(data, "agentId")))))
                     invalid.Add(selection.Field);
             }
             return invalid.Count == 0 ? new(null, 200, []) : new("APERTURE_CATALOG_INVALID", 409, invalid.Distinct().ToArray());
@@ -127,6 +139,18 @@ public sealed class OperationsOpeningCatalogValidator(IHttpClientFactory factory
         catch (HttpRequestException) { return new("CONFIG_UNAVAILABLE", 503, []); }
         catch (TaskCanceledException) when (!ct.IsCancellationRequested) { return new("CONFIG_TIMEOUT", 503, []); }
         catch (JsonException) { return new("CONFIG_INVALID_CONTRACT", 503, []); }
+    }
+
+    public static bool WarehouseBelongsToAgent(string? metadataJson, string? agentId)
+    {
+        if (!Guid.TryParse(agentId, out var selectedAgent) || selectedAgent == Guid.Empty ||
+            string.IsNullOrWhiteSpace(metadataJson)) return false;
+        try
+        {
+            using var metadata = JsonDocument.Parse(metadataJson);
+            return Guid.TryParse(Text(metadata.RootElement, "agentId"), out var owner) && owner == selectedAgent;
+        }
+        catch (JsonException) { return false; }
     }
 
     private static JsonElement Unwrap(JsonElement root)
