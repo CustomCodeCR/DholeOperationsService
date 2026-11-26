@@ -131,7 +131,7 @@ public sealed class OperationsOpeningCatalogValidator(IHttpClientFactory factory
                 if (list.ValueKind != JsonValueKind.Array) return new("CONFIG_INVALID_CONTRACT", 503, []);
                 if (!list.EnumerateArray().Any(item => Matches(item, selection) &&
                     (!linkedWarehouseRequired || selection.Field != "whsName" ||
-                     WarehouseBelongsToAgent(Text(item, "metadataJson"), Text(data, "agentId")))))
+                     WarehouseAvailableToAgent(Text(item, "metadataJson"), Text(data, "agentId")))))
                     invalid.Add(selection.Field);
             }
             return invalid.Count == 0 ? new(null, 200, []) : new("APERTURE_CATALOG_INVALID", 409, invalid.Distinct().ToArray());
@@ -149,6 +149,27 @@ public sealed class OperationsOpeningCatalogValidator(IHttpClientFactory factory
         {
             using var metadata = JsonDocument.Parse(metadataJson);
             return Guid.TryParse(Text(metadata.RootElement, "agentId"), out var owner) && owner == selectedAgent;
+        }
+        catch (JsonException) { return false; }
+    }
+
+    // Existing global warehouses may have no recorded owner. The agent selection
+    // applies to this operation only; never mutate the Config warehouse owner here.
+    // Explicit ownership by another agent and malformed ownership remain invalid.
+    public static bool WarehouseAvailableToAgent(string? metadataJson, string? agentId)
+    {
+        if (!Guid.TryParse(agentId, out var selectedAgent) || selectedAgent == Guid.Empty) return false;
+        if (string.IsNullOrWhiteSpace(metadataJson)) return true;
+        try
+        {
+            using var metadata = JsonDocument.Parse(metadataJson);
+            var root = metadata.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return false;
+            if (!root.TryGetProperty("agentId", out var owner) || owner.ValueKind == JsonValueKind.Null) return true;
+            if (owner.ValueKind != JsonValueKind.String) return false;
+            var value = owner.GetString();
+            if (string.IsNullOrWhiteSpace(value)) return true;
+            return Guid.TryParse(value, out var ownerId) && ownerId == selectedAgent;
         }
         catch (JsonException) { return false; }
     }
