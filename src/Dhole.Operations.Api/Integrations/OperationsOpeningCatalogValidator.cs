@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
+using Dhole.Operations.Domain.Services;
 
 namespace Dhole.Operations.Api.Integrations;
 
@@ -36,8 +37,9 @@ public sealed class OperationsOpeningCatalogValidator(IHttpClientFactory factory
             if (!pricingParity || (terminal == "CY" && Text(data, "pod").Length > 0))
                 selections.Add(new("pod", "pod", Text(data, "podCatalogId"), Text(data, "podCatalogCode"), Text(data, "pod"), "SD"));
             var shipment = Text(data, "shipmentType").ToUpperInvariant();
-            var warehouseRequired = pricingParity && (revision.GetInt32() >= 5
-                ? shipment is "LCL" or "LTL"
+            var warehouseRequired = pricingParity && (rule >= 5
+                ? OperationsOpeningDraftPolicy.RequiresManualWarehouse(shipment,
+                    Text(data, "incoterm") + " " + Text(data, "incotermName"), rule)
                 : string.Equals(Text(data, "incoterm"), "FCA", StringComparison.OrdinalIgnoreCase));
             var warehouseGroups = new[] { "pricing-warehouses", "warehouses", "whs", "fca-warehouses" };
             if (warehouseRequired && Text(data, "warehouseId").Length > 0)
