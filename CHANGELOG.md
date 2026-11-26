@@ -1,3 +1,7 @@
+## [0.33.0] - 2026-11-26
+
+- MINOR: sincronización automática de membresías con Auth mediante Outbox, Redis Streams, reconciliación inicial/periódica y checkpoint durable. Alta, baja, cambios de responsabilidad y activación de equipos. CI y staging pendientes.
+
 ## [0.32.0] - 2026-11-26
 
 - MINOR candidato: expone los perfiles de scopes de Aperturas y Origen en el catálogo de equipos sin otorgamiento automático. Agrega WHS para LCL, booking aéreo y recolecta cuando se declara el servicio; preserva autorización, transición real a tránsito, auditoría y Outbox. Pruebas añadidas; CI y staging pendientes. Conserva pendientes de 0.31.0.
