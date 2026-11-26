@@ -1,3 +1,7 @@
+## [0.30.2] - 2026-11-26
+
+- PATCH: DH-20261126-OPS-WHS-AGENT-METADATA. Resuelve el agente activo en Config antes de validar el WHS, reconoce códigos y nombres existentes y rechaza relaciones ajenas o inválidas; no modifica los propietarios registrados. Compatibilidad REST y realtime preservada. CI y staging pendientes.
+
 ## [0.30.1] - 2026-11-26
 
 - PATCH: DH-20261126-OPS-WHS-LEGACY-OPTIONS. Validación de nuevas aperturas conserva IDs activos de agente y WHS y admite almacenes sin propietario registrado, sin cambiar su metadata. Rechaza propietarios distintos y metadata de propiedad inválida. REST y realtime sin cambios. CI y staging pendientes.

@@ -100,4 +100,33 @@ public sealed class OperationsManualOpeningBasicsV5Tests
     public void LegacyWarehouseCanBeUsedWithoutChangingItsOwner(string metadata, bool expected)
         => Assert.AreEqual(expected, Dhole.Operations.Api.Integrations.OperationsOpeningCatalogValidator.WarehouseAvailableToAgent(
             metadata, "22222222-2222-4222-8222-222222222222"));
+
+    [DataRow("{\"agentCode\":\"WWL\",\"agentNames\":[\"Worldwide Logistics\"]}", true)]
+    [DataRow("{\"agentCodes\":[\"RS\"],\"agentNames\":[\"RS Logistics\"]}", false)]
+    [DataRow("{\"agentCodes\":[\"RS\",\"WWL\"]}", true)]
+    [DataRow("{\"agentNames\":[\"Worldwide Logistics\"]}", true)]
+    [DataRow("{\"agentCodes\":[\"RS\"],\"agentNames\":[\"Worldwide Logistics\"]}", false)]
+    [DataRow("{\"agentCodes\":[123]}", false)]
+    [DataRow("{\"agentId\":\"33333333-3333-4333-8333-333333333333\",\"agentCode\":\"WWL\"}", false)]
+    [DataRow("{}", true)]
+    [TestMethod]
+    public void WarehouseExistingAgentCodesMatchOnlyVerifiedCatalogOwner(string metadata, bool expected)
+    {
+        using var agent = System.Text.Json.JsonDocument.Parse("""
+            {"id":"22222222-2222-4222-8222-222222222222","code":"AGENT_WWL",
+             "value":"WWL","label":"Worldwide Logistics"}
+            """);
+        Assert.AreEqual(expected, Dhole.Operations.Api.Integrations.OperationsOpeningCatalogValidator.WarehouseAvailableToAgent(
+            metadata, "22222222-2222-4222-8222-222222222222", agent.RootElement));
+    }
+
+    [TestMethod]
+    public void AgentIdentityCannotBeSubstitutedWithAnotherCatalogRow()
+    {
+        using var agent = System.Text.Json.JsonDocument.Parse("""
+            {"id":"33333333-3333-4333-8333-333333333333","code":"WWL","label":"Worldwide Logistics"}
+            """);
+        Assert.IsFalse(Dhole.Operations.Api.Integrations.OperationsOpeningCatalogValidator.WarehouseAvailableToAgent(
+            "{\"agentCode\":\"WWL\"}", "22222222-2222-4222-8222-222222222222", agent.RootElement));
+    }
 }
