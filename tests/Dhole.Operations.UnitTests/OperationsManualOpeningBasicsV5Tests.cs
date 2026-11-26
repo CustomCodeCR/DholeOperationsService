@@ -85,4 +85,19 @@ public sealed class OperationsManualOpeningBasicsV5Tests
     public void WarehouseOwnershipUsesExplicitConfigGuid(string metadata, bool expected)
         => Assert.AreEqual(expected, Dhole.Operations.Api.Integrations.OperationsOpeningCatalogValidator.WarehouseBelongsToAgent(
             metadata, "22222222-2222-4222-8222-222222222222"));
+
+    [DataRow("{}", true)]
+    [DataRow("", true)]
+    [DataRow("{\"agentId\":null}", true)]
+    [DataRow("{\"agentId\":\"\"}", true)]
+    [DataRow("{\"agentId\":\"22222222-2222-4222-8222-222222222222\"}", true)]
+    [DataRow("{\"agentId\":\"33333333-3333-4333-8333-333333333333\"}", false)]
+    [DataRow("{\"agentId\":\"invalid\"}", false)]
+    [DataRow("{\"agentId\":123}", false)]
+    [DataRow("[]", false)]
+    [DataRow("invalid", false)]
+    [TestMethod]
+    public void LegacyWarehouseCanBeUsedWithoutChangingItsOwner(string metadata, bool expected)
+        => Assert.AreEqual(expected, Dhole.Operations.Api.Integrations.OperationsOpeningCatalogValidator.WarehouseAvailableToAgent(
+            metadata, "22222222-2222-4222-8222-222222222222"));
 }
