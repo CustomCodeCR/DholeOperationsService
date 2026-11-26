@@ -37,9 +37,9 @@ public sealed class OperationsOpeningCatalogValidator(IHttpClientFactory factory
             if (!pricingParity || (terminal == "CY" && Text(data, "pod").Length > 0))
                 selections.Add(new("pod", "pod", Text(data, "podCatalogId"), Text(data, "podCatalogCode"), Text(data, "pod"), "SD"));
             var shipment = Text(data, "shipmentType").ToUpperInvariant();
-            var warehouseRequired = pricingParity && (rule >= 5
+            var warehouseRequired = pricingParity && (revision.GetInt32() >= 5
                 ? OperationsOpeningDraftPolicy.RequiresManualWarehouse(shipment,
-                    Text(data, "incoterm") + " " + Text(data, "incotermName"), rule)
+                    Text(data, "incoterm") + " " + Text(data, "incotermName"), revision.GetInt32())
                 : string.Equals(Text(data, "incoterm"), "FCA", StringComparison.OrdinalIgnoreCase));
             var warehouseGroups = new[] { "pricing-warehouses", "warehouses", "whs", "fca-warehouses" };
             if (warehouseRequired && Text(data, "warehouseId").Length > 0)
