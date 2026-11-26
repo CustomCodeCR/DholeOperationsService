@@ -47,8 +47,21 @@ public static class OperationsCargoMeasurements
     {
         if (OriginKeys.Any(data.ContainsKey) ||
             !string.IsNullOrWhiteSpace(Text(data["weightValue"])) ||
-            !string.IsNullOrWhiteSpace(Text(data["weightKg"])))
-            throw new ArgumentException("Actual weight and individual equipment belong to Origin.");
+            !string.IsNullOrWhiteSpace(Text(data["weightKg"])) ||
+            !string.IsNullOrWhiteSpace(Text(data["clientPoReference"])) ||
+            !string.IsNullOrWhiteSpace(Text(data["invoiceReference"])))
+            throw new ArgumentException("Actual weight, individual equipment and commercial references belong to Origin.");
+    }
+
+    public static void SetOriginReferences(JsonObject data, string? clientPoReference, string? invoiceReference)
+    {
+        // Omitted values are preserved for compatibility with older Origin clients.
+        var po = clientPoReference?.Trim();
+        var invoice = invoiceReference?.Trim();
+        if (po?.Length > 250 || invoice?.Length > 250)
+            throw new ArgumentException("Origin reference exceeds 250 characters.");
+        if (po is not null) data["clientPoReference"] = po;
+        if (invoice is not null) data["invoiceReference"] = invoice;
     }
 
     public static void PreserveOriginFields(JsonObject incoming, JsonObject previous)
@@ -67,7 +80,7 @@ public static class OperationsCargoMeasurements
             else incoming.Remove(key);
         }
         // Planning is owned by Origin. Legacy opening clients may send these keys; retain the saved values.
-        foreach (var key in new[] { "etm", "eta", "consolidationReference" })
+        foreach (var key in new[] { "etm", "eta", "consolidationReference", "clientPoReference", "invoiceReference" })
         {
             if (previous.ContainsKey(key)) incoming[key] = previous[key]?.DeepClone();
             else incoming.Remove(key);

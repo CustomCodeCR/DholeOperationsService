@@ -26,7 +26,7 @@ public static class OperationsCaseWorkspaceEndpoints
 
     public sealed record UpdateOriginStatusRequest(long ExpectedVersion, string StatusCode);
     public sealed record ConfirmOriginWeightRequest(long ExpectedVersion, decimal Value, string Unit);
-    public sealed record UpdateOriginPlanningRequest(long ExpectedVersion, string? Etd, string? Eta, string? ConsolidationReference);
+    public sealed record UpdateOriginPlanningRequest(long ExpectedVersion, string? Etd, string? Eta, string? ConsolidationReference, string? ClientPoReference = null, string? InvoiceReference = null);
 
     private static readonly string[] DepartmentTabs =
     [
@@ -288,14 +288,16 @@ public static class OperationsCaseWorkspaceEndpoints
                 consolidation.Length > 250 || (consolidation.Length > 0 && operation.ModalityCode is not ("LCL" or "LTL")))
                 return Results.BadRequest(new { code = "OPERATIONS_ORIGIN_PLANNING_INVALID" });
             var data = OperationsCargoMeasurements.Parse(operation.OpeningDataJson);
-            var before = new { etd = data["etm"]?.DeepClone(), eta = data["eta"]?.DeepClone(), consolidation = data["consolidationReference"]?.DeepClone() };
+            var before = new { etd = data["etm"]?.DeepClone(), eta = data["eta"]?.DeepClone(), consolidation = data["consolidationReference"]?.DeepClone(), po = data["clientPoReference"]?.DeepClone(), invoice = data["invoiceReference"]?.DeepClone() };
+            try { OperationsCargoMeasurements.SetOriginReferences(data, input.ClientPoReference, input.InvoiceReference); }
+            catch (ArgumentException) { return Results.BadRequest(new { code = "OPERATIONS_ORIGIN_PLANNING_INVALID" }); }
             data["etm"] = etd; data["eta"] = eta;
             if (operation.ModalityCode is "LCL" or "LTL") data["consolidationReference"] = consolidation;
             operation.OpeningDataJson = data.ToJsonString();
             operation.Version++;
             operation.UpdatedAtUtc = DateTimeOffset.UtcNow;
             OperationsAuditWriter.Case(db, id, stage.Id, actor.Value, "operations.origin.planning.updated",
-                before, new { etd, eta, consolidation });
+                before, new { etd, eta, consolidation, po = data["clientPoReference"], invoice = data["invoiceReference"] });
             db.OutboxMessages.Add(OperationsOutboxFactory.Create("operations.case.updated.v1",
                 JsonSerializer.Serialize(new { caseId = id, stageId = stage.Id, version = operation.Version })));
             try { await db.SaveChangesAsync(ct); }
