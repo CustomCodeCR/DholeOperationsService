@@ -1,3 +1,9 @@
+## [0.28.0] - 2026-11-25
+
+- Origin planning owns optional PO and invoice references with optimistic concurrency, audit and outbox; Aperturas preserves them.
+
+- Candidate: manual opening validation v5; LCL/LTL warehouse, FCL carrier, integer package count and volume for all shipments. Defer detailed cargo description, air dimensions and inland planning to Origin. Legacy opening validations are preserved. Full acceptance/reassignment workflow is pending; do not promote.
+
 # 0.27.0 — candidato de Operations
 
 ## [0.27.1] - 2026-11-25

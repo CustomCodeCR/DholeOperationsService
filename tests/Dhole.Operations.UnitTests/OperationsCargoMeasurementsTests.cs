@@ -49,4 +49,25 @@ public sealed class OperationsCargoMeasurementsTests
         Assert.AreEqual("2026-12-02", edit["eta"]!.GetValue<string>());
         Assert.AreEqual("REF-1", edit["consolidationReference"]!.GetValue<string>());
     }
+
+    [TestMethod]
+    public void OriginReferencesAreOptionalValidatedAndPreserved()
+    {
+        var data = OperationsCargoMeasurements.Parse("{}");
+        OperationsCargoMeasurements.SetOriginReferences(data, " PO-1 ", "INV-2");
+        Assert.AreEqual("PO-1", data["clientPoReference"]!.GetValue<string>());
+        Assert.AreEqual("INV-2", data["invoiceReference"]!.GetValue<string>());
+        OperationsCargoMeasurements.SetOriginReferences(data, null, null);
+        Assert.AreEqual("PO-1", data["clientPoReference"]!.GetValue<string>());
+        var edit = OperationsCargoMeasurements.Parse("""{"clientPoReference":"replacement","invoiceReference":""}""");
+        OperationsCargoMeasurements.PreserveOriginFields(edit, data);
+        Assert.AreEqual("PO-1", edit["clientPoReference"]!.GetValue<string>());
+        Assert.AreEqual("INV-2", edit["invoiceReference"]!.GetValue<string>());
+        Assert.ThrowsExactly<ArgumentException>(() => OperationsCargoMeasurements.RejectOriginOnCreate(data));
+        Assert.ThrowsExactly<ArgumentException>(() => OperationsCargoMeasurements.SetOriginReferences(data, "new", new string('X', 251)));
+        Assert.AreEqual("PO-1", data["clientPoReference"]!.GetValue<string>());
+        OperationsCargoMeasurements.SetOriginReferences(data, "", "");
+        Assert.AreEqual("", data["clientPoReference"]!.GetValue<string>());
+        Assert.AreEqual("", data["invoiceReference"]!.GetValue<string>());
+    }
 }

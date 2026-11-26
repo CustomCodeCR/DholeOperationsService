@@ -32,6 +32,7 @@ public static class OperationsOpeningDraftPolicy
             var revision = data.TryGetProperty("openingValidationVersion", out var ruleVersion) && ruleVersion.ValueKind == JsonValueKind.Number && ruleVersion.TryGetInt32(out var parsedVersion) ? parsedVersion : 0;
             var strictManual = manualOpening || revision >= 2;
             var pricingParity = revision >= 3;
+            var basicManual = manualOpening && revision >= 5;
             bool ValidPoints(string key) =>
                 data.TryGetProperty(key, out var points) && points.ValueKind == JsonValueKind.Array &&
                 points.GetArrayLength() > 0 && points.EnumerateArray().All(point =>
@@ -97,10 +98,14 @@ public static class OperationsOpeningDraftPolicy
                 }
                 else NotApplicable("podTerminalType", "Optional maritime POD not selected");
                 Required("estimatedWeight", Positive("estimatedWeightValue") && Text("estimatedWeightUnit") is "KG" or "LB");
-                if (shipment == "AIR")
+                if (shipment == "AIR" && basicManual)
+                    Deferred("dimensions", Positive("lengthCm") && Positive("widthCm") && Positive("heightCm"), "Origin confirms dimensions");
+                else if (shipment == "AIR")
                     Required("dimensions", Positive("lengthCm") && Positive("widthCm") && Positive("heightCm"));
                 else NotApplicable("dimensions", "Air cargo dimensions are not required for this shipment");
-                if (pricingParity && (Flag("requiresDelivery") || incoterm is "DAP" or "DPU" or "DDP"))
+                if (basicManual && (Flag("requiresDelivery") || incoterm is "DAP" or "DPU" or "DDP"))
+                    Deferred("deliveryLocations", ValidPoints("deliveryLocations"), "Origin confirms delivery");
+                else if (pricingParity && (Flag("requiresDelivery") || incoterm is "DAP" or "DPU" or "DDP"))
                     Required("deliveryLocations", ValidPoints("deliveryLocations"), "Add the agreed delivery point");
                 else if (incoterm is "DAP" or "DPU" or "DDP")
                     Required("destinationAddress", !string.IsNullOrWhiteSpace(Text("destinationAddress")));
@@ -111,7 +116,8 @@ public static class OperationsOpeningDraftPolicy
                     Required("actualWeightInput", false, "Actual weight is confirmed by origin coordination");
             }
 
-            Required("cargoDescription", !string.IsNullOrWhiteSpace(Text("cargoDescription")));
+            if (basicManual) Deferred("cargoDescription", HasValue("cargoDescription"), "Origin confirms cargo description");
+            else Required("cargoDescription", !string.IsNullOrWhiteSpace(Text("cargoDescription")));
             Required("pol", !string.IsNullOrWhiteSpace(Text("pol")));
             if (!strictManual && Text("source") is "PRICING" or "PRICING_HISTORICAL")
             {
@@ -152,19 +158,25 @@ public static class OperationsOpeningDraftPolicy
 
             // Historical cases retain the original warehouse rule; new manual
             // FCA collections validate collection details instead of a fictitious WHS.
-            if (incoterm == "FCA" && (pricingParity || !strictManual || !Flag("requiresPickup")))
+            if (basicManual && (shipment is "LCL" or "LTL"))
+                Required("whsName", (HasValue("warehouseId") || HasValue("warehouseAddress")) && HasValue("whsName"));
+            else if (basicManual) NotApplicable("whsName", "Warehouse applies to consolidated shipments");
+            else if (incoterm == "FCA" && (pricingParity || !strictManual || !Flag("requiresPickup")))
                 Required("whsName", pricingParity ? (HasValue("warehouseId") || HasValue("warehouseAddress")) && HasValue("whsName") : HasValue("whsName") || (!strictManual && HasValue("warehouseId")));
             else NotApplicable("whsName", "Incoterm does not require FCA warehouse");
 
             var pickup = (strictManual && incoterm == "EXW" && direction == "IMPORT") || Flag("requiresPickup") ||
                 (!HasValue("requiresPickup") && !string.IsNullOrWhiteSpace(Text("pickupAddress")));
-            if (pricingParity && (incoterm == "EXW" || pickup))
+            if (basicManual && (incoterm == "EXW" || pickup))
+                Deferred("pickupLocations", ValidPoints("pickupLocations"), "Origin confirms collection");
+            else if (pricingParity && (incoterm == "EXW" || pickup))
                 Required("pickupLocations", ValidPoints("pickupLocations"), "Add a collection point as in Pricing");
             // Pickup contact and time window are not opening requirements. Preserve any
             // historical JSON values without evaluating them as completeness fields.
             if (pickup)
             {
-                Required("pickupAddress", !string.IsNullOrWhiteSpace(Text("pickupAddress")));
+                if (basicManual) Deferred("pickupAddress", HasValue("pickupAddress"), "Origin confirms collection");
+                else Required("pickupAddress", !string.IsNullOrWhiteSpace(Text("pickupAddress")));
             }
             else
             {
@@ -197,7 +209,8 @@ public static class OperationsOpeningDraftPolicy
             foreach (var key in new[] { "provenance", "clientPoReference", "crmDivisionId", "cargoNature",
                 "cabysCode", "packageType", "agentReference", "etm", "eta", "observations" })
                 Deferred(key, !string.IsNullOrWhiteSpace(Text(key)), "Optional opening information");
-            Deferred("packageCount", Positive("packageCount"), "Origin can confirm package count");
+            if (basicManual) Required("packageCount", Positive("packageCount") && decimal.TryParse(data.GetProperty("packageCount").ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var packages) && packages == decimal.Truncate(packages));
+            else Deferred("packageCount", Positive("packageCount"), "Origin can confirm package count");
             Deferred("contactIds", NonEmptyArray("contactIds"), "Operational contacts may be registered later");
             if (manualOpening && revision >= 4)
                 Required("services", NonEmptyArray("services") && NonEmptyArray("serviceSelections"), "Select the agreed services before sending to Origin");
@@ -229,7 +242,7 @@ public static class OperationsOpeningDraftPolicy
 
             // Real weight belongs exclusively to Coordinación Origen on manual openings.
             Deferred("actualWeight", Positive("actualWeightValue") && Text("actualWeightUnit") is "KG" or "LB", "Coordinación Origen confirms actual weight");
-            if (strictManual && (shipment is "LCL" or "LTL" or "AIR"))
+            if (basicManual || (strictManual && (shipment is "LCL" or "LTL" or "AIR")))
                 Required("volume", Positive("volumeValue") && Text("volumeUnit") is "CBM" or "CFT");
             else
                 Deferred("volume", Positive("volume") || Positive("volumeCbm") || Positive("volumeValue"),
@@ -238,7 +251,9 @@ public static class OperationsOpeningDraftPolicy
                 Deferred("consolidation", HasValue("consolidationReference") || HasValue("consolidation"),
                     "Consolidation can be confirmed by origin");
             else NotApplicable("consolidation", "Consolidation not required for this shipment");
-            if (nonMaritime)
+            if (basicManual && shipment == "FCL") Required("carrierReference", HasValue("carrierReference"));
+            else if (basicManual) NotApplicable("carrierReference", "Carrier is captured at opening only for FCL");
+            else if (nonMaritime)
                 NotApplicable("carrierReference", "Maritime carrier is not applicable");
             else
                 Deferred("carrierReference", HasValue("carrierReference"),
