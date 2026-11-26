@@ -1,3 +1,7 @@
+## [0.29.0] - 2026-11-26
+
+- DH-20261126-OPS-MANUAL-WHS-ROUTING: validación de apertura manual v6 con WHS LCL/LTL y FCL/FTL FCA, verificada contra Config. Enrutamiento inicial por tránsito, Estados Unidos, Centroamérica y modalidad; catálogo de equipos de Origen ampliado. Conserva versiones anteriores, pool por carga y autorización, transacción, Outbox y recuperación de asignaciones pendientes. CI y staging pendientes.
+
 ## [0.28.0] - 2026-11-25
 
 - Origin planning owns optional PO and invoice references with optimistic concurrency, audit and outbox; Aperturas preserves them.

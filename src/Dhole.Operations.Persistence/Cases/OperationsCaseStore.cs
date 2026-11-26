@@ -571,6 +571,24 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
                 destination ??= OperationsOriginRouting.Country(StringProperty(route, "destinationCountryCode"), StringProperty(route, "podName"));
             }
         }
+        var manualRouting = false;
+        string? expectedTeamName = null;
+        if (isOrigin && operation.ApertureType == "MANUAL")
+        {
+            using var opening = JsonDocument.Parse(operation.OpeningDataJson);
+            var data = opening.RootElement;
+            manualRouting = data.TryGetProperty("openingValidationVersion", out var revision) &&
+                revision.ValueKind == JsonValueKind.Number && revision.TryGetInt32(out var version) && version >= 6;
+            if (manualRouting)
+            {
+                origin = OperationsOriginRouting.Country(origin, StringProperty(data, "pol"));
+                var lastStop = StringProperty(data, "pod");
+                destination = OperationsOriginRouting.Country(destination,
+                    string.IsNullOrWhiteSpace(lastStop) ? StringProperty(data, "poe") : lastStop);
+                expectedTeamName = OperationsOriginRouting.ManualTeamName(operation.ModalityCode, origin,
+                    destination, StringProperty(data, "operationDirection"));
+            }
+        }
         if (isOrigin)
         {
             operation.OriginCountryCode = origin;
@@ -585,13 +603,13 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
                 (x.DestinationCountryCode == null || x.DestinationCountryCode == destination))
             .ToListAsync(ct);
 
-        if (isOrigin && OperationsOriginRouting.IsSpecialized(operation.ModalityCode))
+        if (!manualRouting && isOrigin && OperationsOriginRouting.IsSpecialized(operation.ModalityCode))
         {
             // US routes must never fall through to the international pool; unknown countries require review.
             if (origin is null) rules.Clear();
             else if (origin == "US") rules = rules.Where(r => r.OriginCountryCode == "US").ToList();
         }
-        if (isOrigin && rules.Count > 0)
+        if (!manualRouting && isOrigin && rules.Count > 0)
         {
             // Geographic/modality specificity precedes load. Only compare users within the best routing tier.
             int Specificity(OperationsAssignmentRule r) =>
@@ -602,17 +620,33 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
             rules = rules.Where(r => r.Priority == priority).ToList();
         }
 
+        // New manual openings target the standard active team itself. Assignment rules remain
+        // unchanged for automatic/historical openings and every subsequent department.
+        // Never fall back to an unrelated team when the designated pool is empty.
+        var pools = rules.Select(rule => (Team: rule.Team, Priority: rule.Priority)).ToList();
+        if (manualRouting)
+        {
+            pools.Clear();
+            if (expectedTeamName is not null)
+            {
+                var teams = await db.Teams.AsNoTracking().Include(t => t.Members)
+                    .Where(t => t.CompanyId == operation.CompanyId && t.DepartmentCode == stage.DepartmentCode &&
+                        t.IsActive && t.Name == expectedTeamName).ToListAsync(ct);
+                pools.AddRange(teams.Select(team => (Team: team, Priority: 0)));
+            }
+        }
+
         var load = await db.StageAssignments.AsNoTracking()
             .Where(x => x.ReleasedAtUtc == null && x.CaseStage.Case.CompanyId == operation.CompanyId &&
                 x.CaseStage.Status != "COMPLETED" && x.CaseStage.Status != "SKIPPED")
             .GroupBy(x => x.UserId).Select(g => new { UserId = g.Key, Points = g.Sum(x => x.AssignedPoints) })
             .ToDictionaryAsync(x => x.UserId, x => x.Points, ct);
 
-        var candidates = rules.SelectMany(rule => rule.Team.Members
+        var candidates = pools.SelectMany(pool => pool.Team.Members
                 .Where(member => member.IsAvailable && member.CapacityPoints > 0)
                 .Select(member => new
                 {
-                    rule.TeamId, member.UserId, rule.Priority,
+                    TeamId = pool.Team.Id, member.UserId, pool.Priority,
                     RelativeLoad = (load.GetValueOrDefault(member.UserId) + operation.ComplexityPoints)
                         / member.CapacityPoints
                 }))
@@ -638,10 +672,12 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
             {
                 db.CaseTasks.Add(new OperationsCaseTask { CaseId = operation.Id, CaseStageId = stage.Id,
                     Title = "Pendiente de asignación a Coordinación Origen",
-                    Details = origin is null ? "Confirmar país de origen del tramo operativo." : "Revisar reglas, disponibilidad y autorización de los operativos.",
+                    Details = manualRouting
+                        ? expectedTeamName is null ? "Confirmar ruta y sentido de operación." : $"Revisar disponibilidad y autorización del equipo {expectedTeamName}."
+                        : origin is null ? "Confirmar país de origen del tramo operativo." : "Revisar reglas, disponibilidad y autorización de los operativos.",
                     Priority = 1, Status = "PENDING" });
                 OperationsAuditWriter.Case(db, operation.Id, stage.Id, input.ActorUserId,
-                    "operations.origin.assignment.pending", null, new { origin, operation.ModalityCode });
+                    "operations.origin.assignment.pending", null, new { origin, operation.ModalityCode, expectedTeamName });
                 operation.Version++;
                 operation.UpdatedAtUtc = DateTimeOffset.UtcNow;
                 Enqueue("operations.case.updated.v1", new { caseId = operation.Id, stageId = stage.Id, version = operation.Version });

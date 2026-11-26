@@ -13,6 +13,15 @@ public static class OperationsOpeningDraftPolicy
 {
     public sealed record FieldStatus(string FieldCode, string CompletionStatus, string? Reason = null);
 
+    public static bool RequiresManualWarehouse(string shipment, string? incoterm, int revision)
+    {
+        var mode = shipment.Trim().ToUpperInvariant();
+        var term = Regex.Match((incoterm ?? "").ToUpperInvariant(),
+            @"\b(EXW|FCA|FAS|FOB|CFR|CIF|CPT|CIP|DAP|DPU|DDP)\b", RegexOptions.CultureInvariant);
+        return (mode is "LCL" or "LTL") ||
+            (revision >= 6 && (mode is "FCL" or "FTL") && term.Value == "FCA");
+    }
+
     public static string[] MissingFields(string modality, string? json, bool manualOpening = false) =>
         EvaluateFields(modality, json, manualOpening)
             .Where(x => x.CompletionStatus == "PENDIENTE_BLOQUEANTE")
@@ -156,11 +165,11 @@ public static class OperationsOpeningDraftPolicy
                 Required("equipment", false, "This shipment must not contain full containers or trailers");
             else NotApplicable("equipment", "Shipment does not require full equipment");
 
-            // Historical cases retain the original warehouse rule; new manual
-            // FCA collections validate collection details instead of a fictitious WHS.
-            if (basicManual && (shipment is "LCL" or "LTL"))
+            // V6 manual openings require WHS for consolidated cargo and full equipment under FCA.
+            // Existing V5 records retain their original contract.
+            if (basicManual && RequiresManualWarehouse(shipment, incoterm, revision))
                 Required("whsName", (HasValue("warehouseId") || HasValue("warehouseAddress")) && HasValue("whsName"));
-            else if (basicManual) NotApplicable("whsName", "Warehouse applies to consolidated shipments");
+            else if (basicManual) NotApplicable("whsName", "Warehouse applies to consolidated shipments or FCA full equipment");
             else if (incoterm == "FCA" && (pricingParity || !strictManual || !Flag("requiresPickup")))
                 Required("whsName", pricingParity ? (HasValue("warehouseId") || HasValue("warehouseAddress")) && HasValue("whsName") : HasValue("whsName") || (!strictManual && HasValue("warehouseId")));
             else NotApplicable("whsName", "Incoterm does not require FCA warehouse");
