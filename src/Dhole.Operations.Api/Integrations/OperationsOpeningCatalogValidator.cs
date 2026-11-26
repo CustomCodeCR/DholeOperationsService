@@ -35,15 +35,17 @@ public sealed class OperationsOpeningCatalogValidator(IHttpClientFactory factory
             var pricingParity = data.TryGetProperty("openingValidationVersion", out var revision) && revision.ValueKind == JsonValueKind.Number && revision.TryGetInt32(out var rule) && rule >= 3;
             if (!pricingParity || (terminal == "CY" && Text(data, "pod").Length > 0))
                 selections.Add(new("pod", "pod", Text(data, "podCatalogId"), Text(data, "podCatalogCode"), Text(data, "pod"), "SD"));
-            var fca = pricingParity && string.Equals(Text(data, "incoterm"), "FCA", StringComparison.OrdinalIgnoreCase);
+            var shipment = Text(data, "shipmentType").ToUpperInvariant();
+            var warehouseRequired = pricingParity && (revision.GetInt32() >= 5
+                ? shipment is "LCL" or "LTL"
+                : string.Equals(Text(data, "incoterm"), "FCA", StringComparison.OrdinalIgnoreCase));
             var warehouseGroups = new[] { "pricing-warehouses", "warehouses", "whs", "fca-warehouses" };
-            if (fca && Text(data, "warehouseId").Length > 0)
+            if (warehouseRequired && Text(data, "warehouseId").Length > 0)
             {
                 var group = Text(data, "warehouseCatalogGroup");
                 if (!warehouseGroups.Contains(group)) return new("APERTURE_CATALOG_INVALID", 409, ["whsName"]);
                 selections.Add(new(group, "whsName", Text(data, "warehouseId"), Text(data, "warehouseCatalogCode"), Text(data, "whsName"), null));
             }
-            var shipment = Text(data, "shipmentType").ToUpperInvariant();
             if ((shipment is "FCL" or "FTL") && data.TryGetProperty("equipment", out var equipment) && equipment.ValueKind == JsonValueKind.Array)
             {
                 var group = shipment == "FTL" ? "land-equipment-sizes" : "container-types";
@@ -70,7 +72,7 @@ public sealed class OperationsOpeningCatalogValidator(IHttpClientFactory factory
                     {
                         var field = Text(row, "field");
                         var group = Text(row, "group");
-                        if (!seen.Add(field) || !((field == "carrierReference" && group == "carriers" && terminal == "CY") ||
+                        if (!seen.Add(field) || !((field == "carrierReference" && group == "carriers" && terminal == "CY" && (revision.GetInt32() < 5 || shipment == "FCL")) ||
                             (field == "agentReference" && group == "agents")) ||
                             Text(row, "label") != Text(data, field))
                             return new("APERTURE_CATALOG_INVALID", 409, [field]);
@@ -90,7 +92,7 @@ public sealed class OperationsOpeningCatalogValidator(IHttpClientFactory factory
             var client = factory.CreateClient("config-operations-opening");
             var invalid = new List<string>();
             // An address fallback is only permitted when no WHS catalog has active entries.
-            if (fca && Text(data, "warehouseId").Length == 0)
+            if (warehouseRequired && Text(data, "warehouseId").Length == 0)
             {
                 foreach (var group in warehouseGroups)
                 {
