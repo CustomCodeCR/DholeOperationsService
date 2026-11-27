@@ -323,7 +323,7 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
         var description = CargoDescription(cargo);
         var pickups = QuotePickupPoints(accepted);
         var incoterm = StringProperty(accepted, "incoterm");
-        var requiresPickup = incoterm.Equals("EXW", StringComparison.OrdinalIgnoreCase) || pickups.Length > 0 || OptionalBoolean(accepted, "requiresPickup") == true;
+        var requiresPickup = incoterm.Equals("EXW", StringComparison.OrdinalIgnoreCase) || services.Any(item => OperationsOpeningDraftPolicy.IsPickupService(item.Code, item.Name));
         var opening = new {
             source = historicalNumber.HasValue ? "PRICING_HISTORICAL" : "PRICING",
             historicalIdtra = historicalNumber.HasValue ? historicalIdtra : null,
@@ -343,7 +343,7 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
             isImo = OptionalBoolean(cargo, "isImo") ?? OptionalBoolean(accepted, "isImo"),
             imoClass = StringProperty(cargo, "imoClass"),
             unNumber = StringProperty(cargo, "unNumber"),
-            stackable = QuoteStackability(cargo),
+            stackable = input.ModalityCode.Trim().ToUpperInvariant() is "LCL" or "LTL" or "AIR" or "AIRCONSOL" ? QuoteStackability(cargo) : null,
             overweight = OptionalBoolean(cargo, "overweight") ?? OptionalBoolean(accepted, "overweight"),
             overweightNotes = StringProperty(cargo, "overweightNotes"),
             consolidationId = input.ModalityCode.Trim().ToUpperInvariant() == "LCL"
