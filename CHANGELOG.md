@@ -1,5 +1,9 @@
 ## [0.37.0] - 2026-11-27
 
+## [0.38.0] - 2026-11-27
+- Validate CRM divisions and selected operational contacts on case creation and edit; expose case-scoped directory and filter case contacts by division.
+
+
 - MINOR: vinculación QUO en creación y expediente manual visible mediante scope operativo específico, conserva autorización de expediente, concurrencia, audit y Outbox/Inbox. Resolver CRM usa contrato de apertura mínimo; perfiles de equipos alineados con Auth. No altera condiciones comerciales ni permite reemplazar vínculos confirmados. CI y staging pendientes.
 
 ## [0.36.0] - 2026-11-26
