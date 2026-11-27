@@ -1,3 +1,6 @@
+## [0.39.1] - 2026-11-27
+- Preserve verified quote catalog identities and cargo descriptions in automatic openings; derive delivery applicability solely from agreed service and preserve quoted delivery locations. CI and staging pending.
+
 ## [0.39.0] - 2026-11-27
 - Expose related IDTRAs sharing a confirmed QUO, restricted to the same company, customer and existing case visibility policy. CI and staging pending.
 

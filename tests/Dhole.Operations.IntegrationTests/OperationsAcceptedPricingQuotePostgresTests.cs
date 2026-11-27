@@ -105,6 +105,13 @@ public sealed class OperationsAcceptedPricingQuotePostgresTests
             Assert.AreEqual(1,await db.Cases.CountAsync(x=>x.SourceQuoteId==quoteId &&
                 x.ApertureType=="AUTOMATIC"));
             Assert.AreEqual(1,await db.AcceptedQuoteSnapshots.CountAsync(x=>x.CaseId==created.Id));
+            using var opening = JsonDocument.Parse(await db.Cases.Where(x => x.Id == created.Id).Select(x => x.OpeningDataJson).SingleAsync());
+            Assert.IsFalse(opening.RootElement.GetProperty("requiresDelivery").GetBoolean());
+            Assert.AreEqual(0, opening.RootElement.GetProperty("deliveryLocations").GetArrayLength());
+            Assert.IsTrue(Guid.TryParse(opening.RootElement.GetProperty("carrierId").GetString(), out _));
+            Assert.IsTrue(Guid.TryParse(opening.RootElement.GetProperty("agentId").GetString(), out _));
+            Assert.IsTrue(Guid.TryParse(opening.RootElement.GetProperty("polCatalogId").GetString(), out _));
+            Assert.AreEqual("Carga industrial", opening.RootElement.GetProperty("cargoDescription").GetString());
             Assert.AreEqual(2,await db.CaseServiceLines.CountAsync(x=>x.CaseId==created.Id &&
                 x.Source=="QUOTED"));
             var lines=await db.CaseEquipmentLines.Where(x=>x.CaseId==created.Id)
