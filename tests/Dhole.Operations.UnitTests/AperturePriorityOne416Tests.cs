@@ -32,8 +32,11 @@ public sealed class AperturePriorityOne416Tests
             fields.Single(x => x.FieldCode == "equipment").CompletionStatus);
         Assert.AreEqual("PENDIENTE_PERMITIDO",
             fields.Single(x => x.FieldCode == "actualWeight").CompletionStatus);
-        Assert.AreEqual("NO_APLICA",
+        Assert.AreEqual("PENDIENTE_PERMITIDO",
             fields.Single(x => x.FieldCode == "stackable").CompletionStatus);
+        Assert.AreEqual("NO_APLICA", fields.Single(x => x.FieldCode == "consolidation").CompletionStatus);
+        Assert.AreEqual("CONFIRMADO", OperationsOpeningDraftValidator.EvaluateFields("FCL", Base.Replace("\"incoterm\"", "\"stackable\":false,\"incoterm\""))
+            .Single(x => x.FieldCode == "stackable").CompletionStatus);
         Assert.AreEqual("CONFIRMADO",
             fields.Single(x => x.FieldCode == "cargoDescription").CompletionStatus);
     }
