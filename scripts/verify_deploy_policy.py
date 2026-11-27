@@ -18,3 +18,13 @@ for environment, branch in (("staging", "develop"), ("production", "master")):
         f"{environment}: legacy flag gate found"
     )
 print("PASS: Operations master/develop deploy jobs have no feature-flag gates")
+
+staging = (root / ".github/workflows/deploy-staging.yml").read_text(encoding="utf-8")
+hosted, local = staging.split("  deploy:\n", 1)
+assert "runs-on: ubuntu-latest" in hosted and "docker build --pull" in hosted
+assert "actions/upload-artifact@v4" in hosted and "needs: build" in local
+assert "actions/download-artifact@v4" in local and "sha256sum -c SHA256SUMS" in local
+assert "docker load" in local and "--pull never" in local
+assert "docker build" not in local and "docker pull" not in local
+assert "--secret id=github_token,env=GITHUB_TOKEN" in hosted
+print("PASS: Operations staging transfers verified hosted images without local registry builds")

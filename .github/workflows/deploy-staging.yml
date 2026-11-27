@@ -16,8 +16,34 @@ env:
   DHOLE_NETWORK: dhole-staging
   COMPOSE_PROJECT: dhole-staging
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Operations images
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          SHA_TAG="${GITHUB_SHA::12}"
+          docker build --pull --build-arg GITHUB_ACTOR="$GITHUB_ACTOR" --secret id=github_token,env=GITHUB_TOKEN -f src/Dhole.Operations.Api/Dockerfile -t dhole/operations-api:staging -t "dhole/operations-api:staging-$SHA_TAG" .
+          docker build --pull --build-arg GITHUB_ACTOR="$GITHUB_ACTOR" --secret id=github_token,env=GITHUB_TOKEN -f src/Dhole.Operations.Workers/Dockerfile -t dhole/operations-workers:staging -t "dhole/operations-workers:staging-$SHA_TAG" .
+      - name: Export exact staging images
+        run: |
+          set -euo pipefail
+          mkdir -p image-bundle
+          docker save dhole/operations-api:staging "dhole/operations-api:staging-${GITHUB_SHA::12}" dhole/operations-workers:staging "dhole/operations-workers:staging-${GITHUB_SHA::12}" | gzip -1 > image-bundle/images.tar.gz
+          (cd image-bundle && sha256sum images.tar.gz > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: operations-images-${{ github.sha }}
+          path: image-bundle/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
   deploy:
     runs-on: [self-hosted, linux, x64, dhole]
+    needs: build
     steps:
       - uses: actions/checkout@v4
       - name: Load Dhole deployment infrastructure
@@ -38,14 +64,19 @@ jobs:
         run: |
           set -euo pipefail
           docker compose --env-file "$DHOLE_ENV_FILE" -f "$COMPOSE_BASE" -f "$COMPOSE_OPERATIONS" -p "$COMPOSE_PROJECT" config -q
-      - name: Build Operations images
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: operations-images-${{ github.sha }}
+          path: image-bundle
+      - name: Load verified staging images
         run: |
           set -euo pipefail
-          SHA_TAG="${GITHUB_SHA::12}"
-          docker build --pull --build-arg GITHUB_ACTOR="$GITHUB_ACTOR" --secret id=github_token,env=GITHUB_TOKEN -f src/Dhole.Operations.Api/Dockerfile -t dhole/operations-api:staging -t "dhole/operations-api:staging-$SHA_TAG" .
-          docker build --pull --build-arg GITHUB_ACTOR="$GITHUB_ACTOR" --secret id=github_token,env=GITHUB_TOKEN -f src/Dhole.Operations.Workers/Dockerfile -t dhole/operations-workers:staging -t "dhole/operations-workers:staging-$SHA_TAG" .
+          (cd image-bundle && sha256sum -c SHA256SUMS)
+          docker load -i image-bundle/images.tar.gz
+          for image in dhole/operations-api dhole/operations-workers; do
+            test "$(docker image inspect -f '{{.Id}}' "$image:staging")" = "$(docker image inspect -f '{{.Id}}' "$image:staging-${GITHUB_SHA::12}")"
+          done
+          rm -rf image-bundle
       - name: Deploy Operations
         run: |
           set -euo pipefail
@@ -79,6 +110,3 @@ jobs:
           docker logs --since 3m "$WORKER_ID" 2>&1 | grep -E 'Pricing acceptance|Accepted quotation|Definitive quote acceptance|CRM account|Inbox poll failed|CRM acceptance' | tail -n 20 || true
       - name: Verify Operations SQL tables and migration history
         run: bash scripts/verify_operations_schema.sh
-      - name: Cleanup old images
-        if: always()
-        run: docker image prune -f
