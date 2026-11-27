@@ -19,6 +19,34 @@ public sealed class OperationsCargoMeasurementsTests
     }
 
     [TestMethod]
+    [DataRow("0")]
+    [DataRow("\"0\"")]
+    public void ExistingOpeningAllowsUnknownVolumeWithoutChangingOriginWeight(string zero)
+    {
+        var previous = OperationsCargoMeasurements.Parse("""{"weightValue":15000,"weightUnit":"KG","quotedWeightKg":15000,"actualWeightKg":15100}""");
+        var incoming = OperationsCargoMeasurements.Parse("{\"estimatedWeightValue\":\"15000\",\"estimatedWeightUnit\":\"KG\",\"volumeValue\":" + zero + ",\"volumeUnit\":\"CBM\",\"volumeCbm\":null}");
+        OperationsCargoMeasurements.PreserveOriginFields(incoming, previous);
+        OperationsCargoMeasurements.NormalizeOpening(incoming, allowUnspecifiedVolume: true);
+        Assert.IsNull(incoming["volumeValue"]);
+        Assert.IsNull(incoming["volumeCbm"]);
+        Assert.AreEqual(15000m, incoming["estimatedWeightKg"]!.GetValue<decimal>());
+        Assert.AreEqual(15100, incoming["actualWeightKg"]!.GetValue<int>());
+        Assert.AreEqual(15000, incoming["weightValue"]!.GetValue<int>());
+    }
+
+    [TestMethod]
+    public void CreationAndInvalidProvidedMeasurementsRemainStrict()
+    {
+        var zero = OperationsCargoMeasurements.Parse("""{"volumeValue":0,"volumeUnit":"CBM"}""");
+        Assert.ThrowsExactly<ArgumentException>(() => OperationsCargoMeasurements.NormalizeOpening(zero));
+        foreach (var json in new[] { """{"volumeValue":-1,"volumeUnit":"CBM"}""", """{"volumeValue":"invalid","volumeUnit":"CBM"}""", """{"volumeValue":1,"volumeUnit":"invalid"}""", """{"estimatedWeightValue":0,"estimatedWeightUnit":"KG"}""" })
+        {
+            var data = OperationsCargoMeasurements.Parse(json);
+            Assert.ThrowsExactly<ArgumentException>(() => OperationsCargoMeasurements.NormalizeOpening(data, allowUnspecifiedVolume: true));
+        }
+    }
+
+    [TestMethod]
     public void ConfirmedOriginWeightDoesNotReplaceEstimate()
     {
         var data = OperationsCargoMeasurements.Parse("""{"quotedWeightKg":1000,"weightValue":1000,"weightUnit":"KG"}""");

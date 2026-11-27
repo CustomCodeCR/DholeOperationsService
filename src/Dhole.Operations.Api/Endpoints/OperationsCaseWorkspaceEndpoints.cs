@@ -223,7 +223,7 @@ public static class OperationsCaseWorkspaceEndpoints
                 {
                     var incoming = OperationsCargoMeasurements.Parse(request.OpeningData.Value.GetRawText());
                     OperationsCargoMeasurements.PreserveOriginFields(incoming, OperationsCargoMeasurements.Parse(operation.OpeningDataJson));
-                    OperationsCargoMeasurements.NormalizeOpening(incoming);
+                    OperationsCargoMeasurements.NormalizeOpening(incoming, allowUnspecifiedVolume: true);
                     var divisionResult = await crm.ValidateDivisionAsync(operation.AccountId, incoming,
                         http.Request.Headers.Authorization.ToString(), actor, ct);
                     if (divisionResult.ErrorCode is not null)

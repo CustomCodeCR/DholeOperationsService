@@ -1,3 +1,7 @@
+## [0.39.3] - 2026-11-27
+
+- Allow legacy zero volume as unspecified in existing opening edits; keep positive-measurement validation and Origin ownership. Add regression coverage. CI and staging pending.
+
 ## [0.39.2] - 2026-11-27
 
 - Build staging images on GitHub-hosted runners and load checksum-verified, commit-specific images locally; preserve production workflow and runtime configuration. CI and staging pending.

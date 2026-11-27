@@ -32,10 +32,18 @@ public static class OperationsCargoMeasurements
         data[normalizedKey] = value * factor;
     }
 
-    public static void NormalizeOpening(JsonObject data)
+    public static void NormalizeOpening(JsonObject data, bool allowUnspecifiedVolume = false)
     {
         Normalize(data, "estimatedWeightValue", "estimatedWeightUnit", "estimatedWeightKg",
             new Dictionary<string, decimal> { ["KG"] = 1, ["LB"] = 0.45359237m });
+        // Existing Pricing openings used zero as the sentinel for an unknown volume.
+        // Keep manual creation strict and never treat negative or malformed values as missing.
+        if (allowUnspecifiedVolume && decimal.TryParse(Text(data["volumeValue"]), NumberStyles.Float,
+                CultureInfo.InvariantCulture, out var volume) && volume == 0m)
+        {
+            data["volumeValue"] = null;
+            data["volumeCbm"] = null;
+        }
         Normalize(data, "volumeValue", "volumeUnit", "volumeCbm",
             new Dictionary<string, decimal> { ["CBM"] = 1, ["CFT"] = 0.028316846592m });
         foreach (var axis in new[] { "length", "width", "height" })
