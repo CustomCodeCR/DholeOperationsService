@@ -33,10 +33,7 @@ public static class OperationsCommercialReviewEndpoints
             OperationsDbContext db, CancellationToken ct) =>
         {
             var actor = OperationsCaseAccess.UserId(http.User);
-            if (actor is null || !OperationsCaseAccess.HasScope(http.User, "pricing.rate.update") ||
-                !(OperationsCaseAccess.HasScope(http.User, "operations.case.update") ||
-                  OperationsCaseAccess.HasScope(http.User, "operations.origin.update") ||
-                  OperationsCaseAccess.HasScope(http.User, "operations.aperture.update")) ||
+            if (actor is null || !OperationsCaseAccess.HasScope(http.User, "operations.pricing.quote.link") ||
                 !await access.CanReadAsync(caseId, http.User, ct)) return Results.Forbid();
             if (input.RateId == Guid.Empty) return Results.BadRequest();
             await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
