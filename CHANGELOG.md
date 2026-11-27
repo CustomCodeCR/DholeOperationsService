@@ -1,3 +1,7 @@
+## [0.37.0] - 2026-11-27
+
+- MINOR: vinculación QUO en creación y expediente manual visible mediante scope operativo específico, conserva autorización de expediente, concurrencia, audit y Outbox/Inbox. Resolver CRM usa contrato de apertura mínimo; perfiles de equipos alineados con Auth. No altera condiciones comerciales ni permite reemplazar vínculos confirmados. CI y staging pendientes.
+
 ## [0.36.0] - 2026-11-26
 
 - MINOR: notificación por correo al responsable elegible de una apertura automática, junto con notificación de sistema; conserva protección contra reenvíos históricos, idempotencia y permisos. No modifica el enrutamiento de otros equipos.

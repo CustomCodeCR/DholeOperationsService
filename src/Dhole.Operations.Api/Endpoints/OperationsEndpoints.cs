@@ -92,7 +92,7 @@ public static class OperationsEndpoints
             if (actor is null || !OperationsCaseAccess.HasScope(http.User, "operations.case.create") ||
                 (!OperationsCaseAccess.IsSystemAdministrator(http.User) && company != request.CompanyId))
                 return Results.Forbid();
-            if (request.QuoteRateId.HasValue && !OperationsCaseAccess.HasScope(http.User, "pricing.rate.update")) return Results.Forbid();
+            if (request.QuoteRateId.HasValue && !OperationsCaseAccess.HasScope(http.User, "operations.pricing.quote.link")) return Results.Forbid();
             if (request.QuoteRateId == Guid.Empty) return Results.BadRequest(new { code = "QUOTE_OPTION_REQUIRED" });
             if (request.AccountId == Guid.Empty) return Results.BadRequest(new { code = "CRM_ACCOUNT_REQUIRED" });
             var crmAccount = await crm.ResolveAsync(request.AccountId,

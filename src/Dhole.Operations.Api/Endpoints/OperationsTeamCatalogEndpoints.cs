@@ -39,7 +39,7 @@ public static class OperationsTeamCatalogEndpoints
     public static string[] OperatorScopes(string department, string? teamName = null) => department switch
     {
         "APERTURAS" => ["operations.case.read", "operations.case.create", "operations.case.update",
-            "operations.aperture.update", "operations.aperture.validation.review", "operations.realtime.read"],
+            "operations.aperture.update", "operations.aperture.validation.review", "operations.realtime.read", "operations.pricing.quote.read", "operations.pricing.quote.link", "operations.crm.account.select", "operations.crm.contact.read", "operations.catalog.cabys.read"],
         "COORDINACION_ORIGEN" => ["operations.case.read", "operations.origin.read", "operations.origin.update",
             "operations.origin.departure.confirm", "operations.internal-note.read",
             "operations.internal-note.create", "operations.document.manage", "operations.realtime.read",
@@ -67,8 +67,8 @@ public static class OperationsTeamCatalogEndpoints
         };
         if (OperationsTeamResponsibility.IsValid(OperationsTeamResponsibility.LogisticsManager, department))
         {
-            profiles[OperationsTeamResponsibility.LogisticsManager] = ["operations.case.read", "operations.case.read-all", "operations.realtime.read"];
-            profiles[OperationsTeamResponsibility.OperationsHead] = ["operations.case.read", "operations.case.read-all", "operations.realtime.read"];
+            profiles[OperationsTeamResponsibility.LogisticsManager] = ["operations.case.read", "operations.case.read-all", "operations.case.create", "operations.realtime.read", "operations.pricing.quote.read", "operations.pricing.quote.link", "operations.crm.account.select", "operations.crm.contact.read", "operations.catalog.cabys.read"];
+            profiles[OperationsTeamResponsibility.OperationsHead] = ["operations.case.read", "operations.case.read-all", "operations.case.create", "operations.realtime.read", "operations.pricing.quote.read", "operations.pricing.quote.link", "operations.crm.account.select", "operations.crm.contact.read", "operations.catalog.cabys.read"];
         }
         if (department == "COORDINACION_ORIGEN")
             profiles[OperationsTeamResponsibility.OriginSupervisor] = ["operations.case.read", "operations.origin.read", "operations.origin.read-all", "operations.realtime.read"];

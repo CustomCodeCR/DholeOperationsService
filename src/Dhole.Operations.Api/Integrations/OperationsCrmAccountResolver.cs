@@ -21,7 +21,7 @@ public sealed class OperationsCrmAccountResolver(IHttpClientFactory factory, ICo
             return new(null, "AUTHORIZATION_REQUIRED", 401);
 
         var url = new Uri(new Uri(baseUrl.ToString().TrimEnd('/') + "/"),
-            $"api/crm/accounts/{accountId:D}");
+            $"api/crm/operations/accounts/{accountId:D}");
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.Authorization = bearer;
         try
