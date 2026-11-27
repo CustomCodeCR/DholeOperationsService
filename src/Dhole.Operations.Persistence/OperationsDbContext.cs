@@ -114,6 +114,7 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
             e.ToTable("operations_team_members", t => t.HasCheckConstraint("ck_operations_member_capacity", "capacity_points > 0"));
             e.HasKey(x => x.Id);
             e.HasOne(x => x.Team).WithMany(x => x.Members).HasForeignKey(x => x.TeamId).OnDelete(DeleteBehavior.Cascade);
+            e.Property(x => x.RoleCode).HasMaxLength(30);
             e.Property(x => x.CapacityPoints).HasPrecision(10, 2);
             e.HasIndex(x => new { x.TeamId, x.UserId }).IsUnique();
         });

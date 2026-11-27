@@ -408,11 +408,13 @@ public static class OperationsTeamValidationEndpoints
             var member = await db.TeamMembers.SingleOrDefaultAsync(m =>
                 m.TeamId == teamId && m.UserId == userId, ct);
             if (member is null) return Results.NoContent();
+            if (Dhole.Operations.Domain.Services.OperationsTeamResponsibility.IsLeadership(member.RoleCode) &&
+                !OperationsCaseAccess.IsSystemAdministrator(http.User)) return Results.Forbid();
             var pending = await db.ApertureValidations.AnyAsync(v =>
                 v.TeamId == teamId && v.UserId == userId && v.Status == "PENDING", ct);
             if (pending) return Results.Conflict(new { code = "MEMBER_HAS_PENDING_VALIDATIONS" });
             OperationsAuditWriter.Team(db, teamId, actor.Value, "operations.team.member.removed",
-                new { member.UserId, member.CapacityPoints, member.IsSupervisor, member.IsAvailable },
+                new { member.UserId, member.CapacityPoints, member.IsSupervisor, member.IsAvailable, member.RoleCode },
                 null);
             db.TeamMembers.Remove(member);
             await db.SaveChangesAsync(ct);

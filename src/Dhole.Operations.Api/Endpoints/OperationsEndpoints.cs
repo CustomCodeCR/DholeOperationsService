@@ -21,9 +21,9 @@ public static class OperationsEndpoints
 
     public sealed record IdtraSequenceRequest(long NextNumber, long ExpectedNextNumber, string Reason);
     public sealed record NewTeamRequest(Guid CompanyId, string DepartmentCode, string Name);
-    public sealed record NewMemberRequest(Guid UserId, decimal CapacityPoints, bool IsSupervisor, bool IsAvailable = true);
+    public sealed record NewMemberRequest(Guid UserId, decimal CapacityPoints, bool IsSupervisor, bool IsAvailable = true, string? RoleCode = null);
     public sealed record NewMembersBatchRequest(Guid[] UserIds, decimal CapacityPoints,
-        bool IsSupervisor, bool IsAvailable = true);
+        bool IsSupervisor, bool IsAvailable = true, string? RoleCode = null);
     public sealed record NewAssignmentRuleRequest(
         Guid TeamId, string DepartmentCode, string? ModalityCode,
         string? OriginCountryCode, string? DestinationCountryCode, int Priority = 0);
@@ -342,11 +342,12 @@ public static class OperationsEndpoints
             if (!OperationsCaseAccess.IsSystemAdministrator(http.User)) query = query.Where(x => x.CompanyId == company);
             var teams = await query.OrderBy(x => x.DepartmentCode).ThenBy(x => x.Name)
                 .Select(x => new { x.Id, x.CompanyId, x.DepartmentCode, x.Name, x.IsActive,
-                    Members = x.Members.Select(m => new { m.UserId, m.CapacityPoints, m.IsAvailable, m.IsSupervisor }) })
+                    Members = x.Members.Select(m => new { m.UserId, m.CapacityPoints, m.IsAvailable, m.IsSupervisor, m.RoleCode }) })
                 .ToArrayAsync(ct);
             return Results.Ok(teams.Select(t => new { t.Id, t.CompanyId, t.DepartmentCode, t.Name, t.IsActive,
                 t.Members, OperatorScopes = OperationsTeamCatalogEndpoints.OperatorScopes(t.DepartmentCode),
-                SupervisorScopes = OperationsTeamCatalogEndpoints.SupervisorScopes(t.DepartmentCode) }));
+                SupervisorScopes = OperationsTeamCatalogEndpoints.SupervisorScopes(t.DepartmentCode),
+                RoleProfiles = OperationsTeamCatalogEndpoints.RoleProfiles(t.DepartmentCode) }));
         });
 
         api.MapPost("/teams/{teamId:guid}/members", async (
@@ -372,8 +373,13 @@ public static class OperationsEndpoints
             catch (TaskCanceledException) when (!ct.IsCancellationRequested)
                 { return Results.Problem(statusCode: 503, title: "Auth eligibility timed out"); }
             var member = await db.TeamMembers.FirstOrDefaultAsync(x => x.TeamId == teamId && x.UserId == input.UserId, ct);
+            var role = OperationsTeamResponsibility.Resolve(input.RoleCode, input.IsSupervisor, member?.RoleCode);
+            if (!OperationsTeamResponsibility.IsValid(role, team.DepartmentCode))
+                return Results.BadRequest(new { code = "OPERATIONS_TEAM_ROLE_INVALID" });
+            if ((OperationsTeamResponsibility.IsLeadership(role) || OperationsTeamResponsibility.IsLeadership(member?.RoleCode)) &&
+                !OperationsCaseAccess.IsSystemAdministrator(http.User)) return Results.Forbid();
             var before = member is null ? null : new {
-                member.CapacityPoints, member.IsAvailable, member.IsSupervisor
+                member.CapacityPoints, member.IsAvailable, member.IsSupervisor, member.RoleCode
             };
             if (member is null)
             {
@@ -381,13 +387,14 @@ public static class OperationsEndpoints
                 db.TeamMembers.Add(member);
             }
             member.CapacityPoints = input.CapacityPoints;
-            member.IsAvailable = input.IsAvailable;
-            member.IsSupervisor = input.IsSupervisor;
+            member.RoleCode = role;
+            member.IsAvailable = OperationsTeamResponsibility.Available(role, input.IsAvailable);
+            member.IsSupervisor = OperationsTeamResponsibility.IsSupervisor(role);
             var actor = OperationsCaseAccess.UserId(http.User);
             if (actor is null) return Results.Forbid();
             OperationsAuditWriter.Team(db, teamId, actor.Value,
                 before is null ? "operations.team.member.added" : "operations.team.member.updated",
-                before, new { member.UserId, member.CapacityPoints, member.IsAvailable, member.IsSupervisor });
+                before, new { member.UserId, member.CapacityPoints, member.IsAvailable, member.IsSupervisor, member.RoleCode });
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { member.Id });
         });
@@ -410,6 +417,12 @@ public static class OperationsEndpoints
 
             var invalid = OperationsTeamMemberBatchPolicy.Validate(input.UserIds, input.CapacityPoints);
             if (invalid is not null) return Results.BadRequest(new { code = invalid });
+
+            var role = OperationsTeamResponsibility.Resolve(input.RoleCode, input.IsSupervisor);
+            if (!OperationsTeamResponsibility.IsValid(role, team.DepartmentCode))
+                return Results.BadRequest(new { code = "OPERATIONS_TEAM_ROLE_INVALID" });
+            if (OperationsTeamResponsibility.IsLeadership(role) &&
+                !OperationsCaseAccess.IsSystemAdministrator(http.User)) return Results.Forbid();
 
             var ids = input.UserIds;
             var existing = await db.TeamMembers.AsNoTracking()
@@ -438,12 +451,13 @@ public static class OperationsEndpoints
             {
                 var member = new OperationsTeamMember {
                     TeamId = teamId, UserId = id, CapacityPoints = input.CapacityPoints,
-                    IsSupervisor = input.IsSupervisor, IsAvailable = input.IsAvailable
+                    RoleCode = role, IsSupervisor = OperationsTeamResponsibility.IsSupervisor(role),
+                    IsAvailable = OperationsTeamResponsibility.Available(role, input.IsAvailable)
                 };
                 db.TeamMembers.Add(member);
                 OperationsAuditWriter.Team(db, teamId, actor.Value,
                     "operations.team.member.added", null,
-                    new { member.UserId, member.CapacityPoints, member.IsAvailable, member.IsSupervisor });
+                    new { member.UserId, member.CapacityPoints, member.IsAvailable, member.IsSupervisor, member.RoleCode });
             }
             if (pending.Length > 0) await db.SaveChangesAsync(ct);
             return Results.Ok(new { assigned = pending.Length,

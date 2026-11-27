@@ -65,6 +65,7 @@ public sealed class OperationsTeamMember
     public OperationsTeam Team { get; set; } = null!;
     public Guid UserId { get; set; }
     public bool IsSupervisor { get; set; }
+    public string? RoleCode { get; set; }
     public bool IsAvailable { get; set; } = true;
     public decimal CapacityPoints { get; set; } = 10m;
 }
