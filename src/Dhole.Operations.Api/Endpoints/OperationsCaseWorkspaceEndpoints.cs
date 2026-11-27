@@ -138,7 +138,24 @@ public static class OperationsCaseWorkspaceEndpoints
             var people = await labels.ReadAsync(validators.Select(v => v.UserId)
                 .Concat(stages.Where(s => s.AssignedUserId.HasValue).Select(s => s.AssignedUserId!.Value))
                 .Concat(stages.SelectMany(s => s.SupervisorUserIds)), ct);
-            return Results.Ok(new { caseId = id, stages, validators, quotes, milestones, tasks, commercialData, people });
+            // Related IDTRAs share a confirmed QUO, customer and company.
+            // Apply the same visibility predicate as list, REST and SignalR.
+            var currentCase = await db.Cases.AsNoTracking().Where(c => c.Id == id)
+                .Select(c => new { c.CompanyId, c.AccountId, c.SourceQuoteId }).SingleAsync(ct);
+            var quoteIds = quotes.Where(q => q.Status == "LINKED").Select(q => q.QuoteId)
+                .Concat(currentCase.SourceQuoteId.HasValue ? new[] { currentCase.SourceQuoteId.Value } : Array.Empty<Guid>())
+                .Distinct().ToArray();
+            var company = OperationsCaseAccess.IsSystemAdministrator(http.User) ? null
+                : await access.ResolveCompanyIdAsync(http.User, ct);
+            var relatedCases = await access.FilterVisibleCases(db.Cases.AsNoTracking()
+                .Where(c => c.Id != id && c.CompanyId == currentCase.CompanyId &&
+                    c.AccountId == currentCase.AccountId &&
+                    ((c.SourceQuoteId.HasValue && quoteIds.Contains(c.SourceQuoteId.Value)) ||
+                     db.CaseQuoteLinks.Any(q => q.CaseId == c.Id && q.Status == "LINKED" && quoteIds.Contains(q.QuoteId)))),
+                http.User, company)
+                .OrderBy(c => c.Idtra).Select(c => new { c.Id, c.Idtra, c.Status, c.ModalityCode })
+                .ToArrayAsync(ct);
+            return Results.Ok(new { caseId = id, stages, validators, quotes, milestones, tasks, commercialData, people, relatedCases });
         });
 
         api.MapGet("/cases/{id:guid}/commercial/costs", async (
