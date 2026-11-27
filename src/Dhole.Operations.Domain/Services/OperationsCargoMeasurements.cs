@@ -80,11 +80,14 @@ public static class OperationsCargoMeasurements
             else incoming.Remove(key);
         }
         // Planning is owned by Origin. Legacy opening clients may send these keys; retain the saved values.
-        foreach (var key in new[] { "etm", "eta", "consolidationReference", "clientPoReference", "invoiceReference" })
+        foreach (var key in new[] { "etm", "eta", "clientPoReference", "invoiceReference" })
         {
             if (previous.ContainsKey(key)) incoming[key] = previous[key]?.DeepClone();
             else incoming.Remove(key);
         }
+        // Aperturas can now capture the consolidation reference. Older clients may omit it.
+        if (string.IsNullOrWhiteSpace(Text(incoming["consolidationReference"])) && previous.ContainsKey("consolidationReference"))
+            incoming["consolidationReference"] = previous["consolidationReference"]?.DeepClone();
         if (previous.ContainsKey("quotedWeightKg"))
             incoming["quotedWeightKg"] = previous["quotedWeightKg"]?.DeepClone();
         else incoming.Remove("quotedWeightKg");

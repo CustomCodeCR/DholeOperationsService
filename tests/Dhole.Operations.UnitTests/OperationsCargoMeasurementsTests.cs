@@ -47,7 +47,10 @@ public sealed class OperationsCargoMeasurementsTests
         OperationsCargoMeasurements.PreserveOriginFields(edit, old);
         Assert.AreEqual("2026-11-26", edit["etm"]!.GetValue<string>());
         Assert.AreEqual("2026-12-02", edit["eta"]!.GetValue<string>());
-        Assert.AreEqual("REF-1", edit["consolidationReference"]!.GetValue<string>());
+        Assert.AreEqual("REPLACEMENT", edit["consolidationReference"]!.GetValue<string>());
+        var olderClient = OperationsCargoMeasurements.Parse("{}");
+        OperationsCargoMeasurements.PreserveOriginFields(olderClient, old);
+        Assert.AreEqual("REF-1", olderClient["consolidationReference"]!.GetValue<string>());
     }
 
     [TestMethod]

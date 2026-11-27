@@ -180,12 +180,13 @@ public static class OperationsOpeningDraftPolicy
                 Required("whsName", pricingParity ? (HasValue("warehouseId") || HasValue("warehouseAddress")) && HasValue("whsName") : HasValue("whsName") || (!strictManual && HasValue("warehouseId")));
             else NotApplicable("whsName", "Incoterm does not require FCA warehouse");
 
-            var pickup = (strictManual && incoterm == "EXW" && direction == "IMPORT") || Flag("requiresPickup") ||
+            var pickup = incoterm == "EXW" || Flag("requiresPickup") ||
                 (!HasValue("requiresPickup") && !string.IsNullOrWhiteSpace(Text("pickupAddress")));
             if (basicManual && (incoterm == "EXW" || pickup))
                 Deferred("pickupLocations", ValidPoints("pickupLocations"), "Origin confirms collection");
             else if (pricingParity && (incoterm == "EXW" || pickup))
                 Required("pickupLocations", ValidPoints("pickupLocations"), "Add a collection point as in Pricing");
+            else if (pickup) Deferred("pickupLocations", ValidPoints("pickupLocations"), "Collection details may be confirmed");
             // Pickup contact and time window are not opening requirements. Preserve any
             // historical JSON values without evaluating them as completeness fields.
             if (pickup)
@@ -213,10 +214,8 @@ public static class OperationsOpeningDraftPolicy
                 Required("overweightNotes", !string.IsNullOrWhiteSpace(Text("overweightNotes")));
             else NotApplicable("overweightNotes", "No overweight declared");
 
-            if (shipment is "LCL" or "LTL")
-                Deferred("stackable", data.TryGetProperty("stackable", out var stacking) &&
-                    (stacking.ValueKind is JsonValueKind.True or JsonValueKind.False), "Origin may confirm stacking");
-            else NotApplicable("stackable", "Stackability is only applicable to LCL/LTL");
+            Deferred("stackable", data.TryGetProperty("stackable", out var stacking) &&
+                (stacking.ValueKind is JsonValueKind.True or JsonValueKind.False), "Stacking may need confirmation");
 
             // Optional opening fields retain their own state without adding mandatory business rules.
             bool NonEmptyArray(string key) => data.TryGetProperty(key, out var array) &&
