@@ -54,6 +54,21 @@ public sealed class OperationsCargoMeasurementsTests
     }
 
     [TestMethod]
+    public void LegacyOpeningClientPreservesConsolidationIdentity()
+    {
+        var old = OperationsCargoMeasurements.Parse("""{"consolidationId":"11111111-1111-4111-8111-111111111111","consolidationNumber":60,"consolidationReference":"CNCA-032"}""");
+        var edit = OperationsCargoMeasurements.Parse("{}");
+        OperationsCargoMeasurements.PreserveOriginFields(edit, old);
+        Assert.AreEqual("11111111-1111-4111-8111-111111111111", edit["consolidationId"]!.GetValue<string>());
+        Assert.AreEqual(60, edit["consolidationNumber"]!.GetValue<int>());
+        Assert.AreEqual("CNCA-032", edit["consolidationReference"]!.GetValue<string>());
+        var cleared = OperationsCargoMeasurements.Parse("""{"consolidationId":null,"consolidationNumber":null,"consolidationReference":""}""");
+        OperationsCargoMeasurements.PreserveOriginFields(cleared, old);
+        Assert.IsNull(cleared["consolidationId"]);
+        Assert.AreEqual("", cleared["consolidationReference"]!.GetValue<string>());
+    }
+
+    [TestMethod]
     public void OriginReferencesAreOptionalValidatedAndPreserved()
     {
         var data = OperationsCargoMeasurements.Parse("{}");
