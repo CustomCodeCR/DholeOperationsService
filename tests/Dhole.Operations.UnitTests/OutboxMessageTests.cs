@@ -25,6 +25,26 @@ public sealed class OutboxMessageTests
     }
 
     [TestMethod]
+    public void OpeningEmailUsesVerifiedRecipientAndDistinctStableChannelKey()
+    {
+        var caseId = Guid.NewGuid();
+        var assignment = Guid.NewGuid();
+        var user = Guid.NewGuid();
+        var system = OperationsOutboxFactory.CreateOpeningAssignedNotification(caseId, "IDTRA123", assignment, user);
+        var email = OperationsOutboxFactory.CreateOpeningAssignedNotification(caseId, "IDTRA123", assignment, user, "operator@example.test");
+        var retry = OperationsOutboxFactory.CreateOpeningAssignedNotification(caseId, "IDTRA123", assignment, user, "operator@example.test");
+        using var s = System.Text.Json.JsonDocument.Parse(system.PayloadJson);
+        using var e = System.Text.Json.JsonDocument.Parse(email.PayloadJson);
+        using var r = System.Text.Json.JsonDocument.Parse(retry.PayloadJson);
+        Assert.AreEqual("Email", e.RootElement.GetProperty("channel").GetString());
+        Assert.AreEqual("operator@example.test", e.RootElement.GetProperty("recipients")[0].GetProperty("address").GetString());
+        Assert.AreEqual(user.ToString("D"), e.RootElement.GetProperty("recipients")[0].GetProperty("userId").GetString());
+        Assert.AreNotEqual(s.RootElement.GetProperty("idempotencyKey").GetString(), e.RootElement.GetProperty("idempotencyKey").GetString());
+        Assert.AreEqual(e.RootElement.GetProperty("idempotencyKey").GetString(), r.RootElement.GetProperty("idempotencyKey").GetString());
+        Assert.ThrowsExactly<ArgumentException>(() => OperationsOutboxFactory.CreateOpeningAssignedNotification(caseId, "IDTRA123", assignment, user, "not-an-email"));
+    }
+
+    [TestMethod]
     public void OriginNotificationsHaveDistinctStableKeysAndCorrectRecipient()
     {
         var caseId = Guid.NewGuid();

@@ -1,3 +1,7 @@
+## [0.36.0] - 2026-11-26
+
+- MINOR (WIP, no integrar): correo individual de apertura automática al operativo elegible, junto con notificación de sistema; conserva la protección de 24 horas para evitar reenvíos históricos. Prueba unitaria agregada. Pendientes HOLD, semáforo, recotización, demás equipos, manifiesto central, CI y staging.
+
 ## [0.35.0] - 2026-11-26
 
 - MINOR candidato: separación de permisos de consulta, asignación y retiro de integrantes, perfiles operativos por equipo y sincronización con Auth. CI y staging pendientes. No habilita borrado de expedientes.
