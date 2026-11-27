@@ -324,6 +324,8 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
         var pickups = QuotePickupPoints(accepted);
         var incoterm = StringProperty(accepted, "incoterm");
         var requiresPickup = incoterm.Equals("EXW", StringComparison.OrdinalIgnoreCase) || services.Any(item => OperationsOpeningDraftPolicy.IsPickupService(item.Code, item.Name));
+        var requiresDelivery = services.Any(item => OperationsOpeningDraftPolicy.IsDeliveryService(item.Code, item.Name));
+        var deliveries = requiresDelivery ? QuoteDeliveryPoints(accepted) : Array.Empty<OpeningPickupPoint>();
         var opening = new {
             source = historicalNumber.HasValue ? "PRICING_HISTORICAL" : "PRICING",
             historicalIdtra = historicalNumber.HasValue ? historicalIdtra : null,
@@ -340,6 +342,9 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
             pickupAddress = requiresPickup ? pickups.FirstOrDefault()?.address ?? "" : "",
             pickupLocations = requiresPickup ? pickups : [],
             requiresPickup,
+            requiresDelivery,
+            deliveryLocations = deliveries,
+            destinationAddress = deliveries.FirstOrDefault()?.address ?? "",
             isImo = OptionalBoolean(cargo, "isImo") ?? OptionalBoolean(accepted, "isImo"),
             imoClass = StringProperty(cargo, "imoClass"),
             unNumber = StringProperty(cargo, "unNumber"),
@@ -357,6 +362,9 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
             transitTime = StringProperty(accepted, "transitTime"),
             quoteReferences = StringProperty(accepted, "otherReferences"),
             executiveName = StringProperty(accepted, "commercialExecutiveName"),
+            polCatalogId = StringProperty(route, "polId"),
+            poeCatalogId = StringProperty(route, "poeId"),
+            podCatalogId = StringProperty(route, "podId"),
             pol = StringProperty(route, "polName"),
             pod = StringProperty(route, "podName"),
             poe = StringProperty(route, "poeName"),
@@ -370,7 +378,9 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
             estimatedWeightKg = DecimalProperty(cargo, "weightKg"),
             packageCount = DecimalProperty(cargo, "packages"),
             packages = DecimalProperty(cargo, "packages"),
+            carrierId = StringProperty(providers, "carrierId"),
             carrierReference = StringProperty(providers, "carrierName"),
+            agentId = StringProperty(providers, "agentId"),
             agentReference = StringProperty(providers, "agentName"),
             agentName = StringProperty(providers, "agentName"),
             lclGroupAgentReference = StringProperty(providers, "lclGroupAgentName"),
@@ -607,6 +617,21 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
         return string.IsNullOrWhiteSpace(address) ? [] : [new(address, null, null, null, null)];
     }
 
+    private static OpeningPickupPoint[] QuoteDeliveryPoints(JsonElement accepted)
+    {
+        var inland = ParseOptionalJson(StringProperty(accepted, "inlandServiceLocationsJson"));
+        var candidates = ArrayProperty(inland, "deliveries");
+        if (candidates.Length == 0 && ObjectProperty(inland, "delivery") is var single && single.ValueKind == JsonValueKind.Object)
+            candidates = [single];
+        string Text(JsonElement point, string key) => StringProperty(point, key) is { Length: > 0 } value
+            ? value : StringProperty(point, char.ToUpperInvariant(key[0]) + key[1..]);
+        decimal? Number(JsonElement point, string key) => OptionalDecimalProperty(point, key)
+            ?? OptionalDecimalProperty(point, char.ToUpperInvariant(key[0]) + key[1..]);
+        return candidates.Select(point => new OpeningPickupPoint(Text(point, "address"), Number(point, "latitude"),
+            Number(point, "longitude"), Text(point, "cargoCondition"), Text(point, "billingParty")))
+            .Where(point => !string.IsNullOrWhiteSpace(point.address)).ToArray();
+    }
+
     private static string CargoDescription(JsonElement cargo)
     {
         var json = StringProperty(cargo, "cargoLinesJson");
@@ -615,13 +640,13 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
         {
             using var document = JsonDocument.Parse(json);
             if (document.RootElement.ValueKind == JsonValueKind.Array)
-                return document.RootElement.EnumerateArray()
+                return string.Join(" · ", document.RootElement.EnumerateArray()
                     .Select(line => {
                         var lower = StringProperty(line, "description");
                         return !string.IsNullOrWhiteSpace(lower)
                             ? lower : StringProperty(line, "Description");
                     })
-                    .FirstOrDefault(line => !string.IsNullOrWhiteSpace(line)) ?? "";
+                    .Where(line => !string.IsNullOrWhiteSpace(line)).Distinct(StringComparer.OrdinalIgnoreCase));
         }
         catch (JsonException) { }
         return "";

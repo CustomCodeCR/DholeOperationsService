@@ -24,6 +24,8 @@ public static class OperationsOpeningDraftPolicy
 
     public static bool IsPickupService(params string?[] values) => Regex.IsMatch(string.Join(" ", values), @"recolec|pick[\s_-]*up", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
+    public static bool IsDeliveryService(params string?[] values) => Regex.IsMatch(string.Join(" ", values), @"\b(entrega|deliver(y|ies))\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
     public static string[] MissingFields(string modality, string? json, bool manualOpening = false) =>
         EvaluateFields(modality, json, manualOpening)
             .Where(x => x.CompletionStatus == "PENDIENTE_BLOQUEANTE")
@@ -84,6 +86,19 @@ public static class OperationsOpeningDraftPolicy
                     value.ValueKind == JsonValueKind.Number ? value.GetRawText() : null,
                     NumberStyles.Float, CultureInfo.InvariantCulture, out var amount) && amount > 0;
             var direction = Text("operationDirection")?.ToUpperInvariant();
+            bool ContainsDeliveryService(string key) =>
+                data.TryGetProperty(key, out var list) && list.ValueKind == JsonValueKind.Array &&
+                list.EnumerateArray().Any(item => item.ValueKind == JsonValueKind.Object &&
+                    item.EnumerateObject().Any(field => field.Value.ValueKind == JsonValueKind.String &&
+                        field.Name is "code" or "label" or "name" or "serviceCode" or "serviceName" &&
+                        IsDeliveryService(field.Value.GetString())));
+            var delivery = ContainsDeliveryService("serviceSelections") || ContainsDeliveryService("services");
+            if (delivery)
+            {
+                if (basicManual || !strictManual) Deferred("deliveryLocations", ValidPoints("deliveryLocations"), "Origin confirms delivery");
+                else Required("deliveryLocations", ValidPoints("deliveryLocations"), "Add the agreed delivery point");
+            }
+            else NotApplicable("deliveryLocations", "No delivery service selected");
             if (strictManual)
             {
                 var compatible = transport switch
@@ -114,12 +129,6 @@ public static class OperationsOpeningDraftPolicy
                 else if (shipment == "AIR")
                     Required("dimensions", Positive("lengthCm") && Positive("widthCm") && Positive("heightCm"));
                 else NotApplicable("dimensions", "Air cargo dimensions are not required for this shipment");
-                if (basicManual && (Flag("requiresDelivery") || incoterm is "DAP" or "DPU" or "DDP"))
-                    Deferred("deliveryLocations", ValidPoints("deliveryLocations"), "Origin confirms delivery");
-                else if (pricingParity && (Flag("requiresDelivery") || incoterm is "DAP" or "DPU" or "DDP"))
-                    Required("deliveryLocations", ValidPoints("deliveryLocations"), "Add the agreed delivery point");
-                else if (incoterm is "DAP" or "DPU" or "DDP")
-                    Required("destinationAddress", !string.IsNullOrWhiteSpace(Text("destinationAddress")));
                 if (transport == "MARITIME") Deferred("portHandlingMode", HasValue("portHandlingMode"), "Origin can confirm port handling");
                 else if (HasValue("portHandlingMode")) Required("portHandlingMode", false, "Port handling is not applicable to this transport");
                 else NotApplicable("portHandlingMode", "Not a maritime shipment");
@@ -254,7 +263,7 @@ public static class OperationsOpeningDraftPolicy
             // Booking and transport references can be confirmed after opening.
             var air = shipment is "AIR" or "AIRCONSOL" || transport == "AIR";
             var maritime = !nonMaritime && (shipment is "FCL" or "LCL" || transport == "MARITIME");
-            if (maritime) Deferred("haulageMode", Text("haulageMode") is "Merchant" or "Carrier" || HasValue("merchantReference"), "Origin confirms destination haulage");
+            if (maritime && delivery) Deferred("haulageMode", Text("haulageMode") is "Merchant" or "Carrier" || HasValue("merchantReference"), "Origin confirms destination haulage");
             else NotApplicable("haulageMode", "No maritime destination haulage");
             if (maritime || air) Deferred("bookingNumber", !string.IsNullOrWhiteSpace(Text("bookingNumber")), "Origin confirms booking");
             else NotApplicable("bookingNumber", "No maritime or air booking");

@@ -40,4 +40,12 @@ public sealed class OperationsOpeningShipmentParityTests
             "{\"equipmentType\": \"20GP\", \"quantity\": 1}], \"incoterm\"");
         CollectionAssert.DoesNotContain(OperationsOpeningDraftValidator.MissingFields("MULTIMODAL", fcl), "equipment");
     }
+    [TestMethod]
+    public void DeliveryRequiresContractedServiceEvenForDdp()
+    {
+        var noDelivery = BaseOpening.Replace("FOB", "DDP");
+        var yesDelivery = noDelivery.Replace("\"incoterm\"", "\"services\": [{\"serviceName\": \"Entrega\"}], \"incoterm\"");
+        Assert.AreEqual("NO_APLICA", OperationsOpeningDraftValidator.EvaluateFields("FCL", noDelivery).Single(x => x.FieldCode == "deliveryLocations").CompletionStatus);
+        Assert.AreEqual("PENDIENTE_PERMITIDO", OperationsOpeningDraftValidator.EvaluateFields("FCL", yesDelivery).Single(x => x.FieldCode == "deliveryLocations").CompletionStatus);
+    }
 }

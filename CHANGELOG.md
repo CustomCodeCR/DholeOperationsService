@@ -1,3 +1,7 @@
+## [0.39.1] - 2026-11-27
+
+- Gate delivery on quoted services and map provider IDs, delivery points and cargo descriptions from the accepted quote.
+
 ## [0.39.0] - 2026-11-27
 - Expose related IDTRAs sharing a confirmed QUO, restricted to the same company, customer and existing case visibility policy. CI and staging pending.
 
