@@ -4,7 +4,7 @@
   "component": "DholeOperationsService",
   "version": "0.36.0",
   "ecosystemVersion": "1.142.0",
-  "releaseId": "DH-20261126-OPS-REALTIME-HOLD",
-  "releaseStatus": "wip-partial-ci-staging-pending",
-  "businessReleaseId": "DH-20261126-OPS-REALTIME-HOLD"
+  "releaseId": "DH-20261126-OPS-COMPARISON-OPENING-NOTICES",
+  "releaseStatus": "candidate-ci-staging-pending",
+  "businessReleaseId": "DH-20261126-OPS-COMPARISON-OPENING-NOTICES"
 }

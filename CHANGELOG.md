@@ -1,6 +1,6 @@
 ## [0.36.0] - 2026-11-26
 
-- MINOR (WIP, no integrar): correo individual de apertura automática al operativo elegible, junto con notificación de sistema; conserva la protección de 24 horas para evitar reenvíos históricos. Prueba unitaria agregada. Pendientes HOLD, semáforo, recotización, demás equipos, manifiesto central, CI y staging.
+- MINOR: notificación por correo al responsable elegible de una apertura automática, junto con notificación de sistema; conserva protección contra reenvíos históricos, idempotencia y permisos. No modifica el enrutamiento de otros equipos.
 
 ## [0.35.0] - 2026-11-26
 

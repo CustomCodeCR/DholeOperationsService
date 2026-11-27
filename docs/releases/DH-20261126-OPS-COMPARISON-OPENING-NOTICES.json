@@ -1,0 +1,48 @@
+{
+  "releaseId": "DH-20261126-OPS-COMPARISON-OPENING-NOTICES",
+  "ecosystemVersion": "1.142.0",
+  "status": "candidate-ci-staging-pending",
+  "target": "develop",
+  "components": [
+    {
+      "component": "DholeOperationsService",
+      "previousVersion": "0.35.0",
+      "version": "0.36.0",
+      "status": "candidate"
+    },
+    {
+      "component": "DholeWeb",
+      "previousVersion": "1.141.0",
+      "version": "1.142.0",
+      "status": "candidate"
+    },
+    {
+      "component": "DholeSystem",
+      "previousVersion": "1.141.0",
+      "version": "1.142.0",
+      "status": "candidate"
+    },
+    {
+      "component": "DholePricingService",
+      "previousVersion": "1.34.0",
+      "version": "1.34.0",
+      "status": "unchanged"
+    },
+    {
+      "component": "DholeAuthService",
+      "previousVersion": "1.22.0",
+      "version": "1.22.0",
+      "status": "unchanged"
+    }
+  ],
+  "validation": "CI passed on previous feature commit; metadata candidate revalidation pending",
+  "scope": [
+    "Automatic opening individual email and existing system notification",
+    "Commercial comparison and manual review DH UX"
+  ],
+  "excludedScope": [
+    "Automatic HOLD and requotation",
+    "General pool expansion",
+    "New Pricing/Auth contracts"
+  ]
+}
