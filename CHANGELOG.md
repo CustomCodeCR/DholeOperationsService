@@ -1,3 +1,7 @@
+## [0.38.1] - 2026-11-27
+- Persist accepted consolidation identity and name; preserve the link across compatible opening and Origin updates.
+- Preserve consolidation capture in Aperturas, show cargo condition completeness for all modes, and hydrate accepted quote pickup locations and explicitly known cargo conditions. Existing audit/outbox paths retained. CI and staging pending.
+
 ## [0.37.0] - 2026-11-27
 
 ## [0.38.0] - 2026-11-27

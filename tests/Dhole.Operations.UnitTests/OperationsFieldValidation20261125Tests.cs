@@ -34,6 +34,20 @@ public sealed class OperationsFieldValidation20261125Tests
             .Single(f => f.FieldCode == "bookingNumber").CompletionStatus);
     }
     [TestMethod]
+    public void ExplicitFalseCargoConditionsRemainConfirmed()
+    {
+        var json = """{"shipmentType":"LCL","incoterm":"FOB","isImo":false,"stackable":false,"overweight":false,"consolidationReference":"CON-1"}""";
+        var fields = OperationsOpeningDraftValidator.EvaluateFields("LCL", json)
+            .ToDictionary(f => f.FieldCode, f => f.CompletionStatus);
+        foreach (var field in new[] { "isImo", "stackable", "overweight", "consolidation" })
+            Assert.AreEqual("CONFIRMADO", fields[field]);
+        var missing = OperationsOpeningDraftValidator.EvaluateFields("LCL", "{}")
+            .ToDictionary(f => f.FieldCode, f => f.CompletionStatus);
+        foreach (var field in new[] { "isImo", "stackable", "overweight", "consolidation" })
+            Assert.AreEqual("PENDIENTE_PERMITIDO", missing[field]);
+    }
+
+    [TestMethod]
     public void NewManualOpeningRequiresServiceSelection()
     {
         var noServices = Fcl.Replace("\"cargoDescription\"", "\"openingValidationVersion\":4,\"cargoDescription\"");

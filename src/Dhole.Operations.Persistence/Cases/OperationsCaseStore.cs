@@ -321,6 +321,9 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
         var cargo = ObjectProperty(accepted, "cargo");
         var providers = ObjectProperty(accepted, "providers");
         var description = CargoDescription(cargo);
+        var pickups = QuotePickupPoints(accepted);
+        var incoterm = StringProperty(accepted, "incoterm");
+        var requiresPickup = incoterm.Equals("EXW", StringComparison.OrdinalIgnoreCase) || pickups.Length > 0 || OptionalBoolean(accepted, "requiresPickup") == true;
         var opening = new {
             source = historicalNumber.HasValue ? "PRICING_HISTORICAL" : "PRICING",
             historicalIdtra = historicalNumber.HasValue ? historicalIdtra : null,
@@ -334,8 +337,21 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
             incoterm = StringProperty(accepted, "incoterm"),
             incotermName = StringProperty(accepted, "incotermName"),
             provenance = StringProperty(accepted, "operationType"),
-            pickupAddress = StringProperty(accepted, "pickupAddress"),
-            requiresPickup = !string.IsNullOrWhiteSpace(StringProperty(accepted, "pickupAddress")),
+            pickupAddress = requiresPickup ? pickups.FirstOrDefault()?.address ?? "" : "",
+            pickupLocations = requiresPickup ? pickups : [],
+            requiresPickup,
+            isImo = OptionalBoolean(cargo, "isImo") ?? OptionalBoolean(accepted, "isImo"),
+            imoClass = StringProperty(cargo, "imoClass"),
+            unNumber = StringProperty(cargo, "unNumber"),
+            stackable = QuoteStackability(cargo),
+            overweight = OptionalBoolean(cargo, "overweight") ?? OptionalBoolean(accepted, "overweight"),
+            overweightNotes = StringProperty(cargo, "overweightNotes"),
+            consolidationId = input.ModalityCode.Trim().ToUpperInvariant() == "LCL"
+                ? StringProperty(accepted, "consolidationId") : "",
+            consolidationNumber = input.ModalityCode.Trim().ToUpperInvariant() == "LCL"
+                ? OptionalDecimalProperty(accepted, "consolidationNumber") : null,
+            consolidationReference = input.ModalityCode.Trim().ToUpperInvariant() is "LCL" or "LTL"
+                ? StringProperty(accepted, "consolidationReference") : "",
             warehouseId = StringProperty(accepted, "warehouseId"),
             carrierRoute = StringProperty(accepted, "carrierRoute"),
             transitTime = StringProperty(accepted, "transitTime"),
@@ -533,6 +549,63 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
         value.ValueKind == JsonValueKind.Number &&
         value.TryGetDecimal(out var parsed)
             ? parsed : 0m;
+
+    private static bool? OptionalBoolean(JsonElement item, string key)
+    {
+        if (item.ValueKind != JsonValueKind.Object) return null;
+        foreach (var property in item.EnumerateObject())
+            if (property.Name.Equals(key, StringComparison.OrdinalIgnoreCase))
+                return property.Value.ValueKind switch
+                {
+                    JsonValueKind.True => true,
+                    JsonValueKind.False => false,
+                    _ => null
+                };
+        return null;
+    }
+
+    private static JsonElement ParseOptionalJson(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return default;
+        try { using var document = JsonDocument.Parse(json); return document.RootElement.Clone(); }
+        catch (JsonException) { return default; }
+    }
+
+    private static bool? QuoteStackability(JsonElement cargo)
+    {
+        var explicitValue = OptionalBoolean(cargo, "stackable");
+        if (explicitValue.HasValue) return explicitValue;
+        var lines = ParseOptionalJson(StringProperty(cargo, "cargoLinesJson"));
+        if (lines.ValueKind != JsonValueKind.Array || lines.GetArrayLength() == 0) return null;
+        var flags = lines.EnumerateArray().Select(line => OptionalBoolean(line, "isStackable")).ToArray();
+        return flags.Any(value => value == false) ? false : flags.All(value => value == true) ? true : null;
+    }
+
+    private sealed record OpeningPickupPoint(string address, decimal? latitude, decimal? longitude, string? cargoCondition, string? billingParty);
+
+    private static OpeningPickupPoint[] QuotePickupPoints(JsonElement accepted)
+    {
+        var inland = ParseOptionalJson(StringProperty(accepted, "inlandServiceLocationsJson"));
+        var candidates = ArrayProperty(inland, "pickups");
+        if (candidates.Length == 0 && ObjectProperty(inland, "pickup") is var single && single.ValueKind == JsonValueKind.Object)
+            candidates = [single];
+        if (candidates.Length == 0)
+        {
+            var legacy = ParseOptionalJson(StringProperty(accepted, "pickupLocationsJson"));
+            if (legacy.ValueKind == JsonValueKind.Array) candidates = legacy.EnumerateArray().ToArray();
+        }
+        string Text(JsonElement point, string key) => StringProperty(point, key) is { Length: > 0 } value
+            ? value : StringProperty(point, char.ToUpperInvariant(key[0]) + key[1..]);
+        decimal? Number(JsonElement point, string key) => OptionalDecimalProperty(point, key)
+            ?? OptionalDecimalProperty(point, char.ToUpperInvariant(key[0]) + key[1..]);
+        var points = candidates.Select(point => new OpeningPickupPoint(
+            Text(point, "address"), Number(point, "latitude"), Number(point, "longitude"),
+            Text(point, "cargoCondition"), Text(point, "billingParty")))
+            .Where(point => !string.IsNullOrWhiteSpace(point.address)).ToArray();
+        if (points.Length > 0) return points;
+        var address = StringProperty(accepted, "pickupAddress");
+        return string.IsNullOrWhiteSpace(address) ? [] : [new(address, null, null, null, null)];
+    }
 
     private static string CargoDescription(JsonElement cargo)
     {

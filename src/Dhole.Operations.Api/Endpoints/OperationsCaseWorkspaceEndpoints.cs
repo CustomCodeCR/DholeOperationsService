@@ -27,7 +27,7 @@ public static class OperationsCaseWorkspaceEndpoints
 
     public sealed record UpdateOriginStatusRequest(long ExpectedVersion, string StatusCode);
     public sealed record ConfirmOriginWeightRequest(long ExpectedVersion, decimal Value, string Unit);
-    public sealed record UpdateOriginPlanningRequest(long ExpectedVersion, string? Etd, string? Eta, string? ConsolidationReference, string? ClientPoReference = null, string? InvoiceReference = null);
+    public sealed record UpdateOriginPlanningRequest(long ExpectedVersion, string? Etd, string? Eta, string? ConsolidationReference, string? ClientPoReference = null, string? InvoiceReference = null, string? ConsolidationId = null, int? ConsolidationNumber = null);
 
     private static readonly string[] DepartmentTabs =
     [
@@ -297,7 +297,21 @@ public static class OperationsCaseWorkspaceEndpoints
             try { OperationsCargoMeasurements.SetOriginReferences(data, input.ClientPoReference, input.InvoiceReference); }
             catch (ArgumentException) { return Results.BadRequest(new { code = "OPERATIONS_ORIGIN_PLANNING_INVALID" }); }
             data["etm"] = etd; data["eta"] = eta;
-            if (operation.ModalityCode is "LCL" or "LTL") data["consolidationReference"] = consolidation;
+            if (operation.ModalityCode == "LCL")
+            {
+                // Older clients may update dates without the new link fields.
+                if (input.ConsolidationId is not null)
+                {
+                    if (input.ConsolidationId.Length > 0 && (!Guid.TryParse(input.ConsolidationId, out var selectedId) || selectedId == Guid.Empty || input.ConsolidationNumber is not > 0 || consolidation.Length == 0))
+                        return Results.BadRequest(new { code = "OPERATIONS_ORIGIN_PLANNING_INVALID" });
+                    data["consolidationId"] = input.ConsolidationId;
+                    data["consolidationNumber"] = input.ConsolidationId.Length > 0 ? input.ConsolidationNumber : null;
+                    data["consolidationReference"] = consolidation;
+                }
+                else if (string.IsNullOrWhiteSpace(data["consolidationId"]?.ToString()) && data["consolidationNumber"] is null)
+                    data["consolidationReference"] = consolidation;
+            }
+            else if (operation.ModalityCode == "LTL") data["consolidationReference"] = consolidation;
             operation.OpeningDataJson = data.ToJsonString();
             operation.Version++;
             operation.UpdatedAtUtc = DateTimeOffset.UtcNow;
