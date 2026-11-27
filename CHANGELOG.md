@@ -1,3 +1,6 @@
+## [0.39.0] - 2026-11-27
+- Expose related IDTRAs sharing a confirmed QUO, restricted to the same company, customer and existing case visibility policy. CI and staging pending.
+
 ## [0.38.2] - 2026-11-27
 - Align stackability applicability with LCL/LTL/air and derive new opening pickup from EXW or agreed collection service. Preserve historical validation contract.
 
