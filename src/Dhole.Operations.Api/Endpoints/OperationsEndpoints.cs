@@ -335,7 +335,7 @@ public static class OperationsEndpoints
 
         api.MapGet("/teams", async (HttpContext http, OperationsCaseAccess access, OperationsDbContext db, CancellationToken ct) =>
         {
-            if (!OperationsCaseAccess.HasScope(http.User, "operations.team.manage")) return Results.Forbid();
+            if (!OperationsCaseAccess.HasTeamPermission(http.User, "operations.team.read")) return Results.Forbid();
             var company = await access.ResolveCompanyIdAsync(http.User, ct);
             if (!OperationsCaseAccess.IsSystemAdministrator(http.User) && company is null) return Results.Forbid();
             var query = db.Teams.AsNoTracking();
@@ -345,16 +345,16 @@ public static class OperationsEndpoints
                     Members = x.Members.Select(m => new { m.UserId, m.CapacityPoints, m.IsAvailable, m.IsSupervisor, m.RoleCode }) })
                 .ToArrayAsync(ct);
             return Results.Ok(teams.Select(t => new { t.Id, t.CompanyId, t.DepartmentCode, t.Name, t.IsActive,
-                t.Members, OperatorScopes = OperationsTeamCatalogEndpoints.OperatorScopes(t.DepartmentCode),
-                SupervisorScopes = OperationsTeamCatalogEndpoints.SupervisorScopes(t.DepartmentCode),
-                RoleProfiles = OperationsTeamCatalogEndpoints.RoleProfiles(t.DepartmentCode) }));
+                t.Members, OperatorScopes = OperationsTeamCatalogEndpoints.OperatorScopes(t.DepartmentCode, t.Name),
+                SupervisorScopes = OperationsTeamCatalogEndpoints.SupervisorScopes(t.DepartmentCode, t.Name),
+                RoleProfiles = OperationsTeamCatalogEndpoints.RoleProfiles(t.DepartmentCode, t.Name) }));
         });
 
         api.MapPost("/teams/{teamId:guid}/members", async (
             Guid teamId, NewMemberRequest input, HttpContext http, OperationsCaseAccess access, OperationsDbContext db,
             OperationsAuthUserVerifier auth, CancellationToken ct) =>
         {
-            if (!OperationsCaseAccess.HasScope(http.User, "operations.team.manage")) return Results.Forbid();
+            if (!OperationsCaseAccess.HasTeamPermission(http.User, "operations.team.member.assign")) return Results.Forbid();
             var team = await db.Teams.FindAsync([teamId], ct);
             if (team is null) return Results.NotFound();
             if (!OperationsCaseAccess.IsSystemAdministrator(http.User) && team.CompanyId != await access.ResolveCompanyIdAsync(http.User, ct))
@@ -407,7 +407,7 @@ public static class OperationsEndpoints
             OperationsAuthUserVerifier auth, CancellationToken ct) =>
         {
             var actor = OperationsCaseAccess.UserId(http.User);
-            if (actor is null || !OperationsCaseAccess.HasScope(http.User, "operations.team.manage"))
+            if (actor is null || !OperationsCaseAccess.HasTeamPermission(http.User, "operations.team.member.assign"))
                 return Results.Forbid();
             var team = await db.Teams.SingleOrDefaultAsync(t => t.Id == teamId, ct);
             if (team is null) return Results.NotFound();

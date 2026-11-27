@@ -72,7 +72,7 @@ public sealed class OperationsTeamPermissionSyncWorker(
             (m.Team.DepartmentCode == "APERTURAS" || m.Team.DepartmentCode == "COORDINACION_ORIGEN" ||
              m.Team.DepartmentCode == "DOCUMENTACION" || m.Team.DepartmentCode == "TRANSITO" ||
              m.Team.DepartmentCode == "PANAMA" || m.Team.DepartmentCode == "COSTA_RICA"))
-            .Select(m => new { m.UserId, m.Team.DepartmentCode, m.IsSupervisor, m.RoleCode })
+            .Select(m => new { m.UserId, m.Team.DepartmentCode, m.IsSupervisor, m.RoleCode, TeamName = m.Team.Name })
             .Distinct().ToArrayAsync(ct);
 
         // Workload availability is deliberately independent of permissions.

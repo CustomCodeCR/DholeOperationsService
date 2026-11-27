@@ -36,30 +36,34 @@ public static class OperationsTeamCatalogEndpoints
 
     // Profiles mirror Auth's allowlisted automatic membership grants. Future departments
     // have no default grants until their business rules are defined.
-    public static string[] OperatorScopes(string department) => department switch
+    public static string[] OperatorScopes(string department, string? teamName = null) => department switch
     {
         "APERTURAS" => ["operations.case.read", "operations.case.create", "operations.case.update",
             "operations.aperture.update", "operations.aperture.validation.review", "operations.realtime.read"],
         "COORDINACION_ORIGEN" => ["operations.case.read", "operations.origin.read", "operations.origin.update",
             "operations.origin.departure.confirm", "operations.internal-note.read",
-            "operations.internal-note.create", "operations.document.manage", "operations.realtime.read"],
+            "operations.internal-note.create", "operations.document.manage", "operations.realtime.read",
+            .. (teamName == OperationsOriginRouting.CentralAmericaTeam ? new[] { "operations.central-america.manage" } :
+                teamName is "Origen · Transporte terrestre" or OperationsOriginRouting.FtlTeam or OperationsOriginRouting.LtlTeam ? new[] { "operations.land.manage" } : Array.Empty<string>())],
         "DOCUMENTACION" => ["operations.case.read", "operations.document.manage", "operations.realtime.read"],
-        "TRANSITO" or "PANAMA" or "COSTA_RICA" => ["operations.case.read", "operations.realtime.read"],
+        "TRANSITO" => ["operations.case.read", "operations.transit.manage", "operations.realtime.read"],
+        "PANAMA" => ["operations.case.read", "operations.panama.manage", "operations.realtime.read"],
+        "COSTA_RICA" => ["operations.case.read", "operations.costa-rica.manage", "operations.realtime.read"],
         _ => []
     };
 
-    public static string[] SupervisorScopes(string department) => department switch
+    public static string[] SupervisorScopes(string department, string? teamName = null) => department switch
     {
-        "APERTURAS" or "COORDINACION_ORIGEN" or "DOCUMENTACION" or "TRANSITO" or "PANAMA" or "COSTA_RICA" => [.. OperatorScopes(department), "operations.audit.read"],
+        "APERTURAS" or "COORDINACION_ORIGEN" or "DOCUMENTACION" or "TRANSITO" or "PANAMA" or "COSTA_RICA" => [.. OperatorScopes(department, teamName), "operations.audit.read"],
         _ => []
     };
 
-    public static Dictionary<string, string[]> RoleProfiles(string department)
+    public static Dictionary<string, string[]> RoleProfiles(string department, string? teamName = null)
     {
         var profiles = new Dictionary<string, string[]>
         {
-            [OperationsTeamResponsibility.Operator] = OperatorScopes(department),
-            [OperationsTeamResponsibility.LegacyTeamSupervisor] = SupervisorScopes(department)
+            [OperationsTeamResponsibility.Operator] = OperatorScopes(department, teamName),
+            [OperationsTeamResponsibility.LegacyTeamSupervisor] = SupervisorScopes(department, teamName)
         };
         if (OperationsTeamResponsibility.IsValid(OperationsTeamResponsibility.LogisticsManager, department))
         {

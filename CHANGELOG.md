@@ -1,3 +1,7 @@
+## [0.35.0] - 2026-11-26
+
+- MINOR candidato: separación de permisos de consulta, asignación y retiro de integrantes, perfiles operativos por equipo y sincronización con Auth. CI y staging pendientes. No habilita borrado de expedientes.
+
 ## [0.34.0] - 2026-11-26
 
 - MINOR candidato: responsabilidades por integrante, acceso transversal de jefatura/gerencia y supervisión de origen, perfiles de scopes por departamento y sincronización duradera con Auth. Los cargos transversales no entran al pool. Preserva el catálogo y enrutamiento existentes. CI y staging pendientes; aprovisionamiento de empleados pendiente.

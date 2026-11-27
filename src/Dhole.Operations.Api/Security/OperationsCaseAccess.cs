@@ -39,6 +39,10 @@ public sealed class OperationsCaseAccess(OperationsDbContext db)
              .SelectMany(x => x.Value.Split([' ', ',', ';'], StringSplitOptions.RemoveEmptyEntries))
              .Contains(scope, StringComparer.OrdinalIgnoreCase));
 
+    // Legacy team management retains its original permissions.
+    public static bool HasTeamPermission(ClaimsPrincipal user, string scope) =>
+        HasScope(user, scope) || HasScope(user, "operations.team.manage");
+
     /// <summary>
     /// Auth currently issues internal-user JWTs without a company identifier.
     /// Accept such a context only when the Operations database has precisely one
