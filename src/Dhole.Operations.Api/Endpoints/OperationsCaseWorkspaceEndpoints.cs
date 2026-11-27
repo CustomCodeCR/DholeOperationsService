@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Dhole.Operations.Api.Integrations;
 using Dhole.Operations.Domain.Services;
 using Dhole.Operations.Api.Security;
 using Dhole.Operations.Domain.Models;
@@ -165,7 +166,7 @@ public static class OperationsCaseWorkspaceEndpoints
         // commercial snapshot, CRM executive and validated workflow are immutable here.
         api.MapPatch("/cases/{id:guid}", async (
             Guid id, UpdateCaseRequest request, HttpContext http,
-            OperationsCaseAccess access, OperationsDbContext db, CancellationToken ct) =>
+            OperationsCaseAccess access, OperationsDbContext db, OperationsCrmAccountResolver crm, CancellationToken ct) =>
         {
             var actor = OperationsCaseAccess.UserId(http.User);
             if (actor is null || !await CanEditApertureAsync(
@@ -206,6 +207,10 @@ public static class OperationsCaseWorkspaceEndpoints
                     var incoming = OperationsCargoMeasurements.Parse(request.OpeningData.Value.GetRawText());
                     OperationsCargoMeasurements.PreserveOriginFields(incoming, OperationsCargoMeasurements.Parse(operation.OpeningDataJson));
                     OperationsCargoMeasurements.NormalizeOpening(incoming);
+                    var divisionResult = await crm.ValidateDivisionAsync(operation.AccountId, incoming,
+                        http.Request.Headers.Authorization.ToString(), actor, ct);
+                    if (divisionResult.ErrorCode is not null)
+                        return Results.Json(new { code = divisionResult.ErrorCode }, statusCode: divisionResult.StatusCode);
                     operation.OpeningDataJson = incoming.ToJsonString();
                 }
                 catch (ArgumentException) { return Results.BadRequest(new { code = "OPERATIONS_OPENING_MEASUREMENT_INVALID" }); }

@@ -102,6 +102,12 @@ public static class OperationsEndpoints
             try
             {
                 var openingData = ValidateOpeningData(request.OpeningData);
+                var opening = OperationsCargoMeasurements.Parse(openingData);
+                var divisionResult = await crm.ValidateDivisionAsync(request.AccountId, opening,
+                    http.Request.Headers.Authorization.ToString(), null, ct);
+                if (divisionResult.ErrorCode is not null)
+                    return Results.Json(new { code = divisionResult.ErrorCode }, statusCode: divisionResult.StatusCode);
+                openingData = opening.ToJsonString();
                 var missing = OperationsOpeningDraftValidator.MissingFields(request.ModalityCode, openingData, manualOpening: true);
                 if (missing.Length > 0)
                     return Results.Conflict(new { code = "APERTURE_MISSING_REQUIRED_FIELDS", missingFields = missing });
@@ -135,13 +141,22 @@ public static class OperationsEndpoints
         // Never maintain a shadow copy of personal contact data in Operations.
         api.MapGet("/cases/{id:guid}/operations-contacts", async (
             Guid id, HttpContext http, OperationsCaseAccess access, OperationsDbContext db,
-            IHttpClientFactory factory, IConfiguration configuration, CancellationToken ct) =>
+            IHttpClientFactory factory, IConfiguration configuration, CancellationToken ct, bool? directory) =>
         {
             if (!OperationsCaseAccess.HasScope(http.User, "operations.case.read") ||
                 !await access.CanReadAsync(id, http.User, ct)) return Results.Forbid();
-            var accountId = await db.Cases.AsNoTracking().Where(x => x.Id == id)
-                .Select(x => (Guid?)x.AccountId).SingleOrDefaultAsync(ct);
-            if (accountId is null) return Results.NotFound();
+            var record = await db.Cases.AsNoTracking().Where(x => x.Id == id)
+                .Select(x => new { x.AccountId, x.OpeningDataJson }).SingleOrDefaultAsync(ct);
+            if (record is null) return Results.NotFound();
+            var data = OperationsCargoMeasurements.Parse(record.OpeningDataJson);
+            var query = directory == true ? "?includeDirectory=true" : "";
+            if (directory != true && data["crmDivisionId"] is System.Text.Json.Nodes.JsonValue division &&
+                division.TryGetValue<string>(out var divisionId) && !string.IsNullOrWhiteSpace(divisionId))
+            {
+                if (!Guid.TryParse(divisionId, out var parsed))
+                    return Results.Conflict(new { code = "CRM_DIVISION_INVALID" });
+                query = $"?divisionId={parsed:D}";
+            }
 
             // This URI is deployment-owned; never accept an arbitrary URL from callers.
             var configured = configuration["Crm:ApiBaseUrl"];
@@ -156,7 +171,7 @@ public static class OperationsEndpoints
             if (string.IsNullOrWhiteSpace(serviceKey))
                 return Results.Problem(statusCode: 503, title: "Internal CRM contacts key not configured");
             var url = new Uri(new Uri(baseUrl.ToString().TrimEnd('/') + "/"),
-                $"api/internal/crm/operations/accounts/{accountId.Value:D}/contacts");
+                $"api/internal/crm/operations/accounts/{record.AccountId:D}/contacts{query}");
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
             request.Headers.TryAddWithoutValidation("X-Dhole-Service-Key", serviceKey);
             request.Headers.TryAddWithoutValidation("X-Dhole-Operations-Actor", actor.Value.ToString("D"));
@@ -166,6 +181,7 @@ public static class OperationsEndpoints
                     .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
                 if (response.StatusCode == HttpStatusCode.Forbidden) return Results.Forbid();
                 if (response.StatusCode == HttpStatusCode.Unauthorized) return Results.Unauthorized();
+                if (response.StatusCode == HttpStatusCode.NotFound) return Results.NotFound();
                 if (!response.IsSuccessStatusCode)
                     return Results.Problem(statusCode: 503, title: "CRM operations contacts temporarily unavailable");
                 var body = await response.Content.ReadAsStringAsync(ct);
