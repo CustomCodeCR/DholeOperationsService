@@ -346,6 +346,10 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
             stackable = QuoteStackability(cargo),
             overweight = OptionalBoolean(cargo, "overweight") ?? OptionalBoolean(accepted, "overweight"),
             overweightNotes = StringProperty(cargo, "overweightNotes"),
+            consolidationId = input.ModalityCode.Trim().ToUpperInvariant() == "LCL"
+                ? StringProperty(accepted, "consolidationId") : "",
+            consolidationNumber = input.ModalityCode.Trim().ToUpperInvariant() == "LCL"
+                ? OptionalDecimalProperty(accepted, "consolidationNumber") : null,
             consolidationReference = input.ModalityCode.Trim().ToUpperInvariant() is "LCL" or "LTL"
                 ? StringProperty(accepted, "consolidationReference") : "",
             warehouseId = StringProperty(accepted, "warehouseId"),
