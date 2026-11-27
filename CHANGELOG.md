@@ -1,3 +1,7 @@
+## [0.39.2] - 2026-11-27
+
+- Build staging images on GitHub-hosted runners and load checksum-verified, commit-specific images locally; preserve production workflow and runtime configuration. CI and staging pending.
+
 ## [0.39.1] - 2026-11-27
 
 - Gate delivery on quoted services and map provider IDs, delivery points and cargo descriptions from the accepted quote.
