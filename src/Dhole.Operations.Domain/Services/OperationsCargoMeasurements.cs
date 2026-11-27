@@ -86,8 +86,13 @@ public static class OperationsCargoMeasurements
             else incoming.Remove(key);
         }
         // Aperturas can now capture the consolidation reference. Older clients may omit it.
-        if (string.IsNullOrWhiteSpace(Text(incoming["consolidationReference"])) && previous.ContainsKey("consolidationReference"))
-            incoming["consolidationReference"] = previous["consolidationReference"]?.DeepClone();
+        if (!incoming.ContainsKey("consolidationId"))
+        {
+            foreach (var key in new[] { "consolidationId", "consolidationNumber" })
+                if (previous.ContainsKey(key)) incoming[key] = previous[key]?.DeepClone();
+            if (string.IsNullOrWhiteSpace(Text(incoming["consolidationReference"])) && previous.ContainsKey("consolidationReference"))
+                incoming["consolidationReference"] = previous["consolidationReference"]?.DeepClone();
+        }
         if (previous.ContainsKey("quotedWeightKg"))
             incoming["quotedWeightKg"] = previous["quotedWeightKg"]?.DeepClone();
         else incoming.Remove("quotedWeightKg");

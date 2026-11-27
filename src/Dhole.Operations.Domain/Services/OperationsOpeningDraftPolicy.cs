@@ -263,7 +263,7 @@ public static class OperationsOpeningDraftPolicy
                 Deferred("volume", Positive("volume") || Positive("volumeCbm") || Positive("volumeValue"),
                     "Volume may be confirmed during origin coordination");
             if (shipment is "LCL" or "LTL")
-                Deferred("consolidation", HasValue("consolidationReference") || HasValue("consolidation"),
+                Deferred("consolidation", HasValue("consolidationReference") || HasValue("consolidation") || HasValue("consolidationId") || Positive("consolidationNumber"),
                     "Consolidation can be confirmed by origin");
             else NotApplicable("consolidation", "Consolidation not required for this shipment");
             if (basicManual && shipment == "FCL") Required("carrierReference", HasValue("carrierReference"));
