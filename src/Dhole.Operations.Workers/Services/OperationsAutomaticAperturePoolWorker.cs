@@ -34,22 +34,24 @@ public sealed class OperationsAutomaticAperturePoolWorker(IServiceScopeFactory s
                         .OrderBy(s => s.Case.CreatedAtUtc).ThenBy(s => s.Id)
                         .Select(s => s.CaseId).ToArrayAsync(stoppingToken);
                 }
-                var cache = new Dictionary<Guid, bool>();
+                var cache = new Dictionary<Guid, (bool Eligible, string? Email)>();
                 var assigned = 0;
                 async Task<bool> Eligible(Guid userId, CancellationToken ct)
                 {
-                    if (cache.TryGetValue(userId, out var previous)) return previous;
+                    if (cache.TryGetValue(userId, out var previous)) return previous.Eligible;
                     var result = await VerifyAsync(userId, ct);
                     cache[userId] = result;
-                    return result;
+                    return result.Eligible;
                 }
+                string? EmailForUser(Guid userId) => cache.TryGetValue(userId, out var result) && result.Eligible
+                    ? result.Email : null;
                 foreach (var id in ids)
                 {
                     using var scope = scopes.CreateScope();
                     try
                     {
                         if (await OperationsAutomaticAperturePool.TryAssignAsync(
-                            scope.ServiceProvider.GetRequiredService<OperationsDbContext>(), id, Eligible, stoppingToken))
+                            scope.ServiceProvider.GetRequiredService<OperationsDbContext>(), id, Eligible, stoppingToken, EmailForUser))
                             assigned++;
                     }
                     catch (HttpRequestException) { throw; } // retry whole cycle on Auth failure, fail closed
@@ -65,7 +67,7 @@ public sealed class OperationsAutomaticAperturePoolWorker(IServiceScopeFactory s
         }
     }
 
-    private async Task<bool> VerifyAsync(Guid userId, CancellationToken ct)
+    private async Task<(bool Eligible, string? Email)> VerifyAsync(Guid userId, CancellationToken ct)
     {
         var address = configuration["Auth:OperationsPool:BaseAddress"];
         var key = configuration["Auth:OperationsPool:InternalServiceKey"];
@@ -77,11 +79,14 @@ public sealed class OperationsAutomaticAperturePoolWorker(IServiceScopeFactory s
         req.Headers.TryAddWithoutValidation("X-Dhole-Service-Key", key);
         using var response = await clients.CreateClient("auth-operations-pool")
             .SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
-        if (response.StatusCode == HttpStatusCode.NotFound) return false;
+        if (response.StatusCode == HttpStatusCode.NotFound) return (false, null);
         if (!response.IsSuccessStatusCode) throw new HttpRequestException("Internal Auth eligibility unavailable");
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
-        return document.RootElement.TryGetProperty("eligibleForOperations", out var eligible) &&
+        var allowed = document.RootElement.TryGetProperty("eligibleForOperations", out var eligible) &&
             eligible.ValueKind == JsonValueKind.True &&
             document.RootElement.TryGetProperty("canReviewAperturas", out var review) && review.ValueKind == JsonValueKind.True;
+        var email = allowed && document.RootElement.TryGetProperty("email", out var addressValue) &&
+            addressValue.ValueKind == JsonValueKind.String ? addressValue.GetString() : null;
+        return (allowed, email);
     }
 }

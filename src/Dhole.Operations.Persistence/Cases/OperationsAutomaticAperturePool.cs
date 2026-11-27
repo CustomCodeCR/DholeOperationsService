@@ -12,7 +12,8 @@ namespace Dhole.Operations.Persistence.Cases;
 public static class OperationsAutomaticAperturePool
 {
     public static async Task<bool> TryAssignAsync(OperationsDbContext db, Guid caseId,
-        Func<Guid, CancellationToken, Task<bool>> eligible, CancellationToken ct)
+        Func<Guid, CancellationToken, Task<bool>> eligible, CancellationToken ct,
+        Func<Guid, string?>? emailForUser = null)
     {
         var company = await db.Cases.AsNoTracking().Where(c => c.Id == caseId)
             .Select(c => (Guid?)c.CompanyId).SingleOrDefaultAsync(ct);
@@ -138,8 +139,16 @@ public static class OperationsAutomaticAperturePool
         var cutoff = DateTimeOffset.UtcNow.AddHours(-24);
         if (!legacyPair && await db.AcceptedQuoteSnapshots.AsNoTracking().AnyAsync(
                 s => s.CaseId == caseId && s.AcceptedAtUtc >= cutoff, ct))
+        {
             db.OutboxMessages.Add(OperationsOutboxFactory.CreateOpeningAssignedNotification(
                 caseId, operation.Idtra, assignment.Id, selectedUser));
+            if (System.Net.Mail.MailAddress.TryCreate(emailForUser?.Invoke(selectedUser), out var email))
+                db.OutboxMessages.Add(OperationsOutboxFactory.CreateOpeningAssignedNotification(
+                    caseId, operation.Idtra, assignment.Id, selectedUser, email.Address));
+            else if (emailForUser is not null)
+                OperationsAuditWriter.Case(db, caseId, stage.Id, operation.CreatedBy,
+                    "operations.aperture.notification.email.unavailable", null, new { userId = selectedUser });
+        }
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return true;

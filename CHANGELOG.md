@@ -1,3 +1,7 @@
+## [0.36.0] - 2026-11-26
+
+- MINOR: notificación por correo al responsable elegible de una apertura automática, junto con notificación de sistema; conserva protección contra reenvíos históricos, idempotencia y permisos. No modifica el enrutamiento de otros equipos.
+
 ## [0.35.0] - 2026-11-26
 
 - MINOR candidato: separación de permisos de consulta, asignación y retiro de integrantes, perfiles operativos por equipo y sincronización con Auth. CI y staging pendientes. No habilita borrado de expedientes.
