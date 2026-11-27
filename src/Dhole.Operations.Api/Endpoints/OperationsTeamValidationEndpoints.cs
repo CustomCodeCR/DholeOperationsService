@@ -399,7 +399,7 @@ public static class OperationsTeamValidationEndpoints
             Guid teamId, Guid userId, HttpContext http, OperationsCaseAccess access, OperationsDbContext db, CancellationToken ct) =>
         {
             var actor = OperationsCaseAccess.UserId(http.User);
-            if (actor is null || !OperationsCaseAccess.HasScope(http.User, "operations.team.manage"))
+            if (actor is null || !OperationsCaseAccess.HasTeamPermission(http.User, "operations.team.member.remove"))
                 return Results.Forbid();
             var team = await db.Teams.SingleOrDefaultAsync(t => t.Id == teamId, ct);
             if (team is null) return Results.NotFound();
@@ -425,7 +425,7 @@ public static class OperationsTeamValidationEndpoints
             Guid teamId, HttpContext http, OperationsCaseAccess access, OperationsDbContext db, CancellationToken ct) =>
         {
             if (!OperationsCaseAccess.HasScope(http.User, "operations.audit.read") ||
-                !OperationsCaseAccess.HasScope(http.User, "operations.team.manage"))
+                !OperationsCaseAccess.HasTeamPermission(http.User, "operations.team.read"))
                 return Results.Forbid();
             var team = await db.Teams.AsNoTracking().SingleOrDefaultAsync(t => t.Id == teamId, ct);
             if (team is null) return Results.NotFound();
