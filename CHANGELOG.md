@@ -1,3 +1,7 @@
+## [0.34.0] - 2026-11-26
+
+- MINOR candidato: responsabilidades por integrante, acceso transversal de jefatura/gerencia y supervisión de origen, perfiles de scopes por departamento y sincronización duradera con Auth. Los cargos transversales no entran al pool. Preserva el catálogo y enrutamiento existentes. CI y staging pendientes; aprovisionamiento de empleados pendiente.
+
 ## [0.33.0] - 2026-11-26
 
 - MINOR: sincronización automática de membresías con Auth mediante Outbox, Redis Streams, reconciliación inicial/periódica y checkpoint durable. Alta, baja, cambios de responsabilidad y activación de equipos. CI y staging pendientes.

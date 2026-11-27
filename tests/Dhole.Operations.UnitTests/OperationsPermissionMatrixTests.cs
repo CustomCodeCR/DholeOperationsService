@@ -23,7 +23,12 @@ public sealed class OperationsPermissionMatrixTests
             CollectionAssert.DoesNotContain(supervisor, "operations.finance.manage");
             CollectionAssert.DoesNotContain(supervisor, "operations.team.manage");
         }
-        Assert.IsEmpty(OperationsTeamCatalogEndpoints.OperatorScopes("TRANSITO"));
+        foreach (var department in new[] { "TRANSITO", "PANAMA", "COSTA_RICA" })
+            CollectionAssert.AreEquivalent(new[] { "operations.case.read", "operations.realtime.read" },
+                OperationsTeamCatalogEndpoints.OperatorScopes(department));
+        CollectionAssert.AreEquivalent(new[] { "operations.case.read", "operations.document.manage", "operations.realtime.read" },
+            OperationsTeamCatalogEndpoints.OperatorScopes("DOCUMENTACION"));
+        Assert.IsEmpty(OperationsTeamCatalogEndpoints.OperatorScopes("FINANZAS"));
     }
 
     [TestMethod]

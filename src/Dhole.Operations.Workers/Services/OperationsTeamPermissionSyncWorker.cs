@@ -69,8 +69,10 @@ public sealed class OperationsTeamPermissionSyncWorker(
         var revision = (await db.Database.SqlQueryRaw<long>(
             "SELECT txid_current()::bigint AS \"Value\"").ToListAsync(ct)).Single();
         var members = await db.TeamMembers.AsNoTracking().Where(m => m.Team.IsActive &&
-            (m.Team.DepartmentCode == "APERTURAS" || m.Team.DepartmentCode == "COORDINACION_ORIGEN"))
-            .Select(m => new { m.UserId, m.Team.DepartmentCode, m.IsSupervisor })
+            (m.Team.DepartmentCode == "APERTURAS" || m.Team.DepartmentCode == "COORDINACION_ORIGEN" ||
+             m.Team.DepartmentCode == "DOCUMENTACION" || m.Team.DepartmentCode == "TRANSITO" ||
+             m.Team.DepartmentCode == "PANAMA" || m.Team.DepartmentCode == "COSTA_RICA"))
+            .Select(m => new { m.UserId, m.Team.DepartmentCode, m.IsSupervisor, m.RoleCode })
             .Distinct().ToArrayAsync(ct);
 
         // Workload availability is deliberately independent of permissions.

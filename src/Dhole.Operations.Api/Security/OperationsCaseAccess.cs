@@ -70,11 +70,24 @@ public sealed class OperationsCaseAccess(OperationsDbContext db)
             query = query.Where(c => c.CompanyId == company.Value);
         }
         if (admin && teamId is null && department is null) return query;
-        return query.Where(c => c.Status != "CANCELLED" && c.Status != "COMPLETED" &&
+        var allScope = !admin && HasScope(user, "operations.case.read-all");
+        var originScope = !admin && HasScope(user, "operations.origin.read-all");
+        // Scope claims alone are insufficient: active role membership and company
+        // must still match in SQL, including during token refresh/revocation.
+        return query.Where(c =>
+            (allScope && db.TeamMembers.Any(m => m.UserId == actor.Value && m.Team.IsActive &&
+                m.Team.CompanyId == c.CompanyId &&
+                (m.RoleCode == OperationsTeamResponsibility.LogisticsManager || m.RoleCode == OperationsTeamResponsibility.OperationsHead)) &&
+                ((!teamId.HasValue && department == null) || c.Stages.Any(s =>
+                    (!teamId.HasValue || s.TeamId == teamId) && (department == null || s.DepartmentCode == department)))) ||
+            (c.Status != "CANCELLED" && c.Status != "COMPLETED" &&
             c.Stages.Any(s => s.Status != "COMPLETED" && s.Status != "SKIPPED" &&
                 (!teamId.HasValue || s.TeamId == teamId) &&
                 (department == null || s.DepartmentCode == department) &&
-                (admin || (s.TeamId.HasValue &&
+                (admin || (originScope && s.DepartmentCode == "COORDINACION_ORIGEN" &&
+                    db.TeamMembers.Any(m => m.UserId == actor.Value && m.Team.IsActive &&
+                        m.Team.CompanyId == c.CompanyId && m.Team.DepartmentCode == "COORDINACION_ORIGEN" &&
+                        m.RoleCode == OperationsTeamResponsibility.OriginSupervisor)) || (s.TeamId.HasValue &&
                     db.TeamMembers.Any(m => m.TeamId == s.TeamId.Value &&
                         m.UserId == actor.Value && m.Team.IsActive &&
                         (m.IsSupervisor ||
@@ -86,7 +99,7 @@ public sealed class OperationsCaseAccess(OperationsDbContext db)
                              v.TeamId == m.TeamId && v.UserId == actor.Value &&
                              ((s.Status == "PENDING_VALIDATION" && v.Status == "PENDING" &&
                                !db.ApertureValidations.Any(previous => previous.CaseStageId == v.CaseStageId && previous.Status == "PENDING" && previous.Slot < v.Slot)) ||
-                              (s.Status == "CHANGES_REQUIRED" && v.Status == "REJECTED"))))))))));
+                              (s.Status == "CHANGES_REQUIRED" && v.Status == "REJECTED")))))))))));
     }
 
     public async Task<bool> CanReadAsync(Guid caseId, ClaimsPrincipal user, CancellationToken ct)

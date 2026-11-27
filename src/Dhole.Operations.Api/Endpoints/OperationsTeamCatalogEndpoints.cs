@@ -43,14 +43,33 @@ public static class OperationsTeamCatalogEndpoints
         "COORDINACION_ORIGEN" => ["operations.case.read", "operations.origin.read", "operations.origin.update",
             "operations.origin.departure.confirm", "operations.internal-note.read",
             "operations.internal-note.create", "operations.document.manage", "operations.realtime.read"],
+        "DOCUMENTACION" => ["operations.case.read", "operations.document.manage", "operations.realtime.read"],
+        "TRANSITO" or "PANAMA" or "COSTA_RICA" => ["operations.case.read", "operations.realtime.read"],
         _ => []
     };
 
     public static string[] SupervisorScopes(string department) => department switch
     {
-        "APERTURAS" or "COORDINACION_ORIGEN" => [.. OperatorScopes(department), "operations.audit.read"],
+        "APERTURAS" or "COORDINACION_ORIGEN" or "DOCUMENTACION" or "TRANSITO" or "PANAMA" or "COSTA_RICA" => [.. OperatorScopes(department), "operations.audit.read"],
         _ => []
     };
+
+    public static Dictionary<string, string[]> RoleProfiles(string department)
+    {
+        var profiles = new Dictionary<string, string[]>
+        {
+            [OperationsTeamResponsibility.Operator] = OperatorScopes(department),
+            [OperationsTeamResponsibility.LegacyTeamSupervisor] = SupervisorScopes(department)
+        };
+        if (OperationsTeamResponsibility.IsValid(OperationsTeamResponsibility.LogisticsManager, department))
+        {
+            profiles[OperationsTeamResponsibility.LogisticsManager] = ["operations.case.read", "operations.case.read-all", "operations.realtime.read"];
+            profiles[OperationsTeamResponsibility.OperationsHead] = ["operations.case.read", "operations.case.read-all", "operations.realtime.read"];
+        }
+        if (department == "COORDINACION_ORIGEN")
+            profiles[OperationsTeamResponsibility.OriginSupervisor] = ["operations.case.read", "operations.origin.read", "operations.origin.read-all", "operations.realtime.read"];
+        return profiles;
+    }
 
     public static IEndpointRouteBuilder MapOperationsTeamCatalogEndpoints(this IEndpointRouteBuilder app)
     {

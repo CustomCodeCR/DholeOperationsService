@@ -21,15 +21,21 @@ public static class OperationsDashboardEndpoints
                 return Results.Forbid();
 
             var isAdmin = OperationsCaseAccess.IsSystemAdministrator(http.User);
-            var readAll = isAdmin;
             var canReview = OperationsCaseAccess.HasScope(http.User, "operations.aperture.validation.review");
             var company = await access.ResolveCompanyIdAsync(http.User, ct);
             if (!isAdmin && company is null) return Results.Forbid();
 
+            var activeMemberships = db.TeamMembers.AsNoTracking().Where(m => m.UserId == actor.Value &&
+                m.Team.IsActive && m.Team.CompanyId == company);
+            var readAll = isAdmin || (OperationsCaseAccess.HasScope(http.User, "operations.case.read-all") &&
+                await activeMemberships.AnyAsync(m => m.RoleCode == "LOGISTICS_MANAGER" || m.RoleCode == "OPERATIONS_HEAD", ct));
+            var readOrigin = OperationsCaseAccess.HasScope(http.User, "operations.origin.read-all") &&
+                await activeMemberships.AnyAsync(m => m.RoleCode == "ORIGIN_SUPERVISOR" && m.Team.DepartmentCode == "COORDINACION_ORIGEN", ct);
             var teamQuery = db.Teams.AsNoTracking();
             if (!isAdmin) teamQuery = teamQuery.Where(t => t.CompanyId == company);
             if (!readAll)
-                teamQuery = teamQuery.Where(t => t.IsActive && t.Members.Any(m => m.UserId == actor.Value));
+                teamQuery = teamQuery.Where(t => t.IsActive && (t.Members.Any(m => m.UserId == actor.Value) ||
+                    (readOrigin && t.DepartmentCode == "COORDINACION_ORIGEN")));
 
             var teams = await teamQuery.OrderBy(t => t.DepartmentCode).ThenBy(t => t.Name)
                 .Select(t => new
