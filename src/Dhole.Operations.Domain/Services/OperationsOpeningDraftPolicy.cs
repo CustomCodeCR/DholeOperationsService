@@ -22,6 +22,8 @@ public static class OperationsOpeningDraftPolicy
             (revision >= 6 && (mode is "FCL" or "FTL") && term.Value == "FCA");
     }
 
+    public static bool IsPickupService(params string?[] values) => Regex.IsMatch(string.Join(" ", values), @"recolec|pick[\s_-]*up", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
     public static string[] MissingFields(string modality, string? json, bool manualOpening = false) =>
         EvaluateFields(modality, json, manualOpening)
             .Where(x => x.CompletionStatus == "PENDIENTE_BLOQUEANTE")
@@ -180,8 +182,14 @@ public static class OperationsOpeningDraftPolicy
                 Required("whsName", pricingParity ? (HasValue("warehouseId") || HasValue("warehouseAddress")) && HasValue("whsName") : HasValue("whsName") || (!strictManual && HasValue("warehouseId")));
             else NotApplicable("whsName", "Incoterm does not require FCA warehouse");
 
-            var pickup = incoterm == "EXW" || Flag("requiresPickup") ||
-                (!HasValue("requiresPickup") && !string.IsNullOrWhiteSpace(Text("pickupAddress")));
+            bool ContainsPickupService(string key) =>
+                data.TryGetProperty(key, out var list) && list.ValueKind == JsonValueKind.Array &&
+                list.EnumerateArray().Any(item => item.ValueKind == JsonValueKind.Object &&
+                    item.EnumerateObject().Any(field => field.Value.ValueKind == JsonValueKind.String &&
+                        field.Name is "code" or "label" or "name" or "serviceCode" or "serviceName" &&
+                        IsPickupService(field.Value.GetString())));
+            var pickup = incoterm == "EXW" || ContainsPickupService("serviceSelections") || ContainsPickupService("services") ||
+                (revision < 8 && (Flag("requiresPickup") || (!HasValue("requiresPickup") && !string.IsNullOrWhiteSpace(Text("pickupAddress")))));
             if (basicManual && (incoterm == "EXW" || pickup))
                 Deferred("pickupLocations", ValidPoints("pickupLocations"), "Origin confirms collection");
             else if (pricingParity && (incoterm == "EXW" || pickup))
@@ -214,8 +222,10 @@ public static class OperationsOpeningDraftPolicy
                 Required("overweightNotes", !string.IsNullOrWhiteSpace(Text("overweightNotes")));
             else NotApplicable("overweightNotes", "No overweight declared");
 
-            Deferred("stackable", data.TryGetProperty("stackable", out var stacking) &&
-                (stacking.ValueKind is JsonValueKind.True or JsonValueKind.False), "Stacking may need confirmation");
+            if (shipment is "LCL" or "LTL" or "AIR" or "AIRCONSOL")
+                Deferred("stackable", data.TryGetProperty("stackable", out var stacking) &&
+                    (stacking.ValueKind is JsonValueKind.True or JsonValueKind.False), "Stacking may need confirmation");
+            else NotApplicable("stackable", "Stackability only applies to consolidated or air cargo");
 
             // Optional opening fields retain their own state without adding mandatory business rules.
             bool NonEmptyArray(string key) => data.TryGetProperty(key, out var array) &&
