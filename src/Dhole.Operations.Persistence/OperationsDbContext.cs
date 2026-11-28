@@ -35,6 +35,7 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
     public DbSet<OperationsCaseNote> CaseNotes => Set<OperationsCaseNote>();
     public DbSet<OperationsCaseAuditEntry> CaseAuditEntries => Set<OperationsCaseAuditEntry>();
     public DbSet<OperationsOriginProgress> OriginProgress => Set<OperationsOriginProgress>();
+    public DbSet<OperationsOriginTransfer> OriginTransfers => Set<OperationsOriginTransfer>();
     public DbSet<OperationsInternalNote> InternalNotes => Set<OperationsInternalNote>();
     public DbSet<OperationsCarrierConnection> CarrierConnections => Set<OperationsCarrierConnection>();
     public DbSet<OperationsCarrierCapability> CarrierCapabilities => Set<OperationsCarrierCapability>();
@@ -88,6 +89,20 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
             e.HasKey(x => x.Id);
             e.Property(x => x.SeriesCode).HasMaxLength(5);
             e.HasIndex(x => x.SeriesCode).IsUnique();
+        });
+        m.Entity<OperationsOriginTransfer>(e =>
+        {
+            e.ToTable("operations_origin_transfers");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.RequestId).IsUnique();
+            e.HasIndex(x => x.OriginStageId).IsUnique();
+            e.HasIndex(x => x.TransitStageId).IsUnique();
+            e.Property(x => x.RuleFingerprint).HasMaxLength(64).IsRequired();
+            e.Property(x => x.RuleSnapshotJson).HasColumnType("jsonb").IsRequired();
+            e.Property(x => x.ChecklistJson).HasColumnType("jsonb").IsRequired();
+            e.HasOne<OperationsCase>().WithMany().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<OperationsCaseStage>().WithMany().HasForeignKey(x => x.OriginStageId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<OperationsCaseStage>().WithMany().HasForeignKey(x => x.TransitStageId).OnDelete(DeleteBehavior.Restrict);
         });
         m.Entity<OperationsCaseStage>(e =>
         {
