@@ -146,6 +146,10 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
             e.HasOne(x => x.Case).WithMany().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Cascade);
             e.Property(x => x.DocumentTypeCode).HasMaxLength(60);
             e.Property(x => x.Status).HasMaxLength(30);
+            e.Property(x => x.AccessClass).HasMaxLength(30);
+            e.Property(x => x.Version).IsConcurrencyToken();
+            e.HasOne(x => x.OwnerStage).WithMany().HasForeignKey(x => x.OwnerStageId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => x.OwnerStageId);
             e.HasIndex(x => new { x.CaseId, x.DocumentTypeCode });
         });
         m.Entity<OperationsDocumentVersion>(e =>
