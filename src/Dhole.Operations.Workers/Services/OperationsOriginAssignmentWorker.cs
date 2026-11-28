@@ -60,6 +60,29 @@ public sealed class OperationsOriginAssignmentWorker(
                             "Unable to reconcile Origin pool for case {CaseId}", stage.CaseId);
                     }
                 }
+
+                // Only durable receipts from the opt-in transfer command qualify.
+                // Reuse the same assignment handler, advisory pool lock and retry.
+                var pendingTransit = await (from transfer in db.OriginTransfers.AsNoTracking()
+                    join stage in db.CaseStages.AsNoTracking() on transfer.TransitStageId equals stage.Id
+                    where stage.CaseId == transfer.CaseId && stage.DepartmentCode == "TRANSITO" &&
+                        stage.Status == "PENDING" && stage.Case.Status == "ACTIVE"
+                    orderby transfer.TransferredAtUtc, transfer.Id
+                    select new { transfer.CaseId, StageId = stage.Id, transfer.ActorUserId }).ToArrayAsync(stoppingToken);
+                foreach (var stage in pendingTransit)
+                {
+                    try
+                    {
+                        using var assignmentScope = scopeFactory.CreateScope();
+                        var caseAssigner = assignmentScope.ServiceProvider.GetRequiredService<AssignStageHandler>();
+                        await caseAssigner.HandleAsync(new AssignStageCommand(stage.CaseId, stage.StageId, stage.ActorUserId),
+                            stoppingToken);
+                    }
+                    catch (Exception error) when (error is not OperationCanceledException)
+                    {
+                        logger.LogError(error, "Unable to reconcile Transit pool for case {CaseId}", stage.CaseId);
+                    }
+                }
             }
             catch (Exception error) when (!stoppingToken.IsCancellationRequested)
             {
