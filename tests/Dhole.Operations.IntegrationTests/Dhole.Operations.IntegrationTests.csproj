@@ -10,6 +10,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/Dhole.Operations.Persistence/Dhole.Operations.Persistence.csproj" />
+    <ProjectReference Include="../../src/Dhole.Operations.Api/Dhole.Operations.Api.csproj" />
     <Using Include="Microsoft.VisualStudio.TestTools.UnitTesting" />
   </ItemGroup>
 </Project>
