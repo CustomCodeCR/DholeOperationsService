@@ -229,6 +229,55 @@ public static class OperationsCaseWorkspaceEndpoints
             return Results.Ok(new { caseId = id, stages, validators, quotes, milestones, tasks, commercialData, people, relatedCases });
         });
 
+        // Provisional read-only Origin cost contract. The legacy contract remains
+        // until departmental allocations, historical access and the full v2 UI are ready.
+        api.MapGet("/cases/{id:guid}/commercial/costs/v2", async (
+            Guid id, HttpContext http, OperationsCaseAccess access,
+            OperationsDbContext db, IConfiguration configuration, CancellationToken ct) =>
+        {
+            if (!OperationsCaseAccess.HasScope(http.User, "operations.cost.read") ||
+                !OperationsCaseAccess.HasScope(http.User, "operations.origin.read") ||
+                !await access.CanReadAsync(id, http.User, ct)) return Results.Forbid();
+
+            var admin = OperationsCaseAccess.IsSystemAdministrator(http.User);
+            var company = admin ? null : await access.ResolveCompanyIdAsync(http.User, ct);
+            var cases = db.Cases.AsNoTracking().Where(c => c.Id == id);
+            if (!await access.FilterVisibleCases(cases, http.User, company,
+                department: "COORDINACION_ORIGEN").AnyAsync(ct)) return Results.Forbid();
+
+            var operation = await cases.SingleOrDefaultAsync(ct);
+            if (operation is null) return Results.NotFound();
+            var snapshot = await db.AcceptedQuoteSnapshots.AsNoTracking().Where(x => x.CaseId == id)
+                .OrderByDescending(x => x.CommercialRevision).FirstOrDefaultAsync(ct);
+            if (snapshot is null)
+                return Results.Ok(new { caseId = id, state = "NO_SNAPSHOT",
+                    items = Array.Empty<OperationsCommercialSnapshotReader.OperationalCost>() });
+
+            // No assumed allocation across several IDTRAs or multimodal legs.
+            // The snapshot is authoritative only for the accepted option of this case.
+            if (operation.SourceQuoteId != snapshot.QuoteId ||
+                operation.SourceQuoteOptionId != snapshot.AcceptedOptionId ||
+                operation.ModalityCode.Equals("MULTIMODAL", StringComparison.OrdinalIgnoreCase) ||
+                !OperationsCommercialSnapshotReader.HasUnambiguousHistoricalIdtra(snapshot.SnapshotJson, operation.Idtra) ||
+                await db.Cases.AsNoTracking().AnyAsync(c => c.Id != id &&
+                    (c.SourceQuoteId == snapshot.QuoteId || c.SourceQuoteOptionId == snapshot.AcceptedOptionId), ct) ||
+                await db.CaseQuoteLinks.AsNoTracking().AnyAsync(l => l.CaseId != id &&
+                    (l.QuoteId == snapshot.QuoteId || l.QuoteOptionId == snapshot.AcceptedOptionId), ct))
+                return Results.Ok(new { caseId = id, state = "ALLOCATION_REVIEW_REQUIRED",
+                    items = Array.Empty<OperationsCommercialSnapshotReader.OperationalCost>() });
+
+            // Ownership must be explicitly configured by a trusted administrator,
+            // per immutable snapshot. Missing configuration never grants access.
+            var allowed = configuration.GetSection($"Operations:CostOwnership:Origin:{snapshot.Id:D}")
+                .GetChildren().Select(x => Guid.TryParse(x.Value, out var lineId) ? lineId : Guid.Empty)
+                .Where(lineId => lineId != Guid.Empty).ToHashSet();
+            var items = OperationsCommercialSnapshotReader.OriginCosts(snapshot.SnapshotJson, allowed);
+            return Results.Ok(new { caseId = id,
+                state = items.Count == 0 ? "OWNERSHIP_REVIEW_REQUIRED" : "READ_ONLY",
+                quoteId = snapshot.QuoteId, acceptedOptionId = snapshot.AcceptedOptionId,
+                commercialRevision = snapshot.CommercialRevision, items });
+        });
+
         api.MapGet("/cases/{id:guid}/commercial/costs", async (
             Guid id, HttpContext http, OperationsCaseAccess access,
             OperationsDbContext db, CancellationToken ct) =>
