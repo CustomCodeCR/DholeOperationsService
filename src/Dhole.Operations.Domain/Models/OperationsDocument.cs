@@ -7,6 +7,11 @@ public sealed class OperationsDocument
     public Guid CaseId { get; set; }
     public OperationsCase Case { get; set; } = null!;
     public string DocumentTypeCode { get; set; } = string.Empty;
+    // Historical references have no proven owner or classification; remain null.
+    public Guid? OwnerStageId { get; set; }
+    public OperationsCaseStage? OwnerStage { get; set; }
+    public string? AccessClass { get; set; }
+    public long Version { get; set; } = 1;
     public string Status { get; set; } = "PENDING_REVIEW";
     public DateTimeOffset CreatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
     public List<OperationsDocumentVersion> Versions { get; set; } = [];
