@@ -405,6 +405,41 @@ public static class OperationsCaseWorkspaceEndpoints
             return Results.Ok(new { operation.Id, operation.Version, actualWeightKg = data["actualWeightKg"] });
         });
 
+        // Profile metadata and persisted estimated duration only. No new
+        // document, carrier or party data is returned through this contract.
+        api.MapGet("/cases/{id:guid}/origin/profile", async (
+            Guid id, HttpContext http, OperationsCaseAccess access,
+            OperationsDbContext db, IConfiguration configuration, CancellationToken ct) =>
+        {
+            if (!OperationsCaseAccess.HasScope(http.User, "operations.origin.read") ||
+                !await access.CanReadAsync(id, http.User, ct)) return Results.Forbid();
+            var admin = OperationsCaseAccess.IsSystemAdministrator(http.User);
+            var company = admin ? null : await access.ResolveCompanyIdAsync(http.User, ct);
+            var cases = db.Cases.AsNoTracking().Where(c => c.Id == id);
+            if (!await access.FilterVisibleCases(cases, http.User, company,
+                department: "COORDINACION_ORIGEN").AnyAsync(ct)) return Results.Forbid();
+            var operation = await cases.SingleOrDefaultAsync(ct);
+            if (operation is null) return Results.NotFound();
+            var stage = await db.CaseStages.AsNoTracking().SingleOrDefaultAsync(s =>
+                s.CaseId == id && s.DepartmentCode == "COORDINACION_ORIGEN", ct);
+            if (stage is null) return Results.NotFound();
+            var team = await db.Teams.AsNoTracking().SingleOrDefaultAsync(t =>
+                t.Id == stage.TeamId && t.CompanyId == operation.CompanyId &&
+                t.DepartmentCode == "COORDINACION_ORIGEN", ct);
+            var data = OperationsCargoMeasurements.Parse(operation.OpeningDataJson);
+            var portIds = configuration.GetSection("Operations:OriginProfiles:CalderaCatalogIds")
+                .GetChildren().Select(x => x.Value?.Trim()).OfType<string>()
+                .Where(x => x.Length > 0).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var usTeam = team is not null && (configuration.GetSection("Operations:OriginProfiles:UnitedStatesTeamIds")
+                .GetChildren().Any(x => Guid.TryParse(x.Value, out var teamId) && teamId == team.Id) ||
+                team.Name == OperationsOriginRouting.UnitedStatesTeam);
+            var airPreview = bool.TryParse(configuration["Operations:OriginProfiles:AirPreviewEnabled"], out var enabled) && enabled;
+            var profile = OperationsOriginProfile.Resolve(operation.ModalityCode, data["transportType"]?.ToString(),
+                usTeam, OperationsOriginProfile.IsCaldera(data, portIds), airPreview);
+            var duration = OperationsOriginTransitDuration.Calculate(data["etm"]?.ToString(), data["eta"]?.ToString());
+            return Results.Ok(new { caseId = id, version = operation.Version, profile, estimatedTransit = duration });
+        });
+
         // Operational dates and consolidation are controlled by the Origin stage.
         api.MapPost("/cases/{id:guid}/origin/planning", async (
             Guid id, UpdateOriginPlanningRequest input, HttpContext http,
@@ -421,19 +456,19 @@ public static class OperationsCaseWorkspaceEndpoints
                 !await access.CanEditAssignedStageAsync(stage.Id, http.User, ct)) return Results.Forbid();
             if (operation.Version != input.ExpectedVersion)
                 return Results.Conflict(new { code = "OPERATIONS_CASE_VERSION_CONFLICT", currentVersion = operation.Version });
-            var etd = input.Etd?.Trim() ?? "";
-            var eta = input.Eta?.Trim() ?? "";
-            var consolidation = input.ConsolidationReference?.Trim() ?? "";
-            if ((etd.Length > 0 && !DateOnly.TryParseExact(etd, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _)) ||
-                (eta.Length > 0 && !DateOnly.TryParseExact(eta, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _)) ||
-                (etd.Length > 0 && eta.Length > 0 && string.CompareOrdinal(eta, etd) < 0) ||
-                consolidation.Length > 250 || (consolidation.Length > 0 && operation.ModalityCode is not ("LCL" or "LTL")))
-                return Results.BadRequest(new { code = "OPERATIONS_ORIGIN_PLANNING_INVALID" });
             var data = OperationsCargoMeasurements.Parse(operation.OpeningDataJson);
+            if (!OperationsOriginTransitDuration.TryMergePlanning(data["etm"]?.ToString(), data["eta"]?.ToString(),
+                    input.Etd, input.Eta, out var etd, out var eta))
+                return Results.BadRequest(new { code = "OPERATIONS_ORIGIN_PLANNING_INVALID" });
+            var consolidation = input.ConsolidationReference?.Trim() ?? data["consolidationReference"]?.ToString() ?? "";
+            if (input.ConsolidationReference is not null && (consolidation.Length > 250 ||
+                (consolidation.Length > 0 && operation.ModalityCode is not ("LCL" or "LTL"))))
+                return Results.BadRequest(new { code = "OPERATIONS_ORIGIN_PLANNING_INVALID" });
             var before = new { etd = data["etm"]?.DeepClone(), eta = data["eta"]?.DeepClone(), consolidation = data["consolidationReference"]?.DeepClone(), po = data["clientPoReference"]?.DeepClone(), invoice = data["invoiceReference"]?.DeepClone() };
             try { OperationsCargoMeasurements.SetOriginReferences(data, input.ClientPoReference, input.InvoiceReference); }
             catch (ArgumentException) { return Results.BadRequest(new { code = "OPERATIONS_ORIGIN_PLANNING_INVALID" }); }
-            data["etm"] = etd; data["eta"] = eta;
+            if (input.Etd is not null) data["etm"] = etd;
+            if (input.Eta is not null) data["eta"] = eta;
             if (operation.ModalityCode == "LCL")
             {
                 // Older clients may update dates without the new link fields.
@@ -445,10 +480,10 @@ public static class OperationsCaseWorkspaceEndpoints
                     data["consolidationNumber"] = input.ConsolidationId.Length > 0 ? input.ConsolidationNumber : null;
                     data["consolidationReference"] = consolidation;
                 }
-                else if (string.IsNullOrWhiteSpace(data["consolidationId"]?.ToString()) && data["consolidationNumber"] is null)
+                else if (input.ConsolidationReference is not null && string.IsNullOrWhiteSpace(data["consolidationId"]?.ToString()) && data["consolidationNumber"] is null)
                     data["consolidationReference"] = consolidation;
             }
-            else if (operation.ModalityCode == "LTL") data["consolidationReference"] = consolidation;
+            else if (operation.ModalityCode == "LTL" && input.ConsolidationReference is not null) data["consolidationReference"] = consolidation;
             operation.OpeningDataJson = data.ToJsonString();
             operation.Version++;
             operation.UpdatedAtUtc = DateTimeOffset.UtcNow;
