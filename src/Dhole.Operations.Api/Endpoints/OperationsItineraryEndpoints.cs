@@ -27,7 +27,7 @@ public static class OperationsItineraryEndpoints
     {
         var api = app.MapGroup("/api/operations").RequireAuthorization();
         api.MapGet("/cases/{id:guid}/itinerary", async (Guid id, HttpContext http,
-            OperationsCaseAccess access, OperationsDbContext db, IConfiguration config, CancellationToken ct) =>
+            OperationsCaseAccess access, OperationsDbContext db, IConfiguration config, OperationsItineraryCatalog catalog, CancellationToken ct) =>
         {
             if (!await access.CanReadAsync(id, http.User, ct)) return Results.Forbid();
             var operation = await db.Cases.AsNoTracking().SingleOrDefaultAsync(c => c.Id == id, ct);
@@ -70,9 +70,18 @@ public static class OperationsItineraryEndpoints
                 stages.Any(s => s.Id == x.DestinationStageId && s.DepartmentCode == OperationsItineraryPolicy.DestinationDepartment(x.ToCountryCode)))
                 .Select(x => new { legId = x.Id, x.Sequence, countryCode = x.ToCountryCode, locationId = x.ToLocationId,
                     locationLabel = x.ToLabel, kind = x.DestinationKind, stageId = x.DestinationStageId,
-                    stageStatus = stages.Single(s => s.Id == x.DestinationStageId).Status,
-                    configurationState = "PENDING_APPROVAL" }).ToArray();
-            return Results.Ok(new { caseId = id, caseVersion = operation.Version, enabled = true, transit, destinations });
+                    stageStatus = stages.Single(s => s.Id == x.DestinationStageId).Status }).ToArray();
+            var selections = destinations.Select(x => new OperationsItineraryCatalog.ProfileSelection(x.countryCode, x.kind)).Distinct().ToArray();
+            var profiles = await catalog.ResolveProfilesAsync(selections, http.Request.Headers.Authorization.ToString(), ct);
+            var sections = destinations.Select(x =>
+            {
+                var key = new OperationsItineraryCatalog.ProfileSelection(x.countryCode, x.kind);
+                var profile = profiles is not null && profiles.TryGetValue(key, out var resolved) ? resolved : null;
+                return new { x.legId, x.Sequence, x.countryCode, x.locationId, x.locationLabel, x.kind, x.stageId, x.stageStatus,
+                    configurationState = profile?.State ?? "CONFIG_UNAVAILABLE", profileId = profile?.ProfileId,
+                    profileVersion = profile?.Version, fields = profile?.Fields ?? Array.Empty<string>() };
+            }).ToArray();
+            return Results.Ok(new { caseId = id, caseVersion = operation.Version, enabled = true, transit, destinations = sections });
         });
 
         api.MapPost("/cases/{id:guid}/itinerary/draft", async (Guid id, CreateDraft input, HttpContext http,
