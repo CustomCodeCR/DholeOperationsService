@@ -77,12 +77,73 @@ public static class OperationsCaseWorkspaceEndpoints
                     if (code == "COORDINACION_ORIGEN" &&
                         stage.Status is "READY" or "IN_PROGRESS" &&
                         OperationsCaseAccess.HasScope(http.User, "operations.origin.update") &&
-                        await CanEditStageAsync(stage.Id, stage.TeamId, actor.Value, http, db, ct))
+                        await access.CanEditAssignedStageAsync(stage.Id, http.User, ct))
                         level = "EDITABLE";
                 }
                 tabs.Add(new { code, accessLevel = level });
             }
             return Results.Ok(new { caseId = id, tabs });
+        });
+
+        // Additive navigation contract. The legacy /tabs response remains intact
+        // for clients that still render country-specific and Finance tabs.
+        // This route exposes access metadata only, never costs or documents.
+        api.MapGet("/cases/{id:guid}/tabs/v2", async (
+            Guid id, HttpContext http, OperationsCaseAccess access,
+            OperationsDbContext db, CancellationToken ct) =>
+        {
+            if (!await access.CanReadAsync(id, http.User, ct)) return Results.Forbid();
+            var actor = OperationsCaseAccess.UserId(http.User);
+            if (actor is null) return Results.Forbid();
+
+            var admin = OperationsCaseAccess.IsSystemAdministrator(http.User);
+            var company = admin ? null : await access.ResolveCompanyIdAsync(http.User, ct);
+            var cases = db.Cases.AsNoTracking().Where(c => c.Id == id);
+            var stages = await db.CaseStages.AsNoTracking()
+                .Where(s => s.CaseId == id && s.Status != "SKIPPED")
+                .Select(s => new { s.Id, s.DepartmentCode, s.Status, s.TeamId })
+                .ToArrayAsync(ct);
+
+            async Task<bool> CanReadDepartment(string code, string scope)
+            {
+                if (!OperationsCaseAccess.HasScope(http.User, scope) ||
+                    !stages.Any(s => s.DepartmentCode == code)) return false;
+                return await access.FilterVisibleCases(cases, http.User, company,
+                    department: code).AnyAsync(ct);
+            }
+
+            var canEditSummary = await CanEditApertureAsync(id, actor.Value, http, access, db, ct);
+            var originRead = await CanReadDepartment("COORDINACION_ORIGEN", "operations.origin.read");
+            var originEdit = false;
+            if (originRead && OperationsCaseAccess.HasScope(http.User, "operations.origin.update"))
+            {
+                foreach (var stage in stages.Where(s => s.DepartmentCode == "COORDINACION_ORIGEN" &&
+                    s.Status is "READY" or "IN_PROGRESS"))
+                {
+                    if (await access.CanEditAssignedStageAsync(stage.Id, http.User, ct))
+                    {
+                        originEdit = true;
+                        break;
+                    }
+                }
+            }
+            var transitRead = await CanReadDepartment("TRANSITO", "operations.transit.manage");
+            var panamaRead = await CanReadDepartment("PANAMA", "operations.panama.manage");
+            var costaRicaRead = await CanReadDepartment("COSTA_RICA", "operations.costa-rica.manage");
+
+            // No access to the legacy unfiltered commercial projection is implied.
+            // The new QUO view is locked until its resource-scoped contract exists.
+            // Destination remains read-only until country/tramo policies exist.
+            var tabs = new[]
+            {
+                new { code = "RESUMEN", accessLevel = canEditSummary ? "EDITABLE" : "READ_ONLY" },
+                new { code = "QUO", accessLevel = "LOCKED" },
+                new { code = "DOCUMENTACION", accessLevel = "READ_ONLY" },
+                new { code = "COORDINACION_ORIGEN", accessLevel = originEdit ? "EDITABLE" : originRead ? "READ_ONLY" : "LOCKED" },
+                new { code = "TRANSITO", accessLevel = transitRead ? "READ_ONLY" : "LOCKED" },
+                new { code = "DESTINO", accessLevel = panamaRead || costaRicaRead ? "READ_ONLY" : "LOCKED" }
+            };
+            return Results.Ok(new { caseId = id, contractVersion = 2, tabs });
         });
 
         // Existing persisted operations data only: no placeholder costs or dummy notes.
@@ -263,7 +324,7 @@ public static class OperationsCaseWorkspaceEndpoints
             if (operation is null || stage is null) return Results.NotFound();
             if (operation.Status is "CANCELLED" or "COMPLETED" ||
                 stage.Status is not ("READY" or "IN_PROGRESS") ||
-                !await CanEditStageAsync(stage.Id, stage.TeamId, actor.Value, http, db, ct))
+                !await access.CanEditAssignedStageAsync(stage.Id, http.User, ct))
                 return Results.Forbid();
             if (operation.Version != input.ExpectedVersion)
                 return Results.Conflict(new { code = "OPERATIONS_CASE_VERSION_CONFLICT", currentVersion = operation.Version });
@@ -298,7 +359,7 @@ public static class OperationsCaseWorkspaceEndpoints
                 x.CaseId == id && x.DepartmentCode == "COORDINACION_ORIGEN", ct);
             if (operation is null || stage is null) return Results.NotFound();
             if (operation.Status is "CANCELLED" or "COMPLETED" || stage.Status is not ("READY" or "IN_PROGRESS") ||
-                !await CanEditStageAsync(stage.Id, stage.TeamId, actor.Value, http, db, ct)) return Results.Forbid();
+                !await access.CanEditAssignedStageAsync(stage.Id, http.User, ct)) return Results.Forbid();
             if (operation.Version != input.ExpectedVersion)
                 return Results.Conflict(new { code = "OPERATIONS_CASE_VERSION_CONFLICT", currentVersion = operation.Version });
             var etd = input.Etd?.Trim() ?? "";
@@ -357,7 +418,7 @@ public static class OperationsCaseWorkspaceEndpoints
             if (operation is null || stage is null) return Results.NotFound();
             if (operation.Status is "CANCELLED" or "COMPLETED" ||
                 stage.Status is not ("READY" or "IN_PROGRESS") ||
-                !await CanEditStageAsync(stage.Id, stage.TeamId, actor.Value, http, db, ct))
+                !await access.CanEditAssignedStageAsync(stage.Id, http.User, ct))
                 return Results.Forbid();
 
             var status = input.StatusCode?.Trim().ToUpperInvariant();
@@ -433,23 +494,11 @@ public static class OperationsCaseWorkspaceEndpoints
                 s.Status != "COMPLETED" && s.Status != "SKIPPED")
             .Select(s => new { s.Id, s.TeamId }).SingleOrDefaultAsync(ct);
         if (stage is null) return false;
-        if (mayUpdate && await CanEditStageAsync(stage.Id, stage.TeamId, actor, http, db, ct)) return true;
+        if (mayUpdate && await access.CanEditAssignedStageAsync(stage.Id, http.User, ct)) return true;
         return mayReview && operation.ApertureType == "AUTOMATIC" && operation.Status == "PENDING_VALIDATION" &&
             await db.ApertureValidations.AnyAsync(v => v.CaseStageId == stage.Id && v.UserId == actor && v.Status == "PENDING" &&
                 db.TeamMembers.Any(m => m.TeamId == v.TeamId && m.UserId == actor && m.Team.IsActive) &&
                 !db.ApertureValidations.Any(previous => previous.CaseStageId == v.CaseStageId && previous.Status == "PENDING" && previous.Slot < v.Slot), ct);
     }
 
-    private static async Task<bool> CanEditStageAsync(
-        Guid stageId, Guid? teamId, Guid actor, HttpContext http,
-        OperationsDbContext db, CancellationToken ct)
-    {
-        if (OperationsCaseAccess.IsSystemAdministrator(http.User)) return true;
-        var assigned = await db.StageAssignments.AnyAsync(a =>
-            a.CaseStageId == stageId && a.UserId == actor && a.ReleasedAtUtc == null, ct);
-        if (assigned) return true;
-        return teamId.HasValue && await db.TeamMembers.AnyAsync(m =>
-            m.TeamId == teamId.Value && m.UserId == actor &&
-            m.IsSupervisor && m.IsAvailable, ct);
-    }
 }
