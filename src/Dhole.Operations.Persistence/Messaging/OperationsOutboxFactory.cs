@@ -54,6 +54,27 @@ public static class OperationsOutboxFactory
         }));
     }
 
+    public static OutboxMessage CreateTransitNotification(Guid caseId, string idtra, Guid referenceId,
+        Guid userId, bool pending, string? email = null)
+    {
+        if (caseId == Guid.Empty || referenceId == Guid.Empty || userId == Guid.Empty ||
+            (email is not null && !System.Net.Mail.MailAddress.TryCreate(email, out _)))
+            throw new ArgumentException("Transit notification requires an authorized persisted recipient.");
+        var channel = email is null ? "System" : "Email";
+        var action = pending ? "assignment-pending" : "assigned";
+        return Create(NotificationRequested, JsonSerializer.Serialize(new
+        {
+            notificationType = $"operations.transit.{action}",
+            channel, entityType = "OperationsCase", entityId = caseId.ToString("D"),
+            subject = pending ? $"Tránsito pendiente de asignación: {idtra}" : $"Nuevo trámite de Tránsito: {idtra}",
+            body = pending ? $"Revisa el pool autorizado de Tránsito para el expediente {idtra}."
+                : $"El expediente {idtra} fue asignado a tu equipo de Tránsito.",
+            idempotencyKey = $"operations:transit:{action}:{referenceId:D}:{userId:D}:{channel.ToLowerInvariant()}",
+            recipients = new[] { new { userId = userId.ToString("D"), address = email } },
+            payload = new { caseId, action, route = $"/operations/cases/{caseId:D}" }
+        }));
+    }
+
     public static OutboxMessage Create(string eventName, string payloadJson)
     {
         if (string.IsNullOrWhiteSpace(eventName))
