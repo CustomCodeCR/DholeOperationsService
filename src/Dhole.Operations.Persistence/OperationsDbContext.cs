@@ -36,6 +36,7 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
     public DbSet<OperationsCaseAuditEntry> CaseAuditEntries => Set<OperationsCaseAuditEntry>();
     public DbSet<OperationsOriginProgress> OriginProgress => Set<OperationsOriginProgress>();
     public DbSet<OperationsOriginTransfer> OriginTransfers => Set<OperationsOriginTransfer>();
+    public DbSet<OperationsItineraryLeg> ItineraryLegs => Set<OperationsItineraryLeg>();
     public DbSet<OperationsInternalNote> InternalNotes => Set<OperationsInternalNote>();
     public DbSet<OperationsCarrierConnection> CarrierConnections => Set<OperationsCarrierConnection>();
     public DbSet<OperationsCarrierCapability> CarrierCapabilities => Set<OperationsCarrierCapability>();
@@ -89,6 +90,28 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
             e.HasKey(x => x.Id);
             e.Property(x => x.SeriesCode).HasMaxLength(5);
             e.HasIndex(x => x.SeriesCode).IsUnique();
+        });
+        m.Entity<OperationsItineraryLeg>(e =>
+        {
+            e.ToTable("operations_itinerary_legs");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.CaseId, x.Sequence }).IsUnique();
+            e.HasIndex(x => x.PlanRequestId);
+            e.Property(x => x.TransportCode).HasMaxLength(20).IsRequired();
+            e.Property(x => x.FromLabel).HasMaxLength(250).IsRequired();
+            e.Property(x => x.ToLabel).HasMaxLength(250).IsRequired();
+            e.Property(x => x.FromCountryCode).HasMaxLength(2).IsRequired();
+            e.Property(x => x.ToCountryCode).HasMaxLength(2).IsRequired();
+            e.Property(x => x.DestinationKind).HasMaxLength(20).IsRequired();
+            e.Property(x => x.Status).HasMaxLength(30).IsRequired();
+            e.Property(x => x.Version).IsConcurrencyToken();
+            e.HasOne<OperationsCase>().WithMany().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<OperationsCaseStage>().WithMany().HasForeignKey(x => new { x.TransitStageId, x.CaseId })
+                .HasPrincipalKey(x => new { x.Id, x.CaseId }).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<OperationsCaseStage>().WithMany().HasForeignKey(x => new { x.DestinationStageId, x.CaseId })
+                .HasPrincipalKey(x => new { x.Id, x.CaseId }).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<OperationsCaseServiceLine>().WithMany().HasForeignKey(x => new { x.DestinationServiceLineId, x.CaseId })
+                .HasPrincipalKey(x => new { x.Id, x.CaseId }).OnDelete(DeleteBehavior.Restrict);
         });
         m.Entity<OperationsOriginTransfer>(e =>
         {
