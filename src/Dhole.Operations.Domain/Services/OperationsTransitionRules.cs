@@ -1,3 +1,7 @@
+using System.Security.Cryptography;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace Dhole.Operations.Domain.Services;
 
 /// <summary>Pure, deterministic transition checklist. No state changes or implicit policy.</summary>
@@ -11,7 +15,8 @@ public static class OperationsTransitionRules
     public sealed record Fact(string State, string Source, string Reason);
     public sealed record Check(string Code, string Requirement, string State, string Source, string Reason, bool Blocks);
     public sealed record Evaluation(string State, Guid? RuleId, int? RuleVersion, string? Mode,
-        bool CanTransfer, IReadOnlyList<Check> Checks);
+        bool CanTransfer, IReadOnlyList<Check> Checks, string? RuleFingerprint = null,
+        [property: JsonIgnore] string? RuleSnapshotJson = null);
 
     private static readonly HashSet<string> Dimensions = new(StringComparer.Ordinal)
         { "fromStage", "toStage", "companyId", "teamId", "transport", "shipment", "originCountry",
@@ -60,7 +65,12 @@ public static class OperationsTransitionRules
             return new Check(c.Code, c.Requirement, fact.State, fact.Source, fact.Reason, blocks);
         }).ToArray();
         var allowed = !checks.Any(c => c.Blocks);
-        return new(allowed ? "READY" : "BLOCKED", rule.Id, rule.Version, rule.Mode, allowed, checks);
+        // Persist the evaluated rule, not a pointer to mutable catalog metadata.
+        var snapshot = JsonSerializer.Serialize(rule with {
+            Scope = rule.Scope.OrderBy(x => x.Key, StringComparer.Ordinal).ToDictionary(x => x.Key, x => x.Value, StringComparer.Ordinal)
+        });
+        var fingerprint = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(snapshot)));
+        return new(allowed ? "READY" : "BLOCKED", rule.Id, rule.Version, rule.Mode, allowed, checks, fingerprint, snapshot);
     }
 
     private static Evaluation Empty(string state) => new(state, null, null, null, false, []);
