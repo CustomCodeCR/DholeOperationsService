@@ -529,11 +529,16 @@ public static class OperationsEndpoints
 
         api.MapPost("/cases/{id:guid}/document-versions/{versionId:guid}/extractions", async (
             Guid id, Guid versionId, HttpContext http, OperationsCaseAccess access,
-            QueueDocumentExtractionHandler handler, CancellationToken ct) =>
+            QueueDocumentExtractionHandler handler, OperationsDbContext db, CancellationToken ct) =>
         {
             var actor = OperationsCaseAccess.UserId(http.User);
             if (actor is null || !OperationsCaseAccess.HasScope(http.User, "operations.document.manage") ||
                 !await access.CanReadAsync(id, http.User, ct)) return Results.Forbid();
+            // The legacy extraction integration does not carry protected stage authorization.
+            // Do not send protected files to this consumer until its contract is migrated.
+            if (await db.DocumentVersions.AsNoTracking().AnyAsync(v => v.Id == versionId &&
+                v.Document.CaseId == id && v.Document.OwnerStageId != null, ct))
+                return Results.Forbid();
             try
             {
                 var job = await handler.HandleAsync(
