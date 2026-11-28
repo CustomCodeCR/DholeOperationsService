@@ -1,4 +1,6 @@
 using Dhole.Operations.Persistence.Audit;
+using Dhole.Operations.Api.Integrations;
+using Dhole.Operations.Domain.Services;
 using System.Data;
 using System.Text.Json;
 using Dhole.Operations.Api.Security;
@@ -105,7 +107,7 @@ public static class OperationsPreparationEndpoints
 
         api.MapPost("/cases/{id:guid}/origin/departure-confirmations", async (Guid id,
             ConfirmDeparture input, HttpContext http, OperationsCaseAccess access,
-            OperationsDbContext db, CancellationToken ct) =>
+            OperationsDbContext db, OperationsTransitionChecklist checklist, CancellationToken ct) =>
         {
             var actor = OperationsCaseAccess.UserId(http.User);
             if (actor is null || !OperationsCaseAccess.HasScope(http.User, "operations.origin.departure.confirm") ||
@@ -122,11 +124,24 @@ public static class OperationsPreparationEndpoints
             var stage = await db.CaseStages.SingleOrDefaultAsync(x =>
                 x.CaseId == id && x.DepartmentCode == "COORDINACION_ORIGEN", ct);
             if (operation is null || stage is null) return Results.NotFound();
+            // When the new workflow is enabled, departure evidence and transfer
+            // are separate commands. No legacy shortcut may complete the stage.
+            if (checklist.EnforcementEnabled &&
+                (stage.Status is not ("READY" or "IN_PROGRESS") ||
+                 !await access.CanEditAssignedStageAsync(stage.Id, http.User, ct))) return Results.Forbid();
+            if (checklist.EnforcementEnabled &&
+                !await db.Documents.AsNoTracking().AnyAsync(d => d.CaseId == id && d.OwnerStageId == stage.Id &&
+                    d.AccessClass == OperationsDocumentPolicy.Operational && d.Status == "APPROVED" &&
+                    d.Versions.Any(v => v.StorageFileId == input.EvidenceStorageFileId &&
+                        v.ReviewStatus == "APPROVED" && !d.Versions.Any(later => later.VersionNumber > v.VersionNumber)), ct))
+                return Results.BadRequest(new { code = "DEPARTURE_APPROVED_EVIDENCE_REQUIRED" });
             var progress = await db.OriginProgress.SingleOrDefaultAsync(x => x.CaseStageId == stage.Id, ct);
             if (progress?.ActualDepartureAtUtc is not null)
             {
                 // Returning the same result for retries avoids duplicate transitions and Outbox.
-                if (progress.DepartureEventId == input.EventId)
+                if (progress.DepartureEventId == input.EventId &&
+                    progress.ActualDepartureAtUtc == input.ActualDepartureAtUtc.ToUniversalTime() &&
+                    progress.EvidenceStorageFileId == input.EvidenceStorageFileId)
                     return Results.Ok(new { progress.StatusCode, progress.Version, duplicate = true });
                 return Results.Conflict(new { code = "DEPARTURE_ALREADY_CONFIRMED" });
             }
@@ -146,12 +161,16 @@ public static class OperationsPreparationEndpoints
             progress.EvidenceStorageFileId = input.EvidenceStorageFileId;
             progress.UpdatedAtUtc = DateTimeOffset.UtcNow;
             progress.Version++;
-            stage.Status = "COMPLETED";
-            stage.CompletedAtUtc = DateTimeOffset.UtcNow;
-            stage.Version++;
-            if (!await db.CaseStages.AnyAsync(x => x.CaseId == id && x.DepartmentCode == "TRANSITO", ct))
-                db.CaseStages.Add(new OperationsCaseStage { CaseId = id, DepartmentCode = "TRANSITO", Status = "READY" });
-            operation.Status = "ACTIVE";
+            if (!checklist.EnforcementEnabled)
+            {
+                // Preserve the previous workflow until business approval and validation.
+                stage.Status = "COMPLETED";
+                stage.CompletedAtUtc = DateTimeOffset.UtcNow;
+                stage.Version++;
+                if (!await db.CaseStages.AnyAsync(x => x.CaseId == id && x.DepartmentCode == "TRANSITO", ct))
+                    db.CaseStages.Add(new OperationsCaseStage { CaseId = id, DepartmentCode = "TRANSITO", Status = "READY" });
+                operation.Status = "ACTIVE";
+            }
             operation.Version++;
             operation.UpdatedAtUtc = DateTimeOffset.UtcNow;
             db.OutboxMessages.Add(OperationsOutboxFactory.Create("operations.origin.departure-confirmed.v1",
