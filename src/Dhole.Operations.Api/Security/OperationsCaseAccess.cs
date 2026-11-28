@@ -113,6 +113,30 @@ public sealed class OperationsCaseAccess(OperationsDbContext db)
             user, company).AnyAsync(ct);
     }
 
+    /// <summary>Checks the current stage/team and membership in one SQL query.
+    /// An old assignment alone never grants edit access. Callers must separately
+    /// enforce the action scope and permitted workflow status.</summary>
+    public async Task<bool> CanEditAssignedStageAsync(Guid stageId, ClaimsPrincipal user, CancellationToken ct)
+    {
+        var actor = UserId(user);
+        if (actor is null || !HasScope(user, "operations.case.read")) return false;
+        var admin = IsSystemAdministrator(user);
+        var company = admin ? null : await ResolveCompanyIdAsync(user, ct);
+        if (!admin && company is null) return false;
+
+        var visible = FilterVisibleCases(db.Cases.AsNoTracking(), user, company);
+        return await db.CaseStages.AsNoTracking().AnyAsync(s =>
+            s.Id == stageId && s.Status != "COMPLETED" && s.Status != "SKIPPED" &&
+            visible.Any(c => c.Id == s.CaseId && c.Status != "CANCELLED" && c.Status != "COMPLETED") &&
+            (admin || (s.TeamId.HasValue && db.TeamMembers.Any(m =>
+                m.TeamId == s.TeamId.Value && m.UserId == actor.Value &&
+                m.Team.IsActive && m.Team.CompanyId == s.Case.CompanyId &&
+                m.Team.DepartmentCode == s.DepartmentCode &&
+                ((m.IsSupervisor && m.IsAvailable) || db.StageAssignments.Any(a =>
+                    a.CaseStageId == s.Id && a.TeamId == m.TeamId &&
+                    a.UserId == actor.Value && a.ReleasedAtUtc == null))))), ct);
+    }
+
     public async Task<Guid[]> AccessibleCaseIdsAsync(Guid[] caseIds, ClaimsPrincipal user, CancellationToken ct)
     {
         var company = IsSystemAdministrator(user) ? null : await ResolveCompanyIdAsync(user, ct);
