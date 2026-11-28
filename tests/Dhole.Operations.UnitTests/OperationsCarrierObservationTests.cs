@@ -21,7 +21,7 @@ public sealed class OperationsCarrierObservationTests
             ApiVersion = "2.2", Status = "VERIFIED", VerifiedAtUtc = Now.AddDays(-1), EvidenceRef = "synthetic-test"
         };
         var binding = new Binding(company, connection.Id, Guid.NewGuid(), Guid.NewGuid(), provider, "MAERSK",
-            "FCL", "MARITIME", "BOOKING-TEST", "CALL-A", "CRCAL", ["TEST-EQUIPMENT"]);
+            "FCL", "MARITIME", "BOOKING-TEST", "CALL-A", "CRCAL", "DEPARTURE", ["TEST-EQUIPMENT"]);
         var e = new Observation(company, connection.Id, provider, "MAERSK", capability.ProductCode, "2.2",
             "EVENT-A", binding.BookingReference, binding.TransportCallId, binding.LocationCode, "TEST-EQUIPMENT",
             "TRANSPORT", "DEPA", "ACT", "VESSEL", Now.AddHours(-1), Now.AddMinutes(-10));
@@ -60,7 +60,7 @@ public sealed class OperationsCarrierObservationTests
             f.Binding with { CompanyId = Guid.NewGuid() }, f.Binding with { ConnectionId = Guid.NewGuid() },
             f.Binding with { SrmProviderId = Guid.NewGuid() }, f.Binding with { BookingReference = "OTHER" },
             f.Binding with { TransportCallId = "CALL-B" }, f.Binding with { LocationCode = "PABLB" },
-            f.Binding with { EquipmentReferences = ["OTHER"] }
+            f.Binding with { CallPurpose = "ARRIVAL" }, f.Binding with { EquipmentReferences = ["OTHER"] }
         }) Assert.AreEqual("NO_MATCH", Correlate(f.Event, f.Connection, f.Capability, [other], Now).State);
         Assert.AreEqual("AMBIGUOUS_BINDING", Correlate(f.Event, f.Connection, f.Capability,
             [f.Binding, f.Binding with { CaseId = Guid.NewGuid(), LegId = Guid.NewGuid() }], Now).State);
@@ -74,8 +74,14 @@ public sealed class OperationsCarrierObservationTests
         foreach (var pair in new[] { ("PLN", "PLANNED_DEPARTURE"), ("EST", "ESTIMATED_DEPARTURE"), ("ACT", "ACTUAL_DEPARTURE") })
             Assert.AreEqual(pair.Item2, Correlate(f.Event with { Classifier = pair.Item1 },
                 f.Connection, f.Capability, [f.Binding], Now).Value!.Field);
+        Assert.AreEqual("NO_MATCH", Correlate(f.Event with { EventCode = "ARRI" },
+            f.Connection, f.Capability, [f.Binding], Now).State);
         Assert.AreEqual("ACTUAL_ARRIVAL", Correlate(f.Event with { EventCode = "ARRI" },
-            f.Connection, f.Capability, [f.Binding], Now).Value!.Field);
+            f.Connection, f.Capability, [f.Binding with { CallPurpose = "ARRIVAL" }], Now).Value!.Field);
+        var source = Correlate(f.Event, f.Connection, f.Capability, [f.Binding], Now).Value!;
+        Assert.AreEqual(f.Event.EventId, source.ExternalEventId);
+        Assert.AreEqual(f.Connection.Id, source.ConnectionId);
+        Assert.AreEqual(Now, source.ReceivedAt);
         Assert.AreEqual("INVALID_OBSERVATION", Correlate(f.Event with { OccurredAt = Now.AddDays(1) },
             f.Connection, f.Capability, [f.Binding], Now).State);
         Assert.AreEqual("UNSUPPORTED_EVENT", Correlate(f.Event with { EventType = "EQUIPMENT", EventCode = "LOAD" },
