@@ -90,6 +90,52 @@ public static class OperationsCommercialSnapshotReader
                 canSeeSale ? Number(line, "commercialSaleTotal") : null);
         }).ToArray();
     }
+    /// <summary>Provisional, fail-closed Origin projection. Ownership is supplied
+    /// by trusted server configuration for this case snapshot, never by a request.
+    /// Only stable unique Pricing row IDs and verified Origin categories qualify.
+    /// No sale, tax, margin, utility or commercial total exists in this DTO.</summary>
+    public static IReadOnlyList<OperationalCost> OriginCosts(string? json, IReadOnlySet<Guid> authorizedLineIds)
+    {
+        if (authorizedLineIds.Count == 0) return [];
+        var rows = Costs(json, false)
+            .Select(row => (Row: row, Id: Guid.TryParse(row.Id, out var id) ? id : Guid.Empty))
+            .Where(x => x.Id != Guid.Empty)
+            .GroupBy(x => x.Id)
+            .Where(g => g.Count() == 1 && authorizedLineIds.Contains(g.Key))
+            .Select(g => g.Single());
+        return rows.Where(x => x.Row.CostDetailType is "OriginCharge" or "Freight" or "AgentCharge" or "InlandTransport" &&
+                x.Row.CostAmount is >= 0m && x.Row.Quantity is > 0m &&
+                !string.IsNullOrWhiteSpace(x.Row.CurrencyCode) && !string.IsNullOrWhiteSpace(x.Row.ChargeBasis))
+            .Select(x => new OperationalCost(x.Id, x.Row.Description, x.Row.SupplierName,
+                x.Row.CurrencyCode!, x.Row.ChargeBasis!, x.Row.Quantity!.Value,
+                x.Row.CostAmount!.Value, x.Row.CostDetailType!, "PENDING"))
+            .ToArray();
+    }
+
+    // Historical acceptance can enumerate multiple IDTRAs before all have been
+    // materialized locally. Invalid JSON / invalid cardinality also fail closed.
+    public static bool HasUnambiguousHistoricalIdtra(string? json, string idtra)
+    {
+        var root = Read(json);
+        if (root.ValueKind != JsonValueKind.Object || string.IsNullOrWhiteSpace(idtra)) return false;
+        var multiple = Get(root, "historicalIdtras");
+        if (multiple.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.Null))
+        {
+            if (multiple.ValueKind != JsonValueKind.Array) return false;
+            var ids = multiple.EnumerateArray().ToArray();
+            if (ids.Length != 1 || ids[0].ValueKind != JsonValueKind.String ||
+                !string.Equals(ids[0].GetString(), idtra, StringComparison.Ordinal)) return false;
+        }
+        var single = Get(root, "historicalIdtra");
+        return single.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null ||
+            single.ValueKind == JsonValueKind.String &&
+            string.Equals(single.GetString(), idtra, StringComparison.Ordinal);
+    }
+
+    public sealed record OperationalCost(Guid Id, string? Description, string? SupplierName,
+        string CurrencyCode, string ChargeBasis, decimal Quantity, decimal QuotedAmount,
+        string CostDetailType, string Status);
+
     public sealed record SnapshotCost(string Id, string? Description, string? CostCode, string? SupplierName,
         string? CurrencyCode, string? CurrencyName, decimal? Quantity, decimal? UnitCost,
         decimal? CostAmount, decimal? SaleAmount, string? CostDetailType, string? ChargeBasis,
