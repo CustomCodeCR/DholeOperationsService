@@ -42,7 +42,7 @@ public static class OperationsCaseWorkspaceEndpoints
         // department has not been activated; a SKIPPED department is not applicable.
         api.MapGet("/cases/{id:guid}/tabs", async (
             Guid id, HttpContext http, OperationsCaseAccess access,
-            OperationsDbContext db, CancellationToken ct) =>
+            OperationsDbContext db, IConfiguration configuration, CancellationToken ct) =>
         {
             if (!await access.CanReadAsync(id, http.User, ct)) return Results.Forbid();
             var actor = OperationsCaseAccess.UserId(http.User);
@@ -80,6 +80,8 @@ public static class OperationsCaseWorkspaceEndpoints
                         await access.CanEditAssignedStageAsync(stage.Id, http.User, ct))
                         level = "EDITABLE";
                 }
+                if (code == "DOCUMENTACION" && bool.TryParse(configuration["OperationsDocuments:Enabled"], out var documentEnabled) && documentEnabled)
+                    level = "READ_ONLY";
                 tabs.Add(new { code, accessLevel = level });
             }
             return Results.Ok(new { caseId = id, tabs });
