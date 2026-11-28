@@ -89,6 +89,55 @@ public static class OperationsPreparationEndpoints
                 connections = entries });
         });
 
+        // Registration/candidate coverage is not runtime health or authorization
+        // to query a provider. No secrets, raw external references or metadata.
+        api.MapGet("/carrier-integration-coverage", async (HttpContext http, OperationsCaseAccess access,
+            OperationsDbContext db, CancellationToken ct) =>
+        {
+            if (!OperationsCaseAccess.HasScope(http.User, "operations.carrier.connection.read")) return Results.Forbid();
+            var admin = OperationsCaseAccess.IsSystemAdministrator(http.User);
+            var company = admin ? OperationsCaseAccess.CompanyId(http.User) : await access.ResolveCompanyIdAsync(http.User, ct);
+            // Even administrators must have a concrete tenant for this projection.
+            if (!company.HasValue || company.Value == Guid.Empty) return Results.Forbid();
+            var registered = await db.CarrierConnections.AsNoTracking().Where(c => c.CompanyId == company.Value)
+                .Select(c => c.CarrierCode).ToArrayAsync(ct);
+            var items = OperationsCarrierCodes.Candidates.Select(code => new
+            {
+                carrierCode = code,
+                fclCandidate = OperationsCarrierObservation.SupportsShipment(code, "FCL", "MARITIME"),
+                lclCandidate = OperationsCarrierObservation.SupportsShipment(code, "LCL", "MARITIME"),
+                state = registered.Contains(code, StringComparer.Ordinal) ? "REVIEW_REQUIRED" : "NOT_CONFIGURED",
+                enabled = false,
+                lastSuccessfulSyncAt = (DateTimeOffset?)null
+            }).ToArray();
+            http.Response.Headers.CacheControl = "private, no-store";
+            return Results.Ok(new { items });
+        });
+
+        // Case-specific status is deliberately independent of configuration
+        // administration. Stable case/leg/provider bindings are not available yet.
+        api.MapGet("/cases/{id:guid}/origin/carrier-sync-status", async (Guid id, HttpContext http,
+            OperationsCaseAccess access, OperationsDbContext db, CancellationToken ct) =>
+        {
+            if (!OperationsCaseAccess.HasScope(http.User, "operations.origin.read") ||
+                !await access.CanReadAsync(id, http.User, ct)) return Results.Forbid();
+            var company = OperationsCaseAccess.IsSystemAdministrator(http.User) ? null : await access.ResolveCompanyIdAsync(http.User, ct);
+            var operation = await access.FilterVisibleCases(db.Cases.AsNoTracking().Where(c => c.Id == id),
+                http.User, company, department: "COORDINACION_ORIGEN").SingleOrDefaultAsync(ct);
+            if (operation is null) return Results.Forbid();
+            var opening = OperationsCargoMeasurements.Parse(operation.OpeningDataJson);
+            var transport = opening["transportType"]?.ToString()?.Trim().ToUpperInvariant();
+            var shipment = operation.ModalityCode.Trim().ToUpperInvariant();
+            var state = shipment == "MULTIMODAL" || transport == "MULTIMODAL"
+                ? "REVIEW_REQUIRED"
+                : (shipment is "FCL" or "LCL") && transport == "MARITIME"
+                    ? "NOT_CONFIGURED"
+                    : string.IsNullOrWhiteSpace(transport) ? "REVIEW_REQUIRED" : "CAPABILITY_NOT_AVAILABLE";
+            http.Response.Headers.CacheControl = "private, no-store";
+            return Results.Ok(new { caseId = id, caseVersion = operation.Version, state,
+                enabled = false, lastSuccessfulSyncAt = (DateTimeOffset?)null, manualAvailable = true });
+        });
+
         api.MapGet("/cases/{id:guid}/origin/progress", async (Guid id, HttpContext http,
             OperationsCaseAccess access, OperationsDbContext db, CancellationToken ct) =>
         {
