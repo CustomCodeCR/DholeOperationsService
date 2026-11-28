@@ -104,16 +104,17 @@ public static class OperationsCaseWorkspaceEndpoints
                 .Select(s => new { s.Id, s.DepartmentCode, s.Status, s.TeamId })
                 .ToArrayAsync(ct);
 
-            async Task<bool> CanReadDepartment(string code, string scope)
+            bool Has(string scope) => OperationsCaseAccess.HasScope(http.User, scope);
+
+            async Task<bool> CanReadDepartment(string code, bool hasPermission)
             {
-                if (!OperationsCaseAccess.HasScope(http.User, scope) ||
-                    !stages.Any(s => s.DepartmentCode == code)) return false;
+                if (!hasPermission || !stages.Any(s => s.DepartmentCode == code)) return false;
                 return await access.FilterVisibleCases(cases, http.User, company,
                     department: code).AnyAsync(ct);
             }
 
             var canEditSummary = await CanEditApertureAsync(id, actor.Value, http, access, db, ct);
-            var originRead = await CanReadDepartment("COORDINACION_ORIGEN", "operations.origin.read");
+            var originRead = await CanReadDepartment("COORDINACION_ORIGEN", Has("operations.origin.read"));
             var originEdit = false;
             if (originRead && OperationsCaseAccess.HasScope(http.User, "operations.origin.update"))
             {
@@ -127,9 +128,18 @@ public static class OperationsCaseWorkspaceEndpoints
                     }
                 }
             }
-            var transitRead = await CanReadDepartment("TRANSITO", "operations.transit.manage");
-            var panamaRead = await CanReadDepartment("PANAMA", "operations.panama.manage");
-            var costaRicaRead = await CanReadDepartment("COSTA_RICA", "operations.costa-rica.manage");
+            var transitRead = await CanReadDepartment("TRANSITO",
+                Has("operations.transit.read") || Has("operations.transit.manage"));
+            // Legacy country-specific permissions retain their existing reach.
+            // New grants require both the action scope and explicit country scope;
+            // neither of them bypasses FilterVisibleCases / team membership.
+            bool CanReadCountry(string countryScope, string legacyScope) =>
+                Has(legacyScope) || (Has("operations.destination.read") &&
+                    (Has(countryScope) || Has("operations.destination.all")));
+            var panamaRead = await CanReadDepartment("PANAMA",
+                CanReadCountry("operations.destination.pa", "operations.panama.manage"));
+            var costaRicaRead = await CanReadDepartment("COSTA_RICA",
+                CanReadCountry("operations.destination.cr", "operations.costa-rica.manage"));
 
             // No access to the legacy unfiltered commercial projection is implied.
             // The new QUO view is locked until its resource-scoped contract exists.
