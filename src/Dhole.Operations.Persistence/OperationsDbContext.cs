@@ -103,6 +103,8 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
             e.Property(x => x.FromCountryCode).HasMaxLength(2).IsRequired();
             e.Property(x => x.ToCountryCode).HasMaxLength(2).IsRequired();
             e.Property(x => x.DestinationKind).HasMaxLength(20).IsRequired();
+            e.Property(x => x.EstimatedDepartureSource).HasMaxLength(30);
+            e.Property(x => x.EstimatedArrivalSource).HasMaxLength(30);
             e.Property(x => x.Status).HasMaxLength(30).IsRequired();
             e.Property(x => x.Version).IsConcurrencyToken();
             e.HasOne<OperationsCase>().WithMany().HasForeignKey(x => x.CaseId).OnDelete(DeleteBehavior.Restrict);
