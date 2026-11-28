@@ -55,4 +55,56 @@ public sealed class OperationsCommercialSnapshotReaderTests
         Assert.AreEqual(1, documents.GetArrayLength());
         Assert.AreEqual(id, documents[0].GetProperty("storageId").GetGuid());
     }
+
+    [TestMethod]
+    public void OriginProjectionOnlyReturnsExplicitStableOwnedRowsAndNoFinancialColumns()
+    {
+        var origin = Guid.NewGuid();
+        var freight = Guid.NewGuid();
+        var agent = Guid.NewGuid();
+        var destination = Guid.NewGuid();
+        var unowned = Guid.NewGuid();
+        var duplicate = Guid.NewGuid();
+        var incomplete = Guid.NewGuid();
+        object Line(Guid id, string type, decimal? amount = 1800m) => new {
+            rateDetailId = id, description = "Concept", costDetailType = type,
+            currencyCode = "USD", chargeBasis = "PerShipment", commercialQuantity = 1m,
+            commercialCostSubtotal = amount, commercialSaleSubtotal = 2000m,
+            commercialTaxAmount = 260m, commercialSaleTotal = 2260m
+        };
+        var json = JsonSerializer.Serialize(new { costLines = new object[] {
+            Line(origin, "OriginCharge"), Line(freight, "Freight"), Line(agent, "AgentCharge"),
+            Line(destination, "DestinationCharge"), Line(unowned, "Freight"),
+            Line(duplicate, "OriginCharge"), Line(duplicate, "DestinationCharge"),
+            Line(incomplete, "OriginCharge", null),
+            new { description = "Missing stable ID", costDetailType = "OriginCharge",
+                currencyCode = "USD", chargeBasis = "PerShipment", commercialQuantity = 1m, commercialCostSubtotal = 9m }
+        } });
+        var allowed = new HashSet<Guid> { origin, freight, agent, destination, duplicate, incomplete };
+        var rows = OperationsCommercialSnapshotReader.OriginCosts(json, allowed);
+        CollectionAssert.AreEquivalent(new[] { origin, freight, agent }, rows.Select(x => x.Id).ToArray());
+        Assert.IsTrue(rows.All(x => x.Status == "PENDING" && x.QuotedAmount == 1800m));
+        var serialized = JsonSerializer.Serialize(rows);
+        foreach (var key in new[] { "Sale", "Tax", "Margin", "Utility", "Subtotal", "Total" })
+            Assert.IsFalse(serialized.Contains(key, StringComparison.OrdinalIgnoreCase), key);
+        Assert.HasCount(0, OperationsCommercialSnapshotReader.OriginCosts(json, new HashSet<Guid>()));
+    }
+
+    [TestMethod]
+    public void HistoricalQuoteAllocationFailsClosedWhenIdtraIsAmbiguous()
+    {
+        const string idtra = "IDTRA123";
+        Assert.IsTrue(OperationsCommercialSnapshotReader.HasUnambiguousHistoricalIdtra("{}", idtra));
+        Assert.IsTrue(OperationsCommercialSnapshotReader.HasUnambiguousHistoricalIdtra(
+            """{"historicalIdtras":["IDTRA123"],"historicalIdtra":"IDTRA123"}""", idtra));
+        Assert.IsFalse(OperationsCommercialSnapshotReader.HasUnambiguousHistoricalIdtra(
+            """{"historicalIdtras":["IDTRA123","IDTRA456"]}""", idtra));
+        Assert.IsFalse(OperationsCommercialSnapshotReader.HasUnambiguousHistoricalIdtra(
+            """{"historicalIdtra":"IDTRA456"}""", idtra));
+        Assert.IsFalse(OperationsCommercialSnapshotReader.HasUnambiguousHistoricalIdtra(
+            """{"historicalIdtras":"IDTRA123"}""", idtra));
+        Assert.IsFalse(OperationsCommercialSnapshotReader.HasUnambiguousHistoricalIdtra(
+            """{"historicalIdtras":[]}""", idtra));
+        Assert.IsFalse(OperationsCommercialSnapshotReader.HasUnambiguousHistoricalIdtra("{", idtra));
+    }
 }
