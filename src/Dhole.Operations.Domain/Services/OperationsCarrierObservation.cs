@@ -32,6 +32,7 @@ public static class OperationsCarrierObservation
         OperationsCarrierCapability capability, string shipment, string transport) =>
         connection.Id != Guid.Empty && connection.CompanyId != Guid.Empty &&
         connection.SrmProviderId.HasValue && connection.SrmProviderId != Guid.Empty &&
+        connection.Environment is "UAT" or "PRODUCTION" &&
         connection.Status == "ACTIVE" && connection.LastValidatedAtUtc.HasValue &&
         capability.ConnectionId == connection.Id && capability.Status == "VERIFIED" &&
         capability.VerifiedAtUtc.HasValue && !string.IsNullOrWhiteSpace(capability.ApiVersion) &&
@@ -39,8 +40,17 @@ public static class OperationsCarrierObservation
         SupportsShipment(connection.CarrierCode, shipment, transport) &&
         (shipment == "FCL" || capability.ProductCode == "LCL_BOOKING");
 
-    public static Correlation Correlate(Observation e, IEnumerable<Binding> bindings, DateTimeOffset now)
+    public static Correlation Correlate(Observation e, OperationsCarrierConnection connection,
+        OperationsCarrierCapability capability, IEnumerable<Binding> bindings, DateTimeOffset now)
     {
+        // The caller must also establish the adapter's authenticated account and
+        // environment. Registry state alone is not proof of webhook authenticity.
+        if (!IsHomologated(connection, capability, "FCL", "MARITIME") ||
+            capability.CapabilityCode != "TRACK_AND_TRACE" ||
+            connection.Id != e.ConnectionId || connection.CompanyId != e.CompanyId ||
+            connection.SrmProviderId != e.SrmProviderId || connection.CarrierCode != e.CarrierCode ||
+            capability.ProductCode != e.Product || capability.ApiVersion != e.ApiVersion)
+            return new("NOT_HOMOLOGATED", null);
         if (e.CompanyId == Guid.Empty || e.ConnectionId == Guid.Empty || e.SrmProviderId == Guid.Empty ||
             !OperationsCarrierCodes.IsKnown(e.CarrierCode) || !Text(e.Product) || !Text(e.ApiVersion) ||
             !Text(e.EventId) || (e.EquipmentReference is not null && !Text(e.EquipmentReference)) || !Text(e.BookingReference) || !Text(e.TransportCallId) || !Text(e.LocationCode) ||
