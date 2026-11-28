@@ -62,8 +62,10 @@ public static class OperationsCarrierCodes
     private static readonly HashSet<string> Known = new(StringComparer.Ordinal)
     {
         "MAERSK", "YANG_MING", "OOCL", "MSC", "ONE", "COSCO",
-        "EVERGREEN", "HAPAG_LLOYD", "PIL", "ZIM", "CMA_CGM"
+        "EVERGREEN", "HAPAG_LLOYD", "PIL", "ZIM", "CMA_CGM", "HMM"
     };
+
+    public static IReadOnlyList<string> Candidates => Known.OrderBy(x => x, StringComparer.Ordinal).ToArray();
 
     // Validation of an integration adapter code, NOT an SRM provider directory.
     public static bool IsKnown(string? code) => code is not null && Known.Contains(code);
