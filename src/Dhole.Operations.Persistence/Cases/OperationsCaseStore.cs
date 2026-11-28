@@ -676,6 +676,11 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
         var origin = operation.OriginCountryCode;
         var destination = operation.DestinationCountryCode;
         var isOrigin = stage.DepartmentCode == "COORDINACION_ORIGEN";
+        var transfer = stage.DepartmentCode == "TRANSITO"
+            ? await db.OriginTransfers.AsNoTracking().SingleOrDefaultAsync(t => t.TransitStageId == stage.Id && t.CaseId == operation.Id, ct)
+            : null;
+        if (transfer is not null && (stage.Status != "PENDING" || operation.Status != "ACTIVE"))
+            return null;
         if (isOrigin && operation.ApertureType == "AUTOMATIC" && (origin == null || destination == null))
         {
             var snapshotJson = await db.AcceptedQuoteSnapshots.AsNoTracking()
@@ -714,7 +719,7 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
         var rules = await db.AssignmentRules.AsNoTracking()
             .Include(x => x.Team).ThenInclude(x => x.Members)
             .Where(x => x.IsActive && x.Team.IsActive && x.Team.CompanyId == operation.CompanyId &&
-                x.DepartmentCode == stage.DepartmentCode &&
+                x.DepartmentCode == stage.DepartmentCode && x.Team.DepartmentCode == stage.DepartmentCode &&
                 (x.ModalityCode == null || x.ModalityCode == operation.ModalityCode) &&
                 (x.OriginCountryCode == null || x.OriginCountryCode == origin) &&
                 (x.DestinationCountryCode == null || x.DestinationCountryCode == destination))
@@ -731,6 +736,17 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
             // Geographic/modality specificity precedes load. Only compare users within the best routing tier.
             int Specificity(OperationsAssignmentRule r) =>
                 (r.OriginCountryCode != null ? 4 : 0) + (r.ModalityCode != null ? 2 : 0) + (r.DestinationCountryCode != null ? 1 : 0);
+            var best = rules.Max(Specificity);
+            rules = rules.Where(r => Specificity(r) == best).ToList();
+            var priority = rules.Max(r => r.Priority);
+            rules = rules.Where(r => r.Priority == priority).ToList();
+        }
+
+        if (transfer is not null && rules.Count > 0)
+        {
+            // Geographic/modality match before load, as in the existing Origin pool.
+            int Specificity(OperationsAssignmentRule r) =>
+                (r.OriginCountryCode != null ? 1 : 0) + (r.ModalityCode != null ? 1 : 0) + (r.DestinationCountryCode != null ? 1 : 0);
             var best = rules.Max(Specificity);
             rules = rules.Where(r => Specificity(r) == best).ToList();
             var priority = rules.Max(r => r.Priority);
@@ -772,7 +788,7 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
 
         var selected = candidates.FirstOrDefault();
         OperationsAssignmentRecipient? recipient = null;
-        if (isOrigin)
+        if (isOrigin || transfer is not null)
         {
             selected = null;
             if (eligibility != null)
@@ -799,6 +815,38 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
                 operation.UpdatedAtUtc = DateTimeOffset.UtcNow;
                 Enqueue("operations.case.updated.v1", new { caseId = operation.Id, stageId = stage.Id, version = operation.Version });
                 await db.SaveChangesAsync(ct);
+            }
+            if (transfer is not null && eligibility is not null)
+            {
+                // Notify only an available supervisor from a matching pool, or an
+                // explicit company operations head/manager when no pool supervisor exists.
+                // The audit marker and stable notification keys prevent repeated sends.
+                var action = "operations.transit.assignment.pending.notified";
+                if (!await db.CaseAuditEntries.AnyAsync(a => a.CaseStageId == stage.Id && a.ActionCode == action, ct))
+                {
+                    var supervisors = pools.SelectMany(p => p.Team.Members)
+                        .Where(m => m.IsAvailable && m.IsSupervisor).Select(m => m.UserId).Distinct().ToArray();
+                    if (supervisors.Length == 0)
+                        supervisors = await db.TeamMembers.AsNoTracking().Where(m => m.Team.IsActive &&
+                            m.Team.CompanyId == operation.CompanyId && m.IsAvailable &&
+                            (m.RoleCode == OperationsTeamResponsibility.OperationsHead ||
+                             m.RoleCode == OperationsTeamResponsibility.LogisticsManager))
+                            .Select(m => m.UserId).Distinct().ToArrayAsync(ct);
+                    var notified = new List<Guid>();
+                    foreach (var supervisor in supervisors)
+                    {
+                        if (await eligibility.GetRecipientAsync(supervisor, ct) is null) continue;
+                        db.OutboxMessages.Add(OperationsOutboxFactory.CreateTransitNotification(
+                            operation.Id, operation.Idtra, transfer.Id, supervisor, pending: true));
+                        notified.Add(supervisor);
+                    }
+                    if (notified.Count > 0)
+                    {
+                        OperationsAuditWriter.Case(db, operation.Id, stage.Id, transfer.ActorUserId, action, null,
+                            new { transferId = transfer.Id, recipientCount = notified.Count });
+                        await db.SaveChangesAsync(ct);
+                    }
+                }
             }
             await transaction.CommitAsync(ct);
             return null;
@@ -836,6 +884,20 @@ public sealed class OperationsCaseStore(OperationsDbContext db, IOperationsAssig
                 version = operation.Version, teamId = assignment.TeamId,
                 assignedUserId = assignment.UserId
             });
+        }
+        if (transfer is not null)
+        {
+            foreach (var task in await db.CaseTasks.Where(t => t.CaseStageId == stage.Id &&
+                t.Title == "Pendiente de asignación a Tránsito" && t.Status == "PENDING").ToListAsync(ct))
+            {
+                task.Status = "COMPLETED"; task.CompletedAtUtc = DateTimeOffset.UtcNow;
+                task.UpdatedAtUtc = DateTimeOffset.UtcNow; task.Version++;
+            }
+            db.OutboxMessages.Add(OperationsOutboxFactory.CreateTransitNotification(
+                operation.Id, operation.Idtra, assignment.Id, assignment.UserId, pending: false));
+            if (System.Net.Mail.MailAddress.TryCreate(recipient?.Email, out var transitEmail))
+                db.OutboxMessages.Add(OperationsOutboxFactory.CreateTransitNotification(
+                    operation.Id, operation.Idtra, assignment.Id, assignment.UserId, pending: false, email: transitEmail.Address));
         }
         OperationsAuditWriter.Case(db, operation.Id, stage.Id, input.ActorUserId,
             "operations.stage.assigned", null, new {
