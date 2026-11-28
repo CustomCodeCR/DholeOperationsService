@@ -20,6 +20,8 @@ builder.Services.AddGrpc();
 builder.Services.AddHttpClient("crm-operations-contacts", client =>
     client.Timeout = TimeSpan.FromSeconds(10));
 builder.Services.AddHttpClient("auth-operations-users", client => client.Timeout = TimeSpan.FromSeconds(8));
+builder.Services.AddHttpClient("operations-document-storage", client => client.Timeout = TimeSpan.FromSeconds(10))
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddScoped<Dhole.Operations.Api.Integrations.OperationsAuthUserVerifier>();
 builder.Services.AddScoped<OperationsAssignedUserLabels>();
 builder.Services.AddSignalR();
@@ -108,6 +110,7 @@ app.MapGet("/api/operations/realtime/events", async (
         new { x.EventId, x.EventName, x.CaseId, ProcessedAtUtc = x.At }));
 }).RequireAuthorization("OperationsRealtimeRead");
 app.MapOperationsEndpoints();
+app.MapOperationsDocumentEndpoints();
 app.MapOperationsCaseWorkspaceEndpoints();
 app.MapOperationsApertureCompletenessEndpoints();
 app.MapOperationsManualOpeningDraftEndpoints();
