@@ -29,6 +29,7 @@ builder.Services.AddScoped<OperationsCrmAccountResolver>();
 builder.Services.AddHttpClient("config-operations-opening", client => client.Timeout = TimeSpan.FromSeconds(10))
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddScoped<OperationsOpeningCatalogValidator>();
+builder.Services.AddScoped<OperationsTransitionChecklist>();
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("OperationsRealtimeRead", policy => policy.RequireAssertion(context =>
@@ -116,6 +117,7 @@ app.MapOperationsApertureCompletenessEndpoints();
 app.MapOperationsManualOpeningDraftEndpoints();
 app.MapOperationsCommercialReviewEndpoints();
 app.MapOperationsPreparationEndpoints();
+app.MapOperationsTransitionEndpoints();
 app.MapOperationsTeamValidationEndpoints();
 app.MapOperationsDashboardEndpoints();
 app.MapOperationsTeamCatalogEndpoints();
