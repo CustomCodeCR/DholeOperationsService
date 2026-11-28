@@ -20,6 +20,19 @@ public static class OperationsOriginTransitDuration
             DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out instant);
     }
 
+    /// <summary>Legacy date-only inputs keep the existing explicit-empty clear
+    /// convention; null means omitted. Unchanged offset timestamps are preserved.</summary>
+    public static bool TryMergePlanning(string? storedEtd, string? storedEta, string? inputEtd, string? inputEta,
+        out string? etd, out string? eta)
+    {
+        etd = inputEtd is null ? storedEtd : inputEtd.Trim();
+        eta = inputEta is null ? storedEta : inputEta.Trim();
+        if (inputEtd is null && inputEta is null) return true;
+        if (inputEtd is not null && !string.IsNullOrEmpty(etd) && !Date(etd, out _)) return false;
+        if (inputEta is not null && !string.IsNullOrEmpty(eta) && !Date(eta, out _)) return false;
+        return Calculate(etd, eta).State != "INVALID";
+    }
+
     public static Result Calculate(string? etd, string? eta)
     {
         if (string.IsNullOrWhiteSpace(etd) || string.IsNullOrWhiteSpace(eta))
