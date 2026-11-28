@@ -43,7 +43,7 @@ public static class OperationsCarrierObservation
     {
         if (e.CompanyId == Guid.Empty || e.ConnectionId == Guid.Empty || e.SrmProviderId == Guid.Empty ||
             !OperationsCarrierCodes.IsKnown(e.CarrierCode) || !Text(e.Product) || !Text(e.ApiVersion) ||
-            !Text(e.EventId) || !Text(e.BookingReference) || !Text(e.TransportCallId) || !Text(e.LocationCode) ||
+            !Text(e.EventId) || (e.EquipmentReference is not null && !Text(e.EquipmentReference)) || !Text(e.BookingReference) || !Text(e.TransportCallId) || !Text(e.LocationCode) ||
             e.Classifier is not ("ACT" or "EST" or "PLN") || e.OccurredAt == default || e.CreatedAt == default ||
             e.CreatedAt > now.AddMinutes(5) || (e.Classifier == "ACT" && e.OccurredAt > now.AddMinutes(5)))
             return new("INVALID_OBSERVATION", null);
@@ -51,10 +51,12 @@ public static class OperationsCarrierObservation
         var matches = bindings.Where(b => b.CaseId != Guid.Empty && b.LegId != Guid.Empty &&
             b.CompanyId == e.CompanyId && b.ConnectionId == e.ConnectionId && b.SrmProviderId == e.SrmProviderId &&
             b.CarrierCode == e.CarrierCode && SupportsShipment(b.CarrierCode, b.Shipment, b.Transport) &&
-            (b.Shipment == "FCL" || e.Product == "LCL_BOOKING") &&
+            // LCL booking is a distinct product, not proof of FCL-style vessel tracking.
+            // This initial observation mapping is for FCL only.
+            b.Shipment == "FCL" &&
             b.BookingReference == e.BookingReference && b.TransportCallId == e.TransportCallId &&
             b.LocationCode == e.LocationCode &&
-            (e.EquipmentReference is null || b.EquipmentReferences.Contains(e.EquipmentReference, StringComparer.Ordinal))).ToArray();
+            (e.EquipmentReference is null || b.EquipmentReferences is not null && b.EquipmentReferences.Contains(e.EquipmentReference, StringComparer.Ordinal))).ToArray();
         // Multiple authorized IDTRA may share a booking. Do not guess the target,
         // nor broadcast a transport-call event to all matching legs.
         if (matches.Length != 1) return new(matches.Length == 0 ? "NO_MATCH" : "AMBIGUOUS_BINDING", null);
