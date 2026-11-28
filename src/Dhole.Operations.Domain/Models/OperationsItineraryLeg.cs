@@ -25,6 +25,10 @@ public sealed class OperationsItineraryLeg
     public DateTimeOffset? PlannedArrivalAtUtc { get; set; }
     public DateTimeOffset? EstimatedDepartureAtUtc { get; set; }
     public DateTimeOffset? EstimatedArrivalAtUtc { get; set; }
+    public short? EstimatedDepartureOffsetMinutes { get; set; }
+    public short? EstimatedArrivalOffsetMinutes { get; set; }
+    public string? EstimatedDepartureSource { get; set; }
+    public string? EstimatedArrivalSource { get; set; }
     public DateTimeOffset? ActualDepartureAtUtc { get; set; }
     public DateTimeOffset? ActualArrivalAtUtc { get; set; }
     public Guid CreatedBy { get; set; }
