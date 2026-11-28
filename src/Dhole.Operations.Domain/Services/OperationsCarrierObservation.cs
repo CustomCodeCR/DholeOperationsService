@@ -11,7 +11,7 @@ public static class OperationsCarrierObservation
 {
     public sealed record Binding(Guid CompanyId, Guid ConnectionId, Guid CaseId, Guid LegId,
         Guid SrmProviderId, string CarrierCode, string Shipment, string Transport,
-        string BookingReference, string TransportCallId, string LocationCode,
+        string BookingReference, string TransportCallId, string LocationCode, string CallPurpose,
         string[] EquipmentReferences);
     public sealed record Observation(Guid CompanyId, Guid ConnectionId, Guid SrmProviderId,
         string CarrierCode, string Product, string ApiVersion, string EventId,
@@ -19,7 +19,8 @@ public static class OperationsCarrierObservation
         string? EquipmentReference, string EventType, string EventCode, string Classifier,
         string TransportMode, DateTimeOffset OccurredAt, DateTimeOffset CreatedAt);
     public sealed record Candidate(Guid CaseId, Guid LegId, string Field, string Value,
-        string EventKey, string Fingerprint, DateTimeOffset OccurredAt, DateTimeOffset CreatedAt);
+        string EventKey, string Fingerprint, DateTimeOffset OccurredAt, DateTimeOffset CreatedAt,
+        DateTimeOffset ReceivedAt, Guid ConnectionId, string CarrierCode, string Product, string ApiVersion, string ExternalEventId);
     public sealed record Correlation(string State, Candidate? Value);
     public sealed record StoredObservation(string EventKey, string Fingerprint, DateTimeOffset CreatedAt);
     public sealed record FieldState(string? Value, bool ManuallyConfirmed, DateTimeOffset? SourceCreatedAt);
@@ -58,6 +59,12 @@ public static class OperationsCarrierObservation
             e.CreatedAt > now.AddMinutes(5) || (e.Classifier == "ACT" && e.OccurredAt > now.AddMinutes(5)))
             return new("INVALID_OBSERVATION", null);
 
+        // Only the six vessel-time fields have verified canonical semantics in
+        // this slice; a port call must be bound to the corresponding end of the leg.
+        if (e.EventType != "TRANSPORT" || e.TransportMode != "VESSEL" ||
+            e.EventCode is not ("DEPA" or "ARRI"))
+            return new("UNSUPPORTED_EVENT", null);
+        var purpose = e.EventCode == "DEPA" ? "DEPARTURE" : "ARRIVAL";
         var matches = bindings.Where(b => b.CaseId != Guid.Empty && b.LegId != Guid.Empty &&
             b.CompanyId == e.CompanyId && b.ConnectionId == e.ConnectionId && b.SrmProviderId == e.SrmProviderId &&
             b.CarrierCode == e.CarrierCode && SupportsShipment(b.CarrierCode, b.Shipment, b.Transport) &&
@@ -65,17 +72,12 @@ public static class OperationsCarrierObservation
             // This initial observation mapping is for FCL only.
             b.Shipment == "FCL" &&
             b.BookingReference == e.BookingReference && b.TransportCallId == e.TransportCallId &&
-            b.LocationCode == e.LocationCode &&
+            b.LocationCode == e.LocationCode && b.CallPurpose == purpose &&
             (e.EquipmentReference is null || b.EquipmentReferences is not null && b.EquipmentReferences.Contains(e.EquipmentReference, StringComparer.Ordinal))).ToArray();
         // Multiple authorized IDTRA may share a booking. Do not guess the target,
         // nor broadcast a transport-call event to all matching legs.
         if (matches.Length != 1) return new(matches.Length == 0 ? "NO_MATCH" : "AMBIGUOUS_BINDING", null);
         var binding = matches[0];
-        // The initial mapping is deliberately limited to vessel transport events.
-        // Equipment LOAD/STUF and shipment confirmations have different semantics.
-        if (e.EventType != "TRANSPORT" || e.TransportMode != "VESSEL" ||
-            e.EventCode is not ("DEPA" or "ARRI"))
-            return new("UNSUPPORTED_EVENT", null);
         var field = (e.EventCode, e.Classifier) switch
         {
             ("DEPA", "PLN") => "PLANNED_DEPARTURE",
@@ -89,7 +91,8 @@ public static class OperationsCarrierObservation
         var key = Hash(new { e.CompanyId, e.ConnectionId, e.Product, e.ApiVersion, e.EventId });
         var fingerprint = Hash(e with { OccurredAt = e.OccurredAt.ToUniversalTime(), CreatedAt = e.CreatedAt.ToUniversalTime() });
         return new("CANDIDATE", new(binding.CaseId, binding.LegId, field,
-            e.OccurredAt.ToUniversalTime().ToString("O"), key, fingerprint, e.OccurredAt.ToUniversalTime(), e.CreatedAt.ToUniversalTime()));
+            e.OccurredAt.ToUniversalTime().ToString("O"), key, fingerprint, e.OccurredAt.ToUniversalTime(), e.CreatedAt.ToUniversalTime(),
+            now.ToUniversalTime(), e.ConnectionId, e.CarrierCode, e.Product, e.ApiVersion, e.EventId));
     }
 
     public static string Reconcile(Candidate candidate, StoredObservation? previousEvent, FieldState field)
