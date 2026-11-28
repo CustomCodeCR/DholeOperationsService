@@ -17,7 +17,7 @@ public sealed class OperationsTransitionChecklist(IHttpClientFactory factory, IC
     {
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
     };
-    public bool EnforcementEnabled => configuration.GetValue<bool>("OperationsTransitions:EnforceOriginDeparture");
+    public bool EnforcementEnabled => configuration.GetValue<bool>("OperationsTransitions:Enabled");
 
     private async Task<Rule[]?> ReadRules(string authorization, CancellationToken ct)
     {
@@ -35,7 +35,7 @@ public sealed class OperationsTransitionChecklist(IHttpClientFactory factory, IC
             using var response = await factory.CreateClient("config-operations-opening").SendAsync(request, ct);
             if (!response.IsSuccessStatusCode) return null;
             var rows = await response.Content.ReadFromJsonAsync<CatalogRow[]>(cancellationToken: ct);
-            if (rows is null || rows.Length > 200 || rows.Select(r => r.Id).Distinct().Count() != rows.Length) return null;
+            if (rows is null || rows.Length > 200 || rows.Any(r => r is null) || rows.Select(r => r.Id).Distinct().Count() != rows.Length) return null;
             var result = new List<Rule>();
             foreach (var row in rows)
             {
@@ -53,15 +53,15 @@ public sealed class OperationsTransitionChecklist(IHttpClientFactory factory, IC
     }
 
     public async Task<Evaluation> EvaluateAsync(OperationsDbContext db, OperationsCase operation,
-        OperationsCaseStage stage, string authorization, CancellationToken ct,
-        Guid? verifiedProposedEvidence = null)
+        OperationsCaseStage stage, string authorization, CancellationToken ct)
     {
         var rules = await ReadRules(authorization, ct);
         if (rules is null) return new("CONFIG_UNAVAILABLE", null, null, null, false, []);
         // No stable leg mapping yet: never approve an ambiguous multimodal transfer.
-        if (operation.ModalityCode == "MULTIMODAL")
-            return new("LEG_UNRESOLVED", null, null, null, false, []);
         var opening = OperationsCargoMeasurements.Parse(operation.OpeningDataJson);
+        if (string.Equals(operation.ModalityCode, "MULTIMODAL", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(opening["transportType"]?.ToString(), "MULTIMODAL", StringComparison.OrdinalIgnoreCase))
+            return new("LEG_UNRESOLVED", null, null, null, false, []);
         var dimensions = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["fromStage"] = stage.DepartmentCode, ["toStage"] = "TRANSITO",
@@ -95,8 +95,8 @@ public sealed class OperationsTransitionChecklist(IHttpClientFactory factory, IC
             d.Versions.Any()).Select(d => new { d.DocumentTypeCode, d.Status,
                 Latest = d.Versions.OrderByDescending(v => v.VersionNumber)
                     .Select(v => new { v.StorageFileId, v.ReviewStatus }).First() }).ToArrayAsync(ct);
-        var evidence = verifiedProposedEvidence ?? progress?.EvidenceStorageFileId;
-        var departureVerified = (verifiedProposedEvidence.HasValue || progress?.ActualDepartureAtUtc is not null) &&
+        var evidence = progress?.EvidenceStorageFileId;
+        var departureVerified = progress?.ActualDepartureAtUtc is not null &&
             evidence.HasValue && documents.Any(d => d.Status == "APPROVED" &&
                 d.Latest.ReviewStatus == "APPROVED" && d.Latest.StorageFileId == evidence.Value);
         facts["ACTUAL_DEPARTURE"] = departureVerified
