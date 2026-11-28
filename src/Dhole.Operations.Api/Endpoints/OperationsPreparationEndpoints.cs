@@ -130,12 +130,12 @@ public static class OperationsPreparationEndpoints
             var shipment = operation.ModalityCode.Trim().ToUpperInvariant();
             var state = shipment == "MULTIMODAL" || transport == "MULTIMODAL"
                 ? "REVIEW_REQUIRED"
-                : (shipment is "FCL" or "LCL") && transport == "MARITIME"
-                    ? "NOT_CONFIGURED"
-                    : string.IsNullOrWhiteSpace(transport) ? "REVIEW_REQUIRED" : "CAPABILITY_NOT_AVAILABLE";
+                : (shipment is "FCL" or "LCL")
+                    ? (transport is "MARITIME" or "SEA" or "OCEAN" ? "NOT_CONFIGURED" : "REVIEW_REQUIRED")
+                    : transport is "AIR" or "ROAD" ? "CAPABILITY_NOT_AVAILABLE" : "REVIEW_REQUIRED";
             http.Response.Headers.CacheControl = "private, no-store";
             return Results.Ok(new { caseId = id, caseVersion = operation.Version, state,
-                enabled = false, lastSuccessfulSyncAt = (DateTimeOffset?)null, manualAvailable = true });
+                enabled = false, lastSuccessfulSyncAt = (DateTimeOffset?)null, manualWorkflowUnchanged = true });
         });
 
         api.MapGet("/cases/{id:guid}/origin/progress", async (Guid id, HttpContext http,
