@@ -30,6 +30,7 @@ builder.Services.AddHttpClient("config-operations-opening", client => client.Tim
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddScoped<OperationsOpeningCatalogValidator>();
 builder.Services.AddScoped<OperationsTransitionChecklist>();
+builder.Services.AddScoped<OperationsItineraryCatalog>();
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("OperationsRealtimeRead", policy => policy.RequireAssertion(context =>
@@ -118,6 +119,7 @@ app.MapOperationsManualOpeningDraftEndpoints();
 app.MapOperationsCommercialReviewEndpoints();
 app.MapOperationsPreparationEndpoints();
 app.MapOperationsTransitionEndpoints();
+app.MapOperationsItineraryEndpoints();
 app.MapOperationsTeamValidationEndpoints();
 app.MapOperationsDashboardEndpoints();
 app.MapOperationsTeamCatalogEndpoints();
