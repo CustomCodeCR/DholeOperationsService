@@ -16,6 +16,7 @@ namespace Dhole.Operations.Api.Endpoints;
 public static class OperationsDocumentEndpoints
 {
     public sealed record RegisterRequest(Guid OwnerStageId, Guid StorageFileId, string DocumentTypeCode, long ExpectedVersion);
+    public sealed record ReviewRequest(long ExpectedVersion, string Decision, string Reason);
     private sealed record StorageMetadata(Guid Id, string FileName, string MimeType, string? Sha256, long SizeInBytes);
 
     private static bool Enabled(IConfiguration config) =>
@@ -132,6 +133,47 @@ public static class OperationsDocumentEndpoints
             catch (DbUpdateConcurrencyException) { return Results.Conflict(new { code = "OPERATIONS_CASE_VERSION_CONFLICT" }); }
             await tx.CommitAsync(ct);
             return Results.Created($"/api/operations/cases/{id}/documents/v2", new { documentId = doc.Id, versionId = version.Id, duplicate = false });
+        });
+
+        api.MapPost("/cases/{id:guid}/documents/v2/{documentId:guid}/review", async (
+            Guid id, Guid documentId, ReviewRequest input, HttpContext http, OperationsCaseAccess access,
+            OperationsDbContext db, IConfiguration config, CancellationToken ct) =>
+        {
+            var actor = OperationsCaseAccess.UserId(http.User);
+            if (!Enabled(config) || actor is null ||
+                !OperationsCaseAccess.HasScope(http.User, "operations.document.validate") ||
+                !await access.CanReadAsync(id, http.User, ct)) return Results.Forbid();
+            var decision = input.Decision?.Trim().ToUpperInvariant();
+            if (decision is not ("APPROVED" or "REJECTED") ||
+                string.IsNullOrWhiteSpace(input.Reason) || input.Reason.Trim().Length > 500 || input.ExpectedVersion < 1)
+                return Results.BadRequest(new { code = "OPERATIONS_DOCUMENT_REVIEW_INVALID" });
+
+            var visible = await Transversal(db, id).Where(d => d.Id == documentId)
+                .Select(d => new { d.OwnerStageId, StageStatus = d.OwnerStage!.Status }).SingleOrDefaultAsync(ct);
+            if (visible is null || !visible.OwnerStageId.HasValue ||
+                visible.StageStatus is not ("READY" or "IN_PROGRESS") ||
+                !await access.CanEditAssignedStageAsync(visible.OwnerStageId.Value, http.User, ct))
+                return Results.Forbid();
+            var doc = await db.Documents.Include(d => d.Versions).SingleOrDefaultAsync(d =>
+                d.Id == documentId && d.CaseId == id && d.OwnerStageId == visible.OwnerStageId, ct);
+            if (doc is null) return Results.NotFound();
+            if (doc.Version != input.ExpectedVersion)
+                return Results.Conflict(new { code = "OPERATIONS_DOCUMENT_VERSION_CONFLICT", currentVersion = doc.Version });
+            var current = doc.Versions.OrderByDescending(v => v.VersionNumber).FirstOrDefault();
+            if (current is null) return Results.Conflict(new { code = "OPERATIONS_DOCUMENT_NO_VERSION" });
+            // Preserve review decisions as audit evidence; no file or past version is removed.
+            var before = new { doc.Status, current.ReviewStatus, doc.Version };
+            doc.Status = decision;
+            current.ReviewStatus = decision;
+            doc.Version++;
+            OperationsAuditWriter.Case(db, id, visible.OwnerStageId, actor.Value, "operations.document.reviewed", before,
+                new { documentId, versionId = current.Id, decision, reason = input.Reason.Trim(), doc.Version });
+            // Only IDs/versions in realtime; no names, bytes or review reasons.
+            db.OutboxMessages.Add(OperationsOutboxFactory.Create("operations.document.reviewed.v1",
+                JsonSerializer.Serialize(new { caseId = id, documentId, versionId = current.Id, version = doc.Version })));
+            try { await db.SaveChangesAsync(ct); }
+            catch (DbUpdateConcurrencyException) { return Results.Conflict(new { code = "OPERATIONS_DOCUMENT_VERSION_CONFLICT" }); }
+            return Results.Ok(new { documentId, doc.Status, doc.Version });
         });
 
         return app;
