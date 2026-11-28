@@ -21,7 +21,7 @@ public static class OperationsItineraryEndpoints
     private static bool Has(HttpContext http, string scope) => OperationsCaseAccess.HasScope(http.User, scope);
     private static bool CountryGrant(HttpContext http, string country) =>
         Has(http, "operations.destination.all") ||
-        (country is "PA" or "CR" or "US" && Has(http, "operations.destination." + country.ToLowerInvariant()));
+        ((country is "PA" or "CR" or "US") && Has(http, "operations.destination." + country.ToLowerInvariant()));
 
     public static IEndpointRouteBuilder MapOperationsItineraryEndpoints(this IEndpointRouteBuilder app)
     {
@@ -53,10 +53,10 @@ public static class OperationsItineraryEndpoints
                     x.PlannedDepartureAtUtc, x.PlannedArrivalAtUtc, x.EstimatedDepartureAtUtc, x.EstimatedArrivalAtUtc,
                     x.ActualDepartureAtUtc, x.ActualArrivalAtUtc,
                     estimatedTransit = OperationsOriginTransitDuration.Calculate(x.EstimatedDepartureAtUtc?.ToString("O"), x.EstimatedArrivalAtUtc?.ToString("O"))
-                }).Cast<object>().ToArray() : [];
+                }).Cast<object>().ToArray() : Array.Empty<object>();
             // No full itinerary, other-country location, provider, price or task
             // data is included in the country-specific projection.
-            var destinations = legs.Where(x => x.DestinationStageId.HasValue && x.DestinationKind is "FINAL" or "ENTRY_TRANSFER" &&
+            var destinations = legs.Where(x => x.DestinationStageId.HasValue && (x.DestinationKind is "FINAL" or "ENTRY_TRANSFER") &&
                 OperationsItineraryPolicy.CanReadDestination(x.ToCountryCode, Has(http, "operations.destination.read"),
                     CountryGrant(http, x.ToCountryCode), false, authorized.Contains(x.DestinationStageId.Value)) &&
                 stages.Any(s => s.Id == x.DestinationStageId && s.DepartmentCode == OperationsItineraryPolicy.DestinationDepartment(x.ToCountryCode)))
@@ -166,6 +166,63 @@ public static class OperationsItineraryEndpoints
             catch (PostgresException e) when (e.SqlState is "40001" or "40P01")
             { return Results.Conflict(new { code = "OPERATIONS_ITINERARY_RETRY_REQUIRED" }); }
         });
+        // Estimates only: no legacy ACT mutation, stage completion, commercial
+        // change or implicit transfer from a date update.
+        api.MapPost("/cases/{id:guid}/itinerary/{legId:guid}/estimates", async (Guid id, Guid legId,
+            UpdateEstimates input, HttpContext http, OperationsCaseAccess access, OperationsDbContext db,
+            IConfiguration config, CancellationToken ct) =>
+        {
+            if (!Enabled(config)) return Results.Conflict(new { code = "OPERATIONS_ITINERARY_DISABLED" });
+            var actor = OperationsCaseAccess.UserId(http.User);
+            if (actor is null || !Has(http, "operations.transit.read") || !Has(http, "operations.transit.update") ||
+                !await access.CanReadAsync(id, http.User, ct)) return Results.Forbid();
+            if (input.ExpectedCaseVersion < 1 || input.ExpectedLegVersion < 1 ||
+                (input.Etd is null && input.Eta is null)) return Results.BadRequest(new { code = "OPERATIONS_ESTIMATES_INVALID" });
+            try
+            {
+                await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+                var leg = await db.ItineraryLegs.SingleOrDefaultAsync(x => x.Id == legId && x.CaseId == id, ct);
+                var operation = await db.Cases.SingleOrDefaultAsync(c => c.Id == id, ct);
+                if (leg is null || operation is null || operation.Status is "CANCELLED" or "COMPLETED" ||
+                    leg.Status is "COMPLETED" or "CANCELLED") return Results.Forbid();
+                if (!await db.CaseStages.AsNoTracking().AnyAsync(s => s.Id == leg.TransitStageId && s.CaseId == id &&
+                    s.DepartmentCode == "TRANSITO" && (s.Status == "READY" || s.Status == "IN_PROGRESS"), ct) ||
+                    !await access.CanEditAssignedStageAsync(leg.TransitStageId, http.User, ct)) return Results.Forbid();
+                if (leg.Version != input.ExpectedLegVersion || operation.Version != input.ExpectedCaseVersion)
+                    return Results.Conflict(new { code = "OPERATIONS_ITINERARY_VERSION_CONFLICT" });
+                if (!TryEstimate(input.Etd, leg.EstimatedDepartureAtUtc, out var etd) ||
+                    !TryEstimate(input.Eta, leg.EstimatedArrivalAtUtc, out var eta) ||
+                    (etd.HasValue && eta.HasValue && eta.Value < etd.Value))
+                    return Results.BadRequest(new { code = "OPERATIONS_ESTIMATES_INVALID" });
+                if (etd == leg.EstimatedDepartureAtUtc && eta == leg.EstimatedArrivalAtUtc)
+                    return Results.Ok(new { caseId = id, legId, caseVersion = operation.Version, legVersion = leg.Version, changed = false });
+                var before = new { leg.EstimatedDepartureAtUtc, leg.EstimatedArrivalAtUtc, leg.Version };
+                leg.EstimatedDepartureAtUtc = etd; leg.EstimatedArrivalAtUtc = eta; leg.Version++;
+                operation.Version++; operation.UpdatedAtUtc = DateTimeOffset.UtcNow;
+                OperationsAuditWriter.Case(db, id, leg.TransitStageId, actor.Value, "operations.itinerary.estimates.updated", before,
+                    new { legId, leg.EstimatedDepartureAtUtc, leg.EstimatedArrivalAtUtc, leg.Version, source = "MANUAL" });
+                db.OutboxMessages.Add(OperationsOutboxFactory.Create("operations.itinerary.changed.v1",
+                    JsonSerializer.Serialize(new { caseId = id, version = operation.Version })));
+                await db.SaveChangesAsync(ct);
+                await tx.CommitAsync(ct);
+                return Results.Ok(new { caseId = id, legId, caseVersion = operation.Version, legVersion = leg.Version, changed = true });
+            }
+            catch (DbUpdateConcurrencyException) { return Results.Conflict(new { code = "OPERATIONS_ITINERARY_VERSION_CONFLICT" }); }
+            catch (PostgresException e) when (e.SqlState is "40001" or "40P01")
+            { return Results.Conflict(new { code = "OPERATIONS_ITINERARY_RETRY_REQUIRED" }); }
+        });
         return app;
+    }
+
+    private static bool TryEstimate(string? input, DateTimeOffset? current, out DateTimeOffset? value)
+    {
+        value = current;
+        if (input is null) return true;
+        // Blank/unknown is not an instruction to erase a persisted estimate.
+        if (OperationsOriginTransitDuration.Calculate(input, input).Precision != "INSTANT" ||
+            !DateTimeOffset.TryParse(input, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var parsed)) return false;
+        value = parsed.ToUniversalTime();
+        return true;
     }
 }
