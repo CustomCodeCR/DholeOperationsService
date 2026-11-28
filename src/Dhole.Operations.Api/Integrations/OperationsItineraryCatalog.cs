@@ -7,6 +7,42 @@ namespace Dhole.Operations.Api.Integrations;
 
 public sealed class OperationsItineraryCatalog(IHttpClientFactory factory, IConfiguration configuration)
 {
+    public sealed record ProfileSelection(string CountryCode, string Kind);
+    public sealed record DestinationProfile(string CountryCode, string Kind, string State, Guid? ProfileId, int? Version, string[] Fields);
+
+    public async Task<IReadOnlyDictionary<ProfileSelection, DestinationProfile>?> ResolveProfilesAsync(
+        ProfileSelection[] selections, string authorization, CancellationToken ct)
+    {
+        if (selections.Length == 0) return new Dictionary<ProfileSelection, DestinationProfile>();
+        if (!Uri.TryCreate(configuration["Config:ApiBaseUrl"], UriKind.Absolute, out var baseUri) ||
+            baseUri.Scheme is not ("http" or "https") || !string.IsNullOrEmpty(baseUri.UserInfo) ||
+            !string.IsNullOrEmpty(baseUri.Query) || !string.IsNullOrEmpty(baseUri.Fragment) ||
+            !AuthenticationHeaderValue.TryParse(authorization, out var bearer) ||
+            !string.Equals(bearer.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase) ||
+            string.IsNullOrWhiteSpace(bearer.Parameter)) return null;
+        using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(new Uri(baseUri.AbsoluteUri.TrimEnd('/') + "/"),
+            "api/config/operations/destination-profiles/resolve"));
+        request.Headers.Authorization = bearer;
+        request.Content = JsonContent.Create(new { selections });
+        try
+        {
+            using var response = await factory.CreateClient("config-operations-opening").SendAsync(request, ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var rows = await response.Content.ReadFromJsonAsync<DestinationProfile[]>(cancellationToken: ct);
+            if (rows is null || rows.Length != selections.Length || rows.Any(r => r is null ||
+                !selections.Contains(new(r.CountryCode, r.Kind)) || r.Fields is null || r.Fields.Length > 50 ||
+                (r.State == "APPROVED_METADATA"
+                    ? r.ProfileId is null || r.ProfileId == Guid.Empty || r.Version is null or < 1
+                    : r.State is not ("PENDING_APPROVAL" or "CONFIGURATION_CONFLICT") || r.ProfileId is not null ||
+                      r.Version is not null || r.Fields.Length != 0)) ||
+                rows.Select(r => new ProfileSelection(r.CountryCode, r.Kind)).Distinct().Count() != selections.Length) return null;
+            return rows.ToDictionary(r => new ProfileSelection(r.CountryCode, r.Kind));
+        }
+        catch (HttpRequestException) { return null; }
+        catch (JsonException) { return null; }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return null; }
+    }
+
     public async Task<IReadOnlyDictionary<Guid, OperationsItineraryPolicy.Location>?> ResolveAsync(
         Guid[] ids, string authorization, CancellationToken ct)
     {
