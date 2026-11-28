@@ -44,6 +44,11 @@ public static class OperationsItineraryEndpoints
                 if (await access.FilterVisibleCases(visible, http.User, company, department: stage.DepartmentCode).AnyAsync(ct))
                     authorized.Add(stage.Id);
 
+            var editableTransit = new HashSet<Guid>();
+            if (Has(http, "operations.transit.read") && Has(http, "operations.transit.update"))
+                foreach (var stage in stages.Where(s => authorized.Contains(s.Id) && s.DepartmentCode == "TRANSITO" &&
+                    (s.Status is "READY" or "IN_PROGRESS")))
+                    if (await access.CanEditAssignedStageAsync(stage.Id, http.User, ct)) editableTransit.Add(stage.Id);
             var legs = await db.ItineraryLegs.AsNoTracking().Where(x => x.CaseId == id).OrderBy(x => x.Sequence).ToArrayAsync(ct);
             var transit = (Has(http, "operations.transit.read") || Has(http, "operations.transit.manage"))
                 ? legs.Where(x => authorized.Contains(x.TransitStageId) &&
@@ -52,6 +57,9 @@ public static class OperationsItineraryEndpoints
                     x.FromCountryCode, x.ToCountryCode, x.Status, x.Version,
                     x.PlannedDepartureAtUtc, x.PlannedArrivalAtUtc, x.EstimatedDepartureAtUtc, x.EstimatedArrivalAtUtc,
                     x.ActualDepartureAtUtc, x.ActualArrivalAtUtc,
+                    x.EstimatedDepartureOffsetMinutes, x.EstimatedArrivalOffsetMinutes, x.EstimatedDepartureSource, x.EstimatedArrivalSource,
+                    canEditEstimates = editableTransit.Contains(x.TransitStageId) && x.Status is not ("COMPLETED" or "CANCELLED") &&
+                        operation.Status is not ("COMPLETED" or "CANCELLED"),
                     estimatedTransit = OperationsOriginTransitDuration.Calculate(x.EstimatedDepartureAtUtc?.ToString("O"), x.EstimatedArrivalAtUtc?.ToString("O"))
                 }).Cast<object>().ToArray() : Array.Empty<object>();
             // No full itinerary, other-country location, provider, price or task
@@ -190,17 +198,32 @@ public static class OperationsItineraryEndpoints
                     !await access.CanEditAssignedStageAsync(leg.TransitStageId, http.User, ct)) return Results.Forbid();
                 if (leg.Version != input.ExpectedLegVersion || operation.Version != input.ExpectedCaseVersion)
                     return Results.Conflict(new { code = "OPERATIONS_ITINERARY_VERSION_CONFLICT" });
-                if (!TryEstimate(input.Etd, leg.EstimatedDepartureAtUtc, out var etd) ||
-                    !TryEstimate(input.Eta, leg.EstimatedArrivalAtUtc, out var eta) ||
+                if (!TryEstimate(input.Etd, leg.EstimatedDepartureAtUtc, leg.EstimatedDepartureOffsetMinutes, out var etd, out var etdOffset) ||
+                    !TryEstimate(input.Eta, leg.EstimatedArrivalAtUtc, leg.EstimatedArrivalOffsetMinutes, out var eta, out var etaOffset) ||
                     (etd.HasValue && eta.HasValue && eta.Value < etd.Value))
                     return Results.BadRequest(new { code = "OPERATIONS_ESTIMATES_INVALID" });
-                if (etd == leg.EstimatedDepartureAtUtc && eta == leg.EstimatedArrivalAtUtc)
+                if (etd == leg.EstimatedDepartureAtUtc && eta == leg.EstimatedArrivalAtUtc &&
+                    etdOffset == leg.EstimatedDepartureOffsetMinutes && etaOffset == leg.EstimatedArrivalOffsetMinutes)
                     return Results.Ok(new { caseId = id, legId, caseVersion = operation.Version, legVersion = leg.Version, changed = false });
-                var before = new { leg.EstimatedDepartureAtUtc, leg.EstimatedArrivalAtUtc, leg.Version };
-                leg.EstimatedDepartureAtUtc = etd; leg.EstimatedArrivalAtUtc = eta; leg.Version++;
+                var before = new { leg.EstimatedDepartureAtUtc, leg.EstimatedArrivalAtUtc,
+                    leg.EstimatedDepartureOffsetMinutes, leg.EstimatedArrivalOffsetMinutes,
+                    leg.EstimatedDepartureSource, leg.EstimatedArrivalSource, leg.Version };
+                if (input.Etd is not null)
+                {
+                    leg.EstimatedDepartureAtUtc = etd; leg.EstimatedDepartureOffsetMinutes = etdOffset;
+                    leg.EstimatedDepartureSource = "MANUAL";
+                }
+                if (input.Eta is not null)
+                {
+                    leg.EstimatedArrivalAtUtc = eta; leg.EstimatedArrivalOffsetMinutes = etaOffset;
+                    leg.EstimatedArrivalSource = "MANUAL";
+                }
+                leg.Version++;
                 operation.Version++; operation.UpdatedAtUtc = DateTimeOffset.UtcNow;
                 OperationsAuditWriter.Case(db, id, leg.TransitStageId, actor.Value, "operations.itinerary.estimates.updated", before,
-                    new { legId, leg.EstimatedDepartureAtUtc, leg.EstimatedArrivalAtUtc, leg.Version, source = "MANUAL" });
+                    new { legId, leg.EstimatedDepartureAtUtc, leg.EstimatedArrivalAtUtc,
+                        leg.EstimatedDepartureOffsetMinutes, leg.EstimatedArrivalOffsetMinutes,
+                        leg.EstimatedDepartureSource, leg.EstimatedArrivalSource, leg.Version });
                 db.OutboxMessages.Add(OperationsOutboxFactory.Create("operations.itinerary.changed.v1",
                     JsonSerializer.Serialize(new { caseId = id, version = operation.Version })));
                 await db.SaveChangesAsync(ct);
@@ -214,15 +237,17 @@ public static class OperationsItineraryEndpoints
         return app;
     }
 
-    private static bool TryEstimate(string? input, DateTimeOffset? current, out DateTimeOffset? value)
+    private static bool TryEstimate(string? input, DateTimeOffset? current, short? currentOffset,
+        out DateTimeOffset? value, out short? offset)
     {
-        value = current;
+        value = current; offset = currentOffset;
         if (input is null) return true;
         // Blank/unknown is not an instruction to erase a persisted estimate.
         if (OperationsOriginTransitDuration.Calculate(input, input).Precision != "INSTANT" ||
             !DateTimeOffset.TryParse(input, System.Globalization.CultureInfo.InvariantCulture,
                 System.Globalization.DateTimeStyles.None, out var parsed)) return false;
         value = parsed.ToUniversalTime();
+        offset = checked((short)parsed.Offset.TotalMinutes);
         return true;
     }
 }
